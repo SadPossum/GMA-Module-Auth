@@ -80,8 +80,8 @@ public sealed class JwtSettingsValidatorTests
     }
 
     private static JwtSettings ValidSettings(
-        string issuer = "GenericModularApi",
-        string audience = "GenericModularApi",
+        string issuer = "GMA",
+        string audience = "GMA",
         string signingKey = "test-jwt-signing-key-000000000000000000000000",
         int accessTokenLifetimeMinutes = 15) =>
         new()

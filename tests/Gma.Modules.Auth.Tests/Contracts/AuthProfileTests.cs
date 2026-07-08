@@ -106,6 +106,6 @@ public sealed class AuthProfileTests
         new("Auth:Jwt:SigningKey", "test-jwt-signing-key-000000000000000000000000"),
         new("Auth:RefreshTokens:Pepper", "test-refresh-token-pepper-000000000000000000000000"),
         new("Persistence:Provider", "SqlServer"),
-        new("ConnectionStrings:SqlServer", "Server=(localdb)\\mssqllocaldb;Database=GenericModularApiAuthProfileTests;Trusted_Connection=True;")
+        new("ConnectionStrings:SqlServer", "Server=(localdb)\\mssqllocaldb;Database=GmaAuthProfileTests;Trusted_Connection=True;")
     ];
 }

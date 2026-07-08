@@ -77,8 +77,8 @@ public sealed class JwtTokenServiceTests
     private static JwtSettings CreateSettings() =>
         new()
         {
-            Issuer = "GenericModularApi.Tests",
-            Audience = "GenericModularApi.Tests",
+            Issuer = "GMA.Tests",
+            Audience = "GMA.Tests",
             SigningKey = "test-signing-key-with-enough-bytes-00000000000000000000",
             AccessTokenLifetimeMinutes = 15
         };
