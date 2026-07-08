@@ -41,17 +41,12 @@ jobs:
 
       - name: Restore
         working-directory: gma-module-auth
-        run: dotnet restore 
-Gma.Modules.Auth.slnx
+        run: dotnet restore Gma.Modules.Auth.slnx
 
       - name: Build
         working-directory: gma-module-auth
-        run: dotnet build 
-Gma.Modules.Auth.slnx
- --no-restore -m:1
+        run: dotnet build Gma.Modules.Auth.slnx --no-restore -m:1
 
       - name: Test
         working-directory: gma-module-auth
-        run: dotnet test 
-Gma.Modules.Auth.slnx
- --no-build --logger "console;verbosity=minimal"
+        run: dotnet test Gma.Modules.Auth.slnx --no-build --logger "console;verbosity=minimal"
