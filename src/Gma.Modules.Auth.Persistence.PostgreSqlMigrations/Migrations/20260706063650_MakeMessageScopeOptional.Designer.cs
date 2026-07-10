@@ -51,14 +51,14 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(1);
 
-                    b.Property<string>("TenantId")
+                    b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "RegisteredAtUtc");
+                    b.HasIndex("ScopeId", "RegisteredAtUtc");
 
                     b.ToTable("members", "auth");
                 });
@@ -88,7 +88,7 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.Property<DateTimeOffset?>("SignOutDateTimeUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("TenantId")
+                    b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
@@ -97,7 +97,7 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
 
                     b.HasIndex("MemberId");
 
-                    b.HasIndex("TenantId", "RefreshTokenHash");
+                    b.HasIndex("ScopeId", "RefreshTokenHash");
 
                     b.ToTable("member_sessions", "auth");
                 });
@@ -118,7 +118,7 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
-                    b.Property<string>("TenantId")
+                    b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
@@ -135,7 +135,7 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
 
                     b.HasIndex("MemberId");
 
-                    b.HasIndex("TenantId", "NormalizedValue")
+                    b.HasIndex("ScopeId", "NormalizedValue")
                         .IsUnique();
 
                     b.ToTable("member_usernames", "auth");
@@ -184,7 +184,7 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.Property<string>("ScopeId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
-                        .HasColumnName("TenantId");
+                        .HasColumnName("ScopeId");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -247,7 +247,7 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.Property<string>("ScopeId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
-                        .HasColumnName("TenantId");
+                        .HasColumnName("ScopeId");
 
                     b.Property<string>("Subject")
                         .IsRequired()

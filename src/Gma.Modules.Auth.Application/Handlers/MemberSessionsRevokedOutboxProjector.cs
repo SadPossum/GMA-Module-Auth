@@ -12,7 +12,7 @@ internal sealed class MemberSessionsRevokedOutboxProjector(IOutboxWriterRegistry
         outboxWriters.GetRequired(AuthModuleMetadata.Name).EnqueueAsync(
             new MemberSessionsRevokedIntegrationEvent(
                 domainEvent.EventId,
-                domainEvent.TenantId,
+                domainEvent.ScopeId,
                 domainEvent.OccurredAtUtc,
                 domainEvent.MemberId.Value,
                 domainEvent.RevokedSessionCount),

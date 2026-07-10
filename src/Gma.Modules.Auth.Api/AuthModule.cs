@@ -15,12 +15,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Gma.Framework.Api.Modules;
 using Gma.Framework.Api.Observability;
+using Gma.Framework.Api.Scoping;
 using Gma.Framework.Api.Results;
-using Gma.Framework.Api.Tenancy;
 using Gma.Framework.Cqrs;
 using Gma.Framework.ModuleComposition;
+using Gma.Framework.Scoping;
 using Gma.Framework.Security;
-using Gma.Framework.Tenancy;
 using Gma.Framework.Results;
 
 public sealed class AuthModule(AuthProfile profile) : IModule
@@ -28,7 +28,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
     private readonly AuthProfile profile = profile ?? throw new ArgumentNullException(nameof(profile));
 
     public AuthModule()
-        : this(AuthProfile.TenantScoped())
+        : this(AuthProfile.ScopeAware())
     {
     }
 
@@ -46,7 +46,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        bool requireTenant = this.profile.RequiresTenantContext;
+        bool requireScope = this.profile.RequiresScopeContext;
         RouteGroupBuilder group = endpoints.MapGroup("/api/auth")
             .WithModuleName(this.Name)
             .WithTags("Auth");
@@ -61,7 +61,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
                     UsernameTypeInput.FromJsonElement(request.UsernameType).Value,
                     request.Password),
                 cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes));
-        RequireTenantWhenNeeded(register, requireTenant);
+        RequireScopeWhenNeeded(register, requireScope);
 
         RouteHandlerBuilder login = group.MapPost("/login", async (
             LoginMemberRequest request,
@@ -70,7 +70,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
             (await dispatcher.SendAsync(
                 new LoginMemberCommand(request.Username, request.Password),
                 cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes));
-        RequireTenantWhenNeeded(login, requireTenant);
+        RequireScopeWhenNeeded(login, requireScope);
 
         RouteHandlerBuilder refresh = group.MapPost("/refresh", async (
             RefreshTokenRequest request,
@@ -79,16 +79,16 @@ public sealed class AuthModule(AuthProfile profile) : IModule
             (await dispatcher.SendAsync(
                 new RefreshMemberSessionCommand(request.AccessToken, request.RefreshToken),
                 cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes));
-        RequireTenantWhenNeeded(refresh, requireTenant);
+        RequireScopeWhenNeeded(refresh, requireScope);
 
         RouteHandlerBuilder signOut = group.MapPost("/sign-out", async (
             SignOutRequest request,
             ClaimsPrincipal user,
-            ITenantContext tenantContext,
+            IScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
         {
-            if (!this.TokenTenantMatches(user, tenantContext))
+            if (!this.TokenTenantMatches(user, scopeContext))
             {
                 return Results.Unauthorized();
             }
@@ -107,15 +107,15 @@ public sealed class AuthModule(AuthProfile profile) : IModule
             return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
         })
             .RequireAuthorization();
-        RequireTenantWhenNeeded(signOut, requireTenant);
+        RequireScopeWhenNeeded(signOut, requireScope);
 
         RouteHandlerBuilder signOutAll = group.MapPost("/sign-out-all", async (
             ClaimsPrincipal user,
-            ITenantContext tenantContext,
+            IScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
         {
-            if (!this.TokenTenantMatches(user, tenantContext))
+            if (!this.TokenTenantMatches(user, scopeContext))
             {
                 return Results.Unauthorized();
             }
@@ -134,25 +134,25 @@ public sealed class AuthModule(AuthProfile profile) : IModule
             return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
         })
             .RequireAuthorization();
-        RequireTenantWhenNeeded(signOutAll, requireTenant);
+        RequireScopeWhenNeeded(signOutAll, requireScope);
     }
 
     private static void AddProfileServices(IHostApplicationBuilder builder, AuthProfile profile)
     {
         builder.SelectModuleProfile(profile.Descriptor, "Gma.Modules.Auth.Api");
 
-        if (!profile.RequiresTenantContext &&
+        if (!profile.RequiresScopeContext &&
             !string.IsNullOrWhiteSpace(profile.GlobalScopeId))
         {
-            builder.Services.PostConfigure<TenantOptions>(options => options.LocalDefaultTenantId = profile.GlobalScopeId);
+            builder.Services.PostConfigure<ScopeOptions>(options => options.LocalDefaultScopeId = profile.GlobalScopeId);
         }
     }
 
-    private static void RequireTenantWhenNeeded(RouteHandlerBuilder builder, bool requireTenant)
+    private static void RequireScopeWhenNeeded(RouteHandlerBuilder builder, bool requireScope)
     {
-        if (requireTenant)
+        if (requireScope)
         {
-            builder.RequireTenant();
+            builder.RequireScope();
         }
     }
 
@@ -180,22 +180,22 @@ public sealed class AuthModule(AuthProfile profile) : IModule
             : null;
     }
 
-    private bool TokenTenantMatches(ClaimsPrincipal user, ITenantContext tenantContext)
+    private bool TokenTenantMatches(ClaimsPrincipal user, IScopeContext scopeContext)
     {
-        if (!this.profile.RequiresTenantContext)
+        if (!this.profile.RequiresScopeContext)
         {
             return true;
         }
 
-        if (!tenantContext.IsEnabled)
+        if (!scopeContext.IsEnabled)
         {
             return true;
         }
 
-        string? tokenTenantId = user.FindFirstValue(ApplicationClaimNames.TenantId);
+        string? tokenScopeId = user.FindFirstValue(ApplicationClaimNames.ScopeId);
 
-        return !string.IsNullOrWhiteSpace(tokenTenantId) &&
-               string.Equals(tokenTenantId, tenantContext.TenantId, StringComparison.Ordinal);
+        return !string.IsNullOrWhiteSpace(tokenScopeId) &&
+               string.Equals(tokenScopeId, scopeContext.ScopeId, StringComparison.Ordinal);
     }
 }
 

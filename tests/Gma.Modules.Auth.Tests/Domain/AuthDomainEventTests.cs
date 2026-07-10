@@ -28,7 +28,7 @@ public sealed class AuthDomainEventTests
         Assert.Equal(EventId, domainEvent.EventId);
         Assert.Equal(OccurredAtUtc, domainEvent.OccurredAtUtc);
         Assert.Equal(MemberId, domainEvent.MemberId);
-        Assert.Equal("tenant-a", domainEvent.TenantId);
+        Assert.Equal("tenant-a", domainEvent.ScopeId);
         Assert.Equal("member@example.com", domainEvent.Username);
     }
 
@@ -43,8 +43,8 @@ public sealed class AuthDomainEventTests
             default,
             "tenant-a",
             "member@example.com"));
-        Assert.Throws<ArgumentException>(() => CreateRegisteredEvent(tenantId: " "));
-        Assert.Throws<ArgumentException>(() => CreateRegisteredEvent(tenantId: new string('x', TenantIds.MaxLength + 1)));
+        Assert.Throws<ArgumentException>(() => CreateRegisteredEvent(scopeId: " "));
+        Assert.Throws<ArgumentException>(() => CreateRegisteredEvent(scopeId: new string('x', ScopeIds.MaxLength + 1)));
         Assert.Throws<ArgumentException>(() => CreateRegisteredEvent(username: " "));
         Assert.Throws<ArgumentException>(() => CreateRegisteredEvent(username: new string('x', MemberUsername.ValueMaxLength + 1)));
     }
@@ -96,12 +96,12 @@ public sealed class AuthDomainEventTests
         Guid? eventId = null,
         DateTimeOffset? occurredAtUtc = null,
         MemberId? memberId = null,
-        string tenantId = "tenant-a",
+        string scopeId = "tenant-a",
         string username = "member@example.com") =>
         new(
             eventId ?? EventId,
             occurredAtUtc ?? OccurredAtUtc,
             memberId ?? MemberId,
-            tenantId,
+            scopeId,
             username);
 }

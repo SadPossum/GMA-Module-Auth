@@ -11,17 +11,17 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateIndex(
-                name: "IX_members_TenantId_RegisteredAtUtc",
+                name: "IX_members_ScopeId_RegisteredAtUtc",
                 schema: "auth",
                 table: "members",
-                columns: new[] { "TenantId", "RegisteredAtUtc" });
+                columns: new[] { "ScopeId", "RegisteredAtUtc" });
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
-                name: "IX_members_TenantId_RegisteredAtUtc",
+                name: "IX_members_ScopeId_RegisteredAtUtc",
                 schema: "auth",
                 table: "members");
         }

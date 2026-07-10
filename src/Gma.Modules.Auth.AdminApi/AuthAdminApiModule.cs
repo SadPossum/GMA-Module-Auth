@@ -23,7 +23,7 @@ using Gma.Framework.Api.Observability;
 using Gma.Framework.Cqrs;
 using Gma.Framework.ModuleComposition;
 using Gma.Framework.Pagination;
-using Gma.Framework.Tenancy;
+using Gma.Framework.Scoping;
 using Gma.Framework.Results;
 
 public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
@@ -31,7 +31,7 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
     private readonly AuthProfile profile = profile ?? throw new ArgumentNullException(nameof(profile));
 
     public AuthAdminApiModule()
-        : this(AuthProfile.TenantScoped())
+        : this(AuthProfile.ScopeAware())
     {
     }
 
@@ -49,7 +49,7 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        bool requireTenant = this.profile.RequiresTenantContext;
+        bool requireTenant = this.profile.RequiresScopeContext;
         RouteGroupBuilder members = endpoints.MapGroup("/api/admin/auth/members")
             .WithModuleName(this.Name)
             .WithTags("Auth Admin")
@@ -177,10 +177,10 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
     {
         builder.SelectModuleProfile(profile.Descriptor, "Gma.Modules.Auth.AdminApi");
 
-        if (!profile.RequiresTenantContext &&
+        if (!profile.RequiresScopeContext &&
             !string.IsNullOrWhiteSpace(profile.GlobalScopeId))
         {
-            builder.Services.PostConfigure<TenantOptions>(options => options.LocalDefaultTenantId = profile.GlobalScopeId);
+            builder.Services.PostConfigure<ScopeOptions>(options => options.LocalDefaultScopeId = profile.GlobalScopeId);
         }
     }
 

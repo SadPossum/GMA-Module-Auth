@@ -32,7 +32,7 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext) : IAdmi
         AdminMemberListItem[] items = members
             .Select(member => new AdminMemberListItem(
                 member.Id.Value,
-                member.TenantId,
+                member.ScopeId,
                 ToContractStatus(member.Status),
                 GetActiveUsername(member),
                 member.RegisteredAtUtc,
@@ -56,7 +56,7 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext) : IAdmi
             ? null
             : new AdminMemberDetails(
                 member.Id.Value,
-                member.TenantId,
+                member.ScopeId,
                 ToContractStatus(member.Status),
                 GetActiveUsername(member),
                 member.RegisteredAtUtc,

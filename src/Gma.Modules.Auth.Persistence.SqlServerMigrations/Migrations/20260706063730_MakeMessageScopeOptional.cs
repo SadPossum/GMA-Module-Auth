@@ -11,7 +11,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AlterColumn<string>(
-                name: "TenantId",
+                name: "ScopeId",
                 schema: "auth",
                 table: "outbox_messages",
                 type: "nvarchar(128)",
@@ -22,7 +22,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                 oldMaxLength: 128);
 
             migrationBuilder.AlterColumn<string>(
-                name: "TenantId",
+                name: "ScopeId",
                 schema: "auth",
                 table: "inbox_messages",
                 type: "nvarchar(128)",
@@ -37,7 +37,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AlterColumn<string>(
-                name: "TenantId",
+                name: "ScopeId",
                 schema: "auth",
                 table: "outbox_messages",
                 type: "nvarchar(128)",
@@ -50,7 +50,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                 oldNullable: true);
 
             migrationBuilder.AlterColumn<string>(
-                name: "TenantId",
+                name: "ScopeId",
                 schema: "auth",
                 table: "inbox_messages",
                 type: "nvarchar(128)",

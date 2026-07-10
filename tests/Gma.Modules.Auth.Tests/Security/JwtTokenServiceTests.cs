@@ -28,7 +28,7 @@ public sealed class JwtTokenServiceTests
 
         Assert.NotNull(claims);
         Assert.Equal(memberId, claims.MemberId);
-        Assert.Equal("tenant-a", claims.TenantId);
+        Assert.Equal("tenant-a", claims.ScopeId);
         Assert.Equal(sessionId, claims.SessionId);
     }
 
@@ -59,7 +59,7 @@ public sealed class JwtTokenServiceTests
             claims:
             [
                 new Claim(ClaimTypes.NameIdentifier, memberId.Value.ToString()),
-                new Claim(GmaClaimNames.TenantId, "tenant-a"),
+                new Claim(GmaClaimNames.ScopeId, "tenant-a"),
                 new Claim(GmaClaimNames.SessionId, sessionId.Value.ToString())
             ],
             notBefore: new DateTime(2026, 7, 2, 12, 0, 0, DateTimeKind.Utc),

@@ -7,7 +7,7 @@ using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Modules.Auth.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Gma.Framework.Application.Events;
-using Gma.Framework.Tenancy;
+using Gma.Framework.Scoping;
 using Gma.Framework.Domain;
 using Gma.Framework.Messaging.Infrastructure;
 using Xunit;
@@ -83,7 +83,7 @@ public sealed class AuthUnitOfWorkTests
                     "gma.auth.member-registered.v1",
                     typeof(MemberRegisteredDomainEvent).FullName!,
                     1,
-                    memberRegistered.TenantId,
+                    memberRegistered.ScopeId,
                     memberRegistered.OccurredAtUtc,
                     "{}",
                     memberRegistered.OccurredAtUtc));
@@ -101,9 +101,9 @@ public sealed class AuthUnitOfWorkTests
             throw new InvalidOperationException("Domain event dispatch failed.");
     }
 
-    private sealed class TestTenantContext : ITenantContext
+    private sealed class TestTenantContext : IScopeContext
     {
         public bool IsEnabled => false;
-        public string? TenantId => "default";
+        public string? ScopeId => "default";
     }
 }

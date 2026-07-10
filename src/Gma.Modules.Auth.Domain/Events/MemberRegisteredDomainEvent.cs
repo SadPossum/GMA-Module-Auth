@@ -4,15 +4,15 @@ using Gma.Modules.Auth.Domain.Entities;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Framework.Domain;
 
-public sealed record MemberRegisteredDomainEvent : TenantDomainEvent
+public sealed record MemberRegisteredDomainEvent : ScopedDomainEvent
 {
     public MemberRegisteredDomainEvent(
         Guid eventId,
         DateTimeOffset occurredAtUtc,
         MemberId memberId,
-        string tenantId,
+        string scopeId,
         string username)
-        : base(eventId, occurredAtUtc, tenantId)
+        : base(eventId, occurredAtUtc, scopeId)
     {
         _ = DomainEventGuards.RequireId(memberId.Value, nameof(memberId));
         this.MemberId = memberId;

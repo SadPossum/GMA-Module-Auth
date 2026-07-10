@@ -35,7 +35,7 @@ Endpoints:
 - `POST /sign-out`
 - `POST /sign-out-all`
 
-Tenant-scoped endpoints require:
+Scope-aware endpoints require:
 
 ```http
 X-Tenant-Id: <tenant-id>
@@ -238,7 +238,7 @@ Routes:
 - `POST /api/admin/auth/members/{memberId}/reset-password`
 - `POST /api/admin/auth/members/{memberId}/revoke-sessions`
 
-Tenant-scoped routes require `X-Tenant-Id`. Destructive routes require an explicit `confirmed: true` request body field. Generated passwords are returned once and must not be logged or audited.
+Scope-aware routes require `X-Tenant-Id`. Destructive routes require an explicit `confirmed: true` request body field. Generated passwords are returned once and must not be logged or audited.
 
 ## Tests
 

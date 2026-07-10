@@ -7,15 +7,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Gma.Framework.ModuleComposition;
-using Gma.Framework.Tenancy;
-using Gma.Framework.Tenancy.Infrastructure;
+using Gma.Framework.Scoping;
+using Gma.Framework.Scoping.Infrastructure;
 using Xunit;
 
 [Trait("Category", "Unit")]
 public sealed class AuthProfileTests
 {
     [Fact]
-    public void Global_profile_does_not_require_tenancy_context()
+    public void Global_profile_does_not_require_scope_context()
     {
         AuthProfile profile = AuthProfile.Global("global");
 
@@ -23,7 +23,7 @@ public sealed class AuthProfileTests
             selectedProfiles: [new SelectedModuleProfile(profile.Descriptor)]));
 
         Assert.True(result.IsValid);
-        Assert.False(profile.RequiresTenantContext);
+        Assert.False(profile.RequiresScopeContext);
         Assert.Equal("global", profile.GlobalScopeId);
         Assert.Contains(profile.Descriptor.Provides, feature => feature.Id == AuthCompositionFeatures.GlobalScope);
     }
@@ -34,7 +34,7 @@ public sealed class AuthProfileTests
         IHostApplicationBuilder builder = Host.CreateApplicationBuilder();
         builder.Configuration.AddInMemoryCollection(CreateValidAuthConfiguration());
 
-        builder.AddTenancyInfrastructure();
+        builder.AddScopingInfrastructure();
         builder.AddAuthModule(AuthProfile.Global("global"));
 
         ModuleCompositionValidationResult result = builder.ValidateModuleComposition();
@@ -45,38 +45,38 @@ public sealed class AuthProfileTests
         using IServiceScope scope = provider.CreateScope();
 
         SelectedModuleProfile selectedProfile = Assert.Single(scope.ServiceProvider.GetServices<SelectedModuleProfile>());
-        TenantOptions tenantOptions = scope.ServiceProvider.GetRequiredService<IOptions<TenantOptions>>().Value;
-        ITenantContext tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+        ScopeOptions scopeOptions = scope.ServiceProvider.GetRequiredService<IOptions<ScopeOptions>>().Value;
+        IScopeContext scopeContext = scope.ServiceProvider.GetRequiredService<IScopeContext>();
 
         Assert.Equal(AuthModuleMetadata.Name, selectedProfile.Profile.ModuleName);
         Assert.Equal(AuthProfile.GlobalProfileName, selectedProfile.Profile.ProfileName);
-        Assert.False(tenantOptions.Enabled);
-        Assert.Equal("global", tenantOptions.LocalDefaultTenantId);
-        Assert.False(tenantContext.IsEnabled);
-        Assert.Equal("global", tenantContext.TenantId);
+        Assert.False(scopeOptions.Enabled);
+        Assert.Equal("global", scopeOptions.LocalDefaultScopeId);
+        Assert.False(scopeContext.IsEnabled);
+        Assert.Equal("global", scopeContext.ScopeId);
     }
 
     [Fact]
-    public void Tenant_scoped_profile_requires_tenancy_context()
+    public void Tenant_scoped_profile_requires_scope_context()
     {
-        AuthProfile profile = AuthProfile.TenantScoped();
+        AuthProfile profile = AuthProfile.ScopeAware();
 
         ModuleCompositionValidationResult result = ModuleCompositionValidator.Validate(new ModuleCompositionSnapshot(
             selectedProfiles: [new SelectedModuleProfile(profile.Descriptor)]));
 
         Assert.False(result.IsValid);
-        Assert.Contains("tenancy.context", Assert.Single(result.Errors), StringComparison.Ordinal);
+        Assert.Contains("scoping.context", Assert.Single(result.Errors), StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Tenant_scoped_profile_is_satisfied_by_tenancy_profile()
+    public void Tenant_scoped_profile_is_satisfied_by_scoping_profile()
     {
-        AuthProfile profile = AuthProfile.TenantScoped();
+        AuthProfile profile = AuthProfile.ScopeAware();
 
         ModuleCompositionValidationResult result = ModuleCompositionValidator.Validate(new ModuleCompositionSnapshot(
             selectedProfiles:
             [
-                new SelectedModuleProfile(CreateTenantContextProfile()),
+                new SelectedModuleProfile(CreateScopeContextProfile()),
                 new SelectedModuleProfile(profile.Descriptor)
             ]));
 
@@ -84,21 +84,20 @@ public sealed class AuthProfileTests
     }
 
     [Fact]
-    public void Tenancy_profile_advertises_header_resolution_separately_from_context()
+    public void Scoping_profile_advertises_context_only()
     {
-        ModuleProfileDescriptor profile = CreateTenantContextProfile();
+        ModuleProfileDescriptor profile = CreateScopeContextProfile();
 
-        Assert.Contains(profile.Provides, feature => feature.Id == TenancyCompositionFeatures.Context);
-        Assert.Contains(profile.Provides, feature => feature.Id == TenancyCompositionFeatures.HeaderResolution);
+        Assert.Contains(profile.Provides, feature => feature.Id == ScopeCompositionFeatures.Context);
+        Assert.DoesNotContain(profile.Provides, feature => feature.Id.Value.Contains("header", StringComparison.Ordinal));
     }
 
-    private static ModuleProfileDescriptor CreateTenantContextProfile() => new(
-        "test-tenancy",
+    private static ModuleProfileDescriptor CreateScopeContextProfile() => new(
+        "test-scoping",
         "default",
         provides:
         [
-            TenancyCompositionFeatures.ContextProvided("test-tenancy/default"),
-            TenancyCompositionFeatures.HeaderResolutionProvided("test-tenancy/default")
+            ScopeCompositionFeatures.ContextProvided("test-scoping/default")
         ]);
 
     private static IEnumerable<KeyValuePair<string, string?>> CreateValidAuthConfiguration() =>

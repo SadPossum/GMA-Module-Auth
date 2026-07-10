@@ -54,10 +54,10 @@ public sealed class MemberAggregateTests
     {
         var normalized = CreateMember("member@example.com", " tenant-a ");
         var missing = CreateMember("member@example.com", " ");
-        var invalid = CreateMember("member@example.com", new string('x', TenantIds.MaxLength + 1));
+        var invalid = CreateMember("member@example.com", new string('x', ScopeIds.MaxLength + 1));
 
         Assert.True(normalized.IsSuccess);
-        Assert.Equal("tenant-a", normalized.Value.TenantId);
+        Assert.Equal("tenant-a", normalized.Value.ScopeId);
         Assert.True(missing.IsFailure);
         Assert.Equal(AuthDomainErrors.TenantRequired, missing.Error);
         Assert.True(invalid.IsFailure);
@@ -352,14 +352,14 @@ public sealed class MemberAggregateTests
 
     private static Gma.Framework.Results.Result<Member> CreateMember(
         string username,
-        string tenantId = "tenant-a",
+        string scopeId = "tenant-a",
         string passwordHash = "hash",
         MemberId? memberId = null,
         MemberUsernameId? usernameId = null,
         Guid? registeredEventId = null) =>
         Member.Create(
             memberId ?? new MemberId(Guid.NewGuid()),
-            tenantId,
+            scopeId,
             username,
             MemberUsernameType.Email,
             passwordHash,

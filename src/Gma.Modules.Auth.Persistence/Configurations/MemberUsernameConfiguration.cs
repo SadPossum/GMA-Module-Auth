@@ -26,7 +26,7 @@ internal sealed class MemberUsernameConfiguration : IEntityTypeConfiguration<Mem
             .HasMaxLength(MemberUsername.NormalizedValueMaxLength)
             .IsRequired();
 
-        builder.HasIndex(username => new { username.TenantId, username.NormalizedValue })
+        builder.HasIndex(username => new { username.ScopeId, username.NormalizedValue })
             .IsUnique();
     }
 }

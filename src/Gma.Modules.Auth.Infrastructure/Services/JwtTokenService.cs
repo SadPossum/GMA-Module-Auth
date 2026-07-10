@@ -13,9 +13,9 @@ using Gma.Framework.Runtime.Time;
 
 internal sealed class JwtTokenService(IOptions<JwtSettings> options, ISystemClock clock) : ITokenService
 {
-    public string GenerateAccessToken(MemberId memberId, string tenantId, MemberSessionId sessionId)
+    public string GenerateAccessToken(MemberId memberId, string scopeId, MemberSessionId sessionId)
     {
-        AccessTokenClaims accessTokenClaims = new(memberId, tenantId, sessionId);
+        AccessTokenClaims accessTokenClaims = new(memberId, scopeId, sessionId);
         JwtSettings settings = options.Value;
         SymmetricSecurityKey securityKey = new(Encoding.UTF8.GetBytes(settings.SigningKey));
         SigningCredentials signingCredentials = new(securityKey, SecurityAlgorithms.HmacSha256);
@@ -23,7 +23,7 @@ internal sealed class JwtTokenService(IOptions<JwtSettings> options, ISystemCloc
         Claim[] claims =
         [
             new Claim(ClaimTypes.NameIdentifier, accessTokenClaims.MemberId.Value.ToString()),
-            new Claim(ApplicationClaimNames.TenantId, accessTokenClaims.TenantId),
+            new Claim(ApplicationClaimNames.ScopeId, accessTokenClaims.ScopeId),
             new Claim(ApplicationClaimNames.SessionId, accessTokenClaims.SessionId.Value.ToString())
         ];
 
@@ -58,12 +58,12 @@ internal sealed class JwtTokenService(IOptions<JwtSettings> options, ISystemCloc
         {
             ClaimsPrincipal principal = handler.ValidateToken(accessToken, parameters, out _);
             string? memberIdValue = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-            string? tenantId = principal.FindFirstValue(ApplicationClaimNames.TenantId);
+            string? scopeId = principal.FindFirstValue(ApplicationClaimNames.ScopeId);
             string? sessionIdValue = principal.FindFirstValue(ApplicationClaimNames.SessionId);
 
             return Guid.TryParse(memberIdValue, out Guid memberId) &&
                    Guid.TryParse(sessionIdValue, out Guid sessionId)
-                ? new AccessTokenClaims(new MemberId(memberId), tenantId!, new MemberSessionId(sessionId))
+                ? new AccessTokenClaims(new MemberId(memberId), scopeId!, new MemberSessionId(sessionId))
                 : null;
         }
         catch (SecurityTokenException)

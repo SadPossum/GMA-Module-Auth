@@ -1,6 +1,6 @@
 namespace Gma.Modules.Auth.Contracts;
 
-using Gma.Framework.Authorization;
+using Gma.Framework.Permissions;
 using Gma.Framework.Messaging;
 using Gma.Framework.ModuleComposition;
 using Gma.Framework.Modules;
@@ -13,14 +13,14 @@ public static class AuthModuleMetadata
     public static ModuleDescriptor Descriptor { get; } = ModuleDescriptor
         .Create(Name)
         .WithSchema(Schema)
-        .WithProfiles([AuthProfile.Global().Descriptor, AuthProfile.TenantScoped().Descriptor])
+        .WithProfiles([AuthProfile.Global().Descriptor, AuthProfile.ScopeAware().Descriptor])
         .WithPermissions([
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersRead, "Read Auth members.", tenantScoped: true),
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersCreate, "Create Auth members.", tenantScoped: true),
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersDisable, "Disable Auth members.", tenantScoped: true),
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersEnable, "Enable Auth members.", tenantScoped: true),
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersResetPassword, "Reset Auth member passwords.", tenantScoped: true),
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersRevokeSessions, "Revoke Auth member sessions.", tenantScoped: true),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersRead, "Read Auth members.", scopeRequirement: PermissionScopeRequirement.Scoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersCreate, "Create Auth members.", scopeRequirement: PermissionScopeRequirement.Scoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersDisable, "Disable Auth members.", scopeRequirement: PermissionScopeRequirement.Scoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersEnable, "Enable Auth members.", scopeRequirement: PermissionScopeRequirement.Scoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersResetPassword, "Reset Auth member passwords.", scopeRequirement: PermissionScopeRequirement.Scoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersRevokeSessions, "Revoke Auth member sessions.", scopeRequirement: PermissionScopeRequirement.Scoped),
         ])
         .WithPublishedEvent<MemberRegisteredIntegrationEvent>()
         .WithPublishedEvent<MemberDisabledIntegrationEvent>()

@@ -16,7 +16,7 @@ using Gma.Framework.Administration;
 using Gma.Framework.Administration.Cli;
 using Gma.Framework.Cqrs;
 using Gma.Framework.Pagination;
-using Gma.Framework.Tenancy;
+using Gma.Framework.Scoping;
 using Gma.Framework.Results;
 
 public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
@@ -24,7 +24,7 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
     private readonly AuthProfile profile = profile ?? throw new ArgumentNullException(nameof(profile));
 
     public AuthAdminCliModule()
-        : this(AuthProfile.TenantScoped())
+        : this(AuthProfile.ScopeAware())
     {
     }
 
@@ -41,7 +41,7 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
     public void MapCommands(IAdminCliCommandRegistry commands)
     {
         AdminCliGlobalOptions globalOptions = commands.Services.GetRequiredService<AdminCliGlobalOptions>();
-        bool requireTenant = this.profile.RequiresTenantContext;
+        bool requireTenant = this.profile.RequiresScopeContext;
         Command members = new("members", "Manage Auth members.")
         {
             CreateListCommand(commands.Services, globalOptions, requireTenant),
@@ -64,10 +64,10 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
     {
         builder.SelectModuleProfile(profile.Descriptor, "Gma.Modules.Auth.AdminCli");
 
-        if (!profile.RequiresTenantContext &&
+        if (!profile.RequiresScopeContext &&
             !string.IsNullOrWhiteSpace(profile.GlobalScopeId))
         {
-            builder.Services.PostConfigure<TenantOptions>(options => options.LocalDefaultTenantId = profile.GlobalScopeId);
+            builder.Services.PostConfigure<ScopeOptions>(options => options.LocalDefaultScopeId = profile.GlobalScopeId);
         }
     }
 
@@ -91,12 +91,12 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
         command.SetAction((parseResult, cancellationToken) =>
         {
             AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();
-            string? tenantId = parseResult.GetValue(globalOptions.TenantOption);
+            string? scopeId = parseResult.GetValue(globalOptions.TenantOption);
 
             return executor.ExecuteAsync(
                 parseResult,
                 AdminOperation.Create(AuthAdminOperationNames.MembersList, AuthAdminPermissions.MembersRead),
-                tenantId,
+                scopeId,
                 requireTenant,
                 async (provider, token) =>
                 {
@@ -136,12 +136,12 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
         command.SetAction((parseResult, cancellationToken) =>
         {
             AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();
-            string? tenantId = parseResult.GetValue(globalOptions.TenantOption);
+            string? scopeId = parseResult.GetValue(globalOptions.TenantOption);
 
             return executor.ExecuteAsync(
                 parseResult,
                 AdminOperation.Create(AuthAdminOperationNames.MembersGet, AuthAdminPermissions.MembersRead),
-                tenantId,
+                scopeId,
                 requireTenant,
                 async (provider, token) =>
                 {
@@ -202,12 +202,12 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();
-            string? tenantId = parseResult.GetValue(globalOptions.TenantOption);
+            string? scopeId = parseResult.GetValue(globalOptions.TenantOption);
 
             return await executor.ExecuteAsync(
                 parseResult,
                 AdminOperation.Create(AuthAdminOperationNames.MembersCreate, AuthAdminPermissions.MembersCreate),
-                tenantId,
+                scopeId,
                 requireTenant,
                 async (provider, token) =>
                 {
@@ -272,12 +272,12 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
         command.SetAction((parseResult, cancellationToken) =>
         {
             AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();
-            string? tenantId = parseResult.GetValue(globalOptions.TenantOption);
+            string? scopeId = parseResult.GetValue(globalOptions.TenantOption);
 
             return executor.ExecuteAsync(
                 parseResult,
                 AdminOperation.Create(AuthAdminOperationNames.MembersDisable, AuthAdminPermissions.MembersDisable),
-                tenantId,
+                scopeId,
                 requireTenant,
                 async (provider, token) =>
                 {
@@ -314,12 +314,12 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
         command.SetAction((parseResult, cancellationToken) =>
         {
             AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();
-            string? tenantId = parseResult.GetValue(globalOptions.TenantOption);
+            string? scopeId = parseResult.GetValue(globalOptions.TenantOption);
 
             return executor.ExecuteAsync(
                 parseResult,
                 AdminOperation.Create(AuthAdminOperationNames.MembersEnable, AuthAdminPermissions.MembersEnable),
-                tenantId,
+                scopeId,
                 requireTenant,
                 async (provider, token) =>
                 {
@@ -360,12 +360,12 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();
-            string? tenantId = parseResult.GetValue(globalOptions.TenantOption);
+            string? scopeId = parseResult.GetValue(globalOptions.TenantOption);
 
             return await executor.ExecuteAsync(
                 parseResult,
                 AdminOperation.Create(AuthAdminOperationNames.MembersResetPassword, AuthAdminPermissions.MembersResetPassword),
-                tenantId,
+                scopeId,
                 requireTenant,
                 async (provider, token) =>
                 {
@@ -415,12 +415,12 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
         command.SetAction((parseResult, cancellationToken) =>
         {
             AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();
-            string? tenantId = parseResult.GetValue(globalOptions.TenantOption);
+            string? scopeId = parseResult.GetValue(globalOptions.TenantOption);
 
             return executor.ExecuteAsync(
                 parseResult,
                 AdminOperation.Create(AuthAdminOperationNames.MembersRevokeSessions, AuthAdminPermissions.MembersRevokeSessions),
-                tenantId,
+                scopeId,
                 requireTenant,
                 async (provider, token) =>
                 {

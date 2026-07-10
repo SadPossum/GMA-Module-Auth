@@ -5,7 +5,7 @@ using Gma.Modules.Auth.Domain.ValueObjects;
 
 public interface ITokenService
 {
-    string GenerateAccessToken(MemberId memberId, string tenantId, MemberSessionId sessionId);
+    string GenerateAccessToken(MemberId memberId, string scopeId, MemberSessionId sessionId);
     string GenerateRefreshToken();
     MemberId? GetMemberId(string accessToken, bool validateLifetime);
     AccessTokenClaims? GetAccessTokenClaims(string accessToken, bool validateLifetime);
@@ -13,7 +13,7 @@ public interface ITokenService
 
 public sealed record AccessTokenClaims
 {
-    public AccessTokenClaims(MemberId memberId, string tenantId, MemberSessionId sessionId)
+    public AccessTokenClaims(MemberId memberId, string scopeId, MemberSessionId sessionId)
     {
         if (memberId.Value == Guid.Empty)
         {
@@ -26,11 +26,11 @@ public sealed record AccessTokenClaims
         }
 
         this.MemberId = memberId;
-        this.TenantId = TenantIds.Normalize(tenantId);
+        this.ScopeId = ScopeIds.Normalize(scopeId);
         this.SessionId = sessionId;
     }
 
     public MemberId MemberId { get; }
-    public string TenantId { get; }
+    public string ScopeId { get; }
     public MemberSessionId SessionId { get; }
 }

@@ -12,7 +12,7 @@ internal sealed class MemberDisabledOutboxProjector(IOutboxWriterRegistry outbox
         outboxWriters.GetRequired(AuthModuleMetadata.Name).EnqueueAsync(
             new MemberDisabledIntegrationEvent(
                 domainEvent.EventId,
-                domainEvent.TenantId,
+                domainEvent.ScopeId,
                 domainEvent.OccurredAtUtc,
                 domainEvent.MemberId.Value,
                 domainEvent.Reason),

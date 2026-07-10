@@ -101,7 +101,7 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                 defaultValue: "");
 
             migrationBuilder.AddColumn<string>(
-                name: "TenantId",
+                name: "ScopeId",
                 schema: "auth",
                 table: "inbox_messages",
                 type: "character varying(128)",
@@ -183,7 +183,7 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                 table: "inbox_messages");
 
             migrationBuilder.DropColumn(
-                name: "TenantId",
+                name: "ScopeId",
                 schema: "auth",
                 table: "inbox_messages");
 

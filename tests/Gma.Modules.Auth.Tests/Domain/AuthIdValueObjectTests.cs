@@ -53,11 +53,11 @@ public sealed class AuthIdValueObjectTests
         AccessTokenClaims claims = new(memberId, " tenant-a ", sessionId);
 
         Assert.Equal(memberId, claims.MemberId);
-        Assert.Equal("tenant-a", claims.TenantId);
+        Assert.Equal("tenant-a", claims.ScopeId);
         Assert.Equal(sessionId, claims.SessionId);
         Assert.Throws<ArgumentException>(() => new AccessTokenClaims(default, "tenant-a", sessionId));
         Assert.Throws<ArgumentException>(() => new AccessTokenClaims(memberId, "tenant-a", default));
         Assert.Throws<ArgumentException>(() => new AccessTokenClaims(memberId, " ", sessionId));
-        Assert.Throws<ArgumentException>(() => new AccessTokenClaims(memberId, new string('x', TenantIds.MaxLength + 1), sessionId));
+        Assert.Throws<ArgumentException>(() => new AccessTokenClaims(memberId, new string('x', ScopeIds.MaxLength + 1), sessionId));
     }
 }

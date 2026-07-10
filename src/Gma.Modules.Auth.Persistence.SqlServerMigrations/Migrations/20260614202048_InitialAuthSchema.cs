@@ -34,7 +34,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    TenantId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    ScopeId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     PasswordHash = table.Column<string>(type: "nvarchar(512)", maxLength: 512, nullable: false)
                 },
                 constraints: table =>
@@ -51,7 +51,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     Subject = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false),
                     EventType = table.Column<string>(type: "nvarchar(512)", maxLength: 512, nullable: false),
                     Version = table.Column<int>(type: "int", nullable: false),
-                    TenantId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    ScopeId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     OccurredAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     CreatedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     Payload = table.Column<string>(type: "nvarchar(max)", nullable: false),
@@ -74,7 +74,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     MemberId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    TenantId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    ScopeId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     RefreshTokenHash = table.Column<string>(type: "nvarchar(512)", maxLength: 512, nullable: false),
                     RefreshTokenExpiresAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     LoginDateTimeUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
@@ -100,7 +100,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     MemberId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    TenantId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    ScopeId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     Value = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false),
                     NormalizedValue = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false),
                     UsernameType = table.Column<int>(type: "int", nullable: false),
@@ -125,10 +125,10 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                 column: "MemberId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_member_sessions_TenantId_RefreshTokenHash",
+                name: "IX_member_sessions_ScopeId_RefreshTokenHash",
                 schema: "auth",
                 table: "member_sessions",
-                columns: new[] { "TenantId", "RefreshTokenHash" });
+                columns: new[] { "ScopeId", "RefreshTokenHash" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_member_usernames_MemberId",
@@ -137,10 +137,10 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                 column: "MemberId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_member_usernames_TenantId_NormalizedValue",
+                name: "IX_member_usernames_ScopeId_NormalizedValue",
                 schema: "auth",
                 table: "member_usernames",
-                columns: new[] { "TenantId", "NormalizedValue" },
+                columns: new[] { "ScopeId", "NormalizedValue" },
                 unique: true);
 
             migrationBuilder.CreateIndex(

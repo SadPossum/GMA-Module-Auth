@@ -32,7 +32,7 @@ internal sealed class MemberConfiguration : IEntityTypeConfiguration<Member>
         builder.Property(member => member.DisabledReason)
             .HasMaxLength(Member.DisabledReasonMaxLength);
 
-        builder.HasIndex(member => new { member.TenantId, member.RegisteredAtUtc });
+        builder.HasIndex(member => new { member.ScopeId, member.RegisteredAtUtc });
 
         builder.HasMany(member => member.Usernames)
             .WithOne()

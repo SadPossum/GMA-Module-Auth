@@ -4,11 +4,11 @@ using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Gma.Framework.Persistence.EntityFrameworkCore;
-using Gma.Framework.Tenancy;
+using Gma.Framework.Scoping;
 using Gma.Framework.Messaging.Infrastructure;
 
-public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, ITenantContext tenantContext)
-    : TenantAwareDbContext<AuthDbContext>(options, tenantContext)
+public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, IScopeContext scopeContext)
+    : ScopeAwareDbContext<AuthDbContext>(options, scopeContext)
 {
     public DbSet<Member> Members => this.Set<Member>();
     public DbSet<MemberUsername> MemberUsernames => this.Set<MemberUsername>();
@@ -20,6 +20,6 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, ITena
     {
         modelBuilder.HasDefaultSchema(AuthMigrations.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AuthDbContext).Assembly);
-        this.ApplyTenantConventions(modelBuilder);
+        this.ApplyScopeConventions(modelBuilder);
     }
 }

@@ -101,7 +101,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                 defaultValue: "");
 
             migrationBuilder.AddColumn<string>(
-                name: "TenantId",
+                name: "ScopeId",
                 schema: "auth",
                 table: "inbox_messages",
                 type: "nvarchar(128)",
@@ -183,7 +183,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                 table: "inbox_messages");
 
             migrationBuilder.DropColumn(
-                name: "TenantId",
+                name: "ScopeId",
                 schema: "auth",
                 table: "inbox_messages");
 

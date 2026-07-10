@@ -6,7 +6,7 @@ using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Modules.Auth.Persistence;
 using Gma.Modules.Auth.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
-using Gma.Framework.Tenancy;
+using Gma.Framework.Scoping;
 using Xunit;
 
 [Trait("Category", "Unit")]
@@ -55,9 +55,9 @@ public sealed class MemberRepositoryTests
             Guid.NewGuid(),
             Now).Value;
 
-    private sealed class TestTenantContext : ITenantContext
+    private sealed class TestTenantContext : IScopeContext
     {
         public bool IsEnabled => true;
-        public string? TenantId => "tenant-a";
+        public string? ScopeId => "tenant-a";
     }
 }

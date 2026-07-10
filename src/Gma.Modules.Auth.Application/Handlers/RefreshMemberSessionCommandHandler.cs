@@ -8,7 +8,7 @@ using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
 using Microsoft.Extensions.Options;
 using Gma.Framework.Cqrs;
-using Gma.Framework.Tenancy;
+using Gma.Framework.Scoping;
 using Gma.Framework.Runtime.Time;
 using Gma.Framework.Results;
 
@@ -17,7 +17,7 @@ internal sealed class RefreshMemberSessionCommandHandler(
     ITokenService tokenService,
     IRefreshTokenHashingService refreshTokenHashingService,
     IOptions<AuthApplicationOptions> options,
-    ITenantContext tenantContext,
+    IScopeContext scopeContext,
     ISystemClock clock)
     : ICommandHandler<RefreshMemberSessionCommand, AuthTokensResponse>
 {
@@ -32,8 +32,8 @@ internal sealed class RefreshMemberSessionCommandHandler(
             return Result.Failure<AuthTokensResponse>(AuthApplicationErrors.TokenInvalid);
         }
 
-        if (tenantContext.IsEnabled &&
-            !string.Equals(tenantContext.TenantId, claims.TenantId, StringComparison.Ordinal))
+        if (scopeContext.IsEnabled &&
+            !string.Equals(scopeContext.ScopeId, claims.ScopeId, StringComparison.Ordinal))
         {
             return Result.Failure<AuthTokensResponse>(AuthApplicationErrors.TenantMismatch);
         }
@@ -45,7 +45,7 @@ internal sealed class RefreshMemberSessionCommandHandler(
             return Result.Failure<AuthTokensResponse>(AuthDomainErrors.MemberNotFound);
         }
 
-        string accessToken = tokenService.GenerateAccessToken(member.Id, member.TenantId, claims.SessionId);
+        string accessToken = tokenService.GenerateAccessToken(member.Id, member.ScopeId, claims.SessionId);
         string refreshToken = tokenService.GenerateRefreshToken();
         string refreshTokenHash = refreshTokenHashingService.HashRefreshToken(command.RefreshToken);
         string newRefreshTokenHash = refreshTokenHashingService.HashRefreshToken(refreshToken);

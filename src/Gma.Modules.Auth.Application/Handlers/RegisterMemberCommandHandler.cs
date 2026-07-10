@@ -10,14 +10,14 @@ using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Microsoft.Extensions.Options;
 using Gma.Framework.Cqrs;
+using Gma.Framework.Scoping;
 using Gma.Framework.Runtime.Identity;
-using Gma.Framework.Tenancy;
 using Gma.Framework.Runtime.Time;
 using Gma.Framework.Results;
 
 internal sealed class RegisterMemberCommandHandler(
     IMemberRepository memberRepository,
-    ITenantContext tenantContext,
+    IScopeContext scopeContext,
     IPasswordHashingService passwordHashingService,
     ITokenService tokenService,
     IRefreshTokenHashingService refreshTokenHashingService,
@@ -31,7 +31,7 @@ internal sealed class RegisterMemberCommandHandler(
         RegisterMemberCommand command,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(tenantContext.TenantId))
+        if (string.IsNullOrWhiteSpace(scopeContext.ScopeId))
         {
             return Result.Failure<AuthTokensResponse>(AuthApplicationErrors.TenantRequired);
         }
@@ -45,7 +45,7 @@ internal sealed class RegisterMemberCommandHandler(
         string passwordHash = passwordHashingService.HashPassword(command.Password);
         Result<Member> memberResult = Member.Create(
             new MemberId(this.IdGenerator.NewId()),
-            tenantContext.TenantId,
+            scopeContext.ScopeId,
             command.Username,
             usernameType.Value,
             passwordHash,
@@ -64,7 +64,7 @@ internal sealed class RegisterMemberCommandHandler(
         }
 
         Member member = memberResult.Value;
-        var tokens = this.CreateTokens(member.Id, member.TenantId, TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
+        var tokens = this.CreateTokens(member.Id, member.ScopeId, TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
         Result startSessionResult = member.StartSession(tokens.SessionId, tokens.RefreshTokenHash, tokens.ExpiresAtUtc, this.Clock.UtcNow);
 
         if (startSessionResult.IsFailure)

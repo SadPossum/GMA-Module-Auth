@@ -8,7 +8,7 @@ using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Framework.Domain.Models;
 using Gma.Framework.Results;
 
-public sealed partial class MemberUsername : TenantEntity<MemberUsernameId>
+public sealed partial class MemberUsername : ScopedEntity<MemberUsernameId>
 {
     public const int ValueMaxLength = 256;
     public const int NormalizedValueMaxLength = ValueMaxLength;
@@ -18,10 +18,10 @@ public sealed partial class MemberUsername : TenantEntity<MemberUsernameId>
     private MemberUsername(
         MemberUsernameId id,
         MemberId memberId,
-        string tenantId,
+        string scopeId,
         string value,
         MemberUsernameType usernameType)
-        : base(id, tenantId)
+        : base(id, scopeId)
     {
         string normalizedValue = Normalize(value);
 
@@ -41,7 +41,7 @@ public sealed partial class MemberUsername : TenantEntity<MemberUsernameId>
     internal static Result<MemberUsername> Create(
         MemberUsernameId id,
         MemberId memberId,
-        string tenantId,
+        string scopeId,
         string value,
         MemberUsernameType usernameType)
     {
@@ -55,7 +55,7 @@ public sealed partial class MemberUsername : TenantEntity<MemberUsernameId>
             return Result.Failure<MemberUsername>(AuthDomainErrors.MemberIdRequired);
         }
 
-        if (!TenantIds.TryNormalize(tenantId, out _))
+        if (!ScopeIds.TryNormalize(scopeId, out _))
         {
             return Result.Failure<MemberUsername>(AuthDomainErrors.TenantInvalid);
         }
@@ -67,7 +67,7 @@ public sealed partial class MemberUsername : TenantEntity<MemberUsernameId>
             return Result.Failure<MemberUsername>(AuthDomainErrors.UsernameNotValid);
         }
 
-        return Result.Success(new MemberUsername(id, memberId, tenantId, value.Trim(), usernameType));
+        return Result.Success(new MemberUsername(id, memberId, scopeId, value.Trim(), usernameType));
     }
 
     internal void Deactivate() => this.IsActive = false;

@@ -9,7 +9,7 @@ using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Framework.Domain.Models;
 using Gma.Framework.Results;
 
-public sealed class Member : TenantAggregateRoot<MemberId>
+public sealed class Member : ScopedAggregateRoot<MemberId>
 {
     public const int PasswordHashMaxLength = 512;
     public const int DisabledReasonMaxLength = 512;
@@ -19,8 +19,8 @@ public sealed class Member : TenantAggregateRoot<MemberId>
 
     private Member() { }
 
-    private Member(MemberId id, string tenantId, string passwordHash)
-        : base(id, tenantId)
+    private Member(MemberId id, string scopeId, string passwordHash)
+        : base(id, scopeId)
     {
         this.PasswordHash = passwordHash;
         this.Status = MemberStatus.Active;
@@ -36,7 +36,7 @@ public sealed class Member : TenantAggregateRoot<MemberId>
 
     public static Result<Member> Create(
         MemberId id,
-        string tenantId,
+        string scopeId,
         string username,
         MemberUsernameType usernameType,
         string passwordHash,
@@ -54,12 +54,12 @@ public sealed class Member : TenantAggregateRoot<MemberId>
             return Result.Failure<Member>(AuthDomainErrors.DomainEventIdRequired);
         }
 
-        if (string.IsNullOrWhiteSpace(tenantId))
+        if (string.IsNullOrWhiteSpace(scopeId))
         {
             return Result.Failure<Member>(AuthDomainErrors.TenantRequired);
         }
 
-        if (!TenantIds.TryNormalize(tenantId, out string? normalizedTenantId))
+        if (!ScopeIds.TryNormalize(scopeId, out string? normalizedScopeId))
         {
             return Result.Failure<Member>(AuthDomainErrors.TenantInvalid);
         }
@@ -69,7 +69,7 @@ public sealed class Member : TenantAggregateRoot<MemberId>
             return Result.Failure<Member>(AuthDomainErrors.PasswordNotValid);
         }
 
-        Member member = new(id, normalizedTenantId, passwordHash)
+        Member member = new(id, normalizedScopeId, passwordHash)
         {
             RegisteredAtUtc = registeredAtUtc
         };
@@ -84,7 +84,7 @@ public sealed class Member : TenantAggregateRoot<MemberId>
             registeredEventId,
             registeredAtUtc,
             member.Id,
-            member.TenantId,
+            member.ScopeId,
             usernameResult.Value.Value));
 
         return Result.Success(member);
@@ -98,7 +98,7 @@ public sealed class Member : TenantAggregateRoot<MemberId>
         Result<MemberUsername> usernameResult = MemberUsername.Create(
             usernameId,
             this.Id,
-            this.TenantId,
+            this.ScopeId,
             value,
             usernameType);
 
@@ -143,7 +143,7 @@ public sealed class Member : TenantAggregateRoot<MemberId>
         Result<MemberSession> sessionResult = MemberSession.Create(
             sessionId,
             this.Id,
-            this.TenantId,
+            this.ScopeId,
             refreshTokenHash,
             refreshTokenExpiresAtUtc,
             nowUtc);
@@ -251,7 +251,7 @@ public sealed class Member : TenantAggregateRoot<MemberId>
             disabledEventId,
             nowUtc,
             this.Id,
-            this.TenantId,
+            this.ScopeId,
             trimmedReason));
 
         return Result.Success();
@@ -273,7 +273,7 @@ public sealed class Member : TenantAggregateRoot<MemberId>
         this.Status = MemberStatus.Active;
         this.DisabledAtUtc = null;
         this.DisabledReason = null;
-        this.RaiseDomainEvent(new MemberEnabledDomainEvent(enabledEventId, nowUtc, this.Id, this.TenantId));
+        this.RaiseDomainEvent(new MemberEnabledDomainEvent(enabledEventId, nowUtc, this.Id, this.ScopeId));
 
         return Result.Success();
     }
@@ -315,7 +315,7 @@ public sealed class Member : TenantAggregateRoot<MemberId>
                 revokedEventId,
                 nowUtc,
                 this.Id,
-                this.TenantId,
+                this.ScopeId,
                 activeSessions.Count));
         }
 

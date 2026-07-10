@@ -44,7 +44,7 @@ public sealed class AuthIntegrationEventContractTests
             " user@example.com ");
 
         Assert.Equal(EventId, integrationEvent.EventId);
-        Assert.Equal("tenant-a", integrationEvent.TenantId);
+        Assert.Equal("tenant-a", integrationEvent.ScopeId);
         Assert.Equal(OccurredAtUtc, integrationEvent.OccurredAtUtc);
         Assert.Equal(MemberId, integrationEvent.MemberId);
         Assert.Equal("user@example.com", integrationEvent.Username);

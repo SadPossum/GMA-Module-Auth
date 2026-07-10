@@ -7,7 +7,7 @@ public static class AuthCompositionFeatures
     public static readonly CompositionFeatureId Members = new("auth.members");
     public static readonly CompositionFeatureId Sessions = new("auth.sessions");
     public static readonly CompositionFeatureId GlobalScope = new("auth.scope.global");
-    public static readonly CompositionFeatureId TenantScope = new("auth.scope.tenant");
+    public static readonly CompositionFeatureId ScopeContext = new("auth.scope.context");
 
     public static ProvidedCompositionFeature MembersProvided(string provider) =>
         new(Members, provider, "Auth member account management.");
@@ -18,6 +18,6 @@ public static class AuthCompositionFeatures
     public static ProvidedCompositionFeature GlobalScopeProvided(string provider) =>
         new(GlobalScope, provider, "Auth stores all members in one configured global scope.");
 
-    public static ProvidedCompositionFeature TenantScopeProvided(string provider) =>
-        new(TenantScope, provider, "Auth stores members in the active tenant scope.");
+    public static ProvidedCompositionFeature ScopeContextProvided(string provider) =>
+        new(ScopeContext, provider, "Auth stores members in the active scope context.");
 }

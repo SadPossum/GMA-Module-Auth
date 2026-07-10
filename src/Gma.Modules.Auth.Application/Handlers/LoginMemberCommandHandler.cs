@@ -36,7 +36,7 @@ internal sealed class LoginMemberCommandHandler(
             return Result.Failure<AuthTokensResponse>(AuthDomainErrors.CredentialsNotValid);
         }
 
-        var tokens = this.CreateTokens(member.Id, member.TenantId, TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
+        var tokens = this.CreateTokens(member.Id, member.ScopeId, TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
         Result startSessionResult = member.StartSession(tokens.SessionId, tokens.RefreshTokenHash, tokens.ExpiresAtUtc, this.Clock.UtcNow);
 
         if (startSessionResult.IsFailure)

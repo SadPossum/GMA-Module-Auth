@@ -15,10 +15,10 @@ internal abstract class AuthCommandHandlerBase(
     protected IIdGenerator IdGenerator => idGenerator;
 
     protected (MemberSessionId SessionId, string AccessToken, string RefreshToken, string RefreshTokenHash, DateTimeOffset ExpiresAtUtc)
-        CreateTokens(MemberId memberId, string tenantId, TimeSpan refreshTokenLifetime)
+        CreateTokens(MemberId memberId, string scopeId, TimeSpan refreshTokenLifetime)
     {
         MemberSessionId sessionId = new(this.IdGenerator.NewId());
-        string accessToken = tokenService.GenerateAccessToken(memberId, tenantId, sessionId);
+        string accessToken = tokenService.GenerateAccessToken(memberId, scopeId, sessionId);
         string refreshToken = tokenService.GenerateRefreshToken();
         string refreshTokenHash = refreshTokenHashingService.HashRefreshToken(refreshToken);
         DateTimeOffset expiresAtUtc = this.Clock.UtcNow.Add(refreshTokenLifetime);

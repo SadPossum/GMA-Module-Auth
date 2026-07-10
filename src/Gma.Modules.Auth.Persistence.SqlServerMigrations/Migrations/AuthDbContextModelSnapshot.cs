@@ -48,14 +48,14 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(1);
 
-                    b.Property<string>("TenantId")
+                    b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "RegisteredAtUtc");
+                    b.HasIndex("ScopeId", "RegisteredAtUtc");
 
                     b.ToTable("members", "auth");
                 });
@@ -85,7 +85,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     b.Property<DateTimeOffset?>("SignOutDateTimeUtc")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<string>("TenantId")
+                    b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -94,7 +94,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
 
                     b.HasIndex("MemberId");
 
-                    b.HasIndex("TenantId", "RefreshTokenHash");
+                    b.HasIndex("ScopeId", "RefreshTokenHash");
 
                     b.ToTable("member_sessions", "auth");
                 });
@@ -115,7 +115,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<string>("TenantId")
+                    b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -132,7 +132,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
 
                     b.HasIndex("MemberId");
 
-                    b.HasIndex("TenantId", "NormalizedValue")
+                    b.HasIndex("ScopeId", "NormalizedValue")
                         .IsUnique();
 
                     b.ToTable("member_usernames", "auth");
@@ -181,7 +181,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     b.Property<string>("ScopeId")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
-                        .HasColumnName("TenantId");
+                        .HasColumnName("ScopeId");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -244,7 +244,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     b.Property<string>("ScopeId")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
-                        .HasColumnName("TenantId");
+                        .HasColumnName("ScopeId");
 
                     b.Property<string>("Subject")
                         .IsRequired()

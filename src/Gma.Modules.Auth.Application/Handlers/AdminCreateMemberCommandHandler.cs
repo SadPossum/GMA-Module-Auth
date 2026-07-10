@@ -9,14 +9,14 @@ using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Framework.Cqrs;
+using Gma.Framework.Scoping;
 using Gma.Framework.Runtime.Identity;
-using Gma.Framework.Tenancy;
 using Gma.Framework.Runtime.Time;
 using Gma.Framework.Results;
 
 internal sealed class AdminCreateMemberCommandHandler(
     IMemberRepository memberRepository,
-    ITenantContext tenantContext,
+    IScopeContext scopeContext,
     IPasswordHashingService passwordHashingService,
     ISystemClock clock,
     IIdGenerator idGenerator)
@@ -26,7 +26,7 @@ internal sealed class AdminCreateMemberCommandHandler(
         AdminCreateMemberCommand command,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(tenantContext.TenantId))
+        if (string.IsNullOrWhiteSpace(scopeContext.ScopeId))
         {
             return Result.Failure<AdminCreatedMemberResponse>(AuthApplicationErrors.TenantRequired);
         }
@@ -39,7 +39,7 @@ internal sealed class AdminCreateMemberCommandHandler(
 
         Result<Member> memberResult = Member.Create(
             new MemberId(idGenerator.NewId()),
-            tenantContext.TenantId,
+            scopeContext.ScopeId,
             command.Username,
             usernameType.Value,
             passwordHashingService.HashPassword(command.Password),

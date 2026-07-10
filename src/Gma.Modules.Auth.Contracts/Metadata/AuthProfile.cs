@@ -2,39 +2,39 @@ namespace Gma.Modules.Auth.Contracts;
 
 using Gma.Framework.ModuleComposition;
 using Gma.Framework.Naming;
-using Gma.Framework.Tenancy;
+using Gma.Framework.Scoping;
 
 public sealed record AuthProfile
 {
     public const string GlobalProfileName = "global";
-    public const string TenantScopedProfileName = "tenant-scoped";
+    public const string ScopeAwareProfileName = "scope-aware";
     public const string DefaultGlobalScopeId = "global";
 
     private AuthProfile(
         string name,
         string? globalScopeId,
-        bool requiresTenantContext,
+        bool requiresScopeContext,
         ModuleProfileDescriptor descriptor)
     {
         this.Name = name;
         this.GlobalScopeId = globalScopeId;
-        this.RequiresTenantContext = requiresTenantContext;
+        this.RequiresScopeContext = requiresScopeContext;
         this.Descriptor = descriptor;
     }
 
     public string Name { get; }
     public string? GlobalScopeId { get; }
-    public bool RequiresTenantContext { get; }
+    public bool RequiresScopeContext { get; }
     public ModuleProfileDescriptor Descriptor { get; }
 
     public static AuthProfile Global(string scopeId = DefaultGlobalScopeId)
     {
-        string normalizedScopeId = TenantIds.Normalize(scopeId);
+        string normalizedScopeId = ScopeIds.Normalize(scopeId);
         string provider = Provider(GlobalProfileName);
         return new AuthProfile(
             GlobalProfileName,
             normalizedScopeId,
-            requiresTenantContext: false,
+            requiresScopeContext: false,
             new ModuleProfileDescriptor(
                 AuthModuleMetadata.Name,
                 GlobalProfileName,
@@ -45,34 +45,34 @@ public sealed record AuthProfile
                     AuthCompositionFeatures.GlobalScopeProvided(provider)
                 ],
                 displayName: "Auth global",
-                description: $"Stores all Auth members in the '{normalizedScopeId}' scope without requiring tenant context."));
+                description: $"Stores all Auth members in the '{normalizedScopeId}' scope without requiring scope context."));
     }
 
-    public static AuthProfile TenantScoped()
+    public static AuthProfile ScopeAware()
     {
-        string provider = Provider(TenantScopedProfileName);
+        string provider = Provider(ScopeAwareProfileName);
         return new AuthProfile(
-            TenantScopedProfileName,
+            ScopeAwareProfileName,
             globalScopeId: null,
-            requiresTenantContext: true,
+            requiresScopeContext: true,
             new ModuleProfileDescriptor(
                 AuthModuleMetadata.Name,
-                TenantScopedProfileName,
+                ScopeAwareProfileName,
                 provides:
                 [
                     AuthCompositionFeatures.MembersProvided(provider),
                     AuthCompositionFeatures.SessionsProvided(provider),
-                    AuthCompositionFeatures.TenantScopeProvided(provider)
+                    AuthCompositionFeatures.ScopeContextProvided(provider)
                 ],
                 requires:
                 [
                     new RequiredCompositionFeature(
-                        TenancyCompositionFeatures.Context,
+                        ScopeCompositionFeatures.Context,
                         provider,
-                        reason: "Register TenancyModule, or choose AuthProfile.Global(\"global\") for tenant-free projects.")
+                        reason: "Register scoping infrastructure plus a scope provider, or choose AuthProfile.Global(\"global\") for scope-context-free projects.")
                 ],
-                displayName: "Auth tenant scoped",
-                description: "Stores Auth members in the resolved tenant scope and requires tenant context."));
+                displayName: "Auth scope-aware",
+                description: "Stores Auth members in the resolved scope context and requires scope context."));
     }
 
     private static string Provider(string profileName) => $"{AuthModuleMetadata.Name}/{profileName}";

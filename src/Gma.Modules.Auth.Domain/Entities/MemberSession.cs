@@ -6,7 +6,7 @@ using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Framework.Domain.Models;
 using Gma.Framework.Results;
 
-public sealed class MemberSession : TenantEntity<MemberSessionId>
+public sealed class MemberSession : ScopedEntity<MemberSessionId>
 {
     public const int RefreshTokenHashMaxLength = 512;
 
@@ -15,11 +15,11 @@ public sealed class MemberSession : TenantEntity<MemberSessionId>
     private MemberSession(
         MemberSessionId id,
         MemberId memberId,
-        string tenantId,
+        string scopeId,
         string refreshTokenHash,
         DateTimeOffset refreshTokenExpiresAtUtc,
         DateTimeOffset loginDateTimeUtc)
-        : base(id, tenantId)
+        : base(id, scopeId)
     {
         this.MemberId = memberId;
         this.RefreshTokenHash = NormalizeRefreshTokenHash(refreshTokenHash);
@@ -38,7 +38,7 @@ public sealed class MemberSession : TenantEntity<MemberSessionId>
     internal static Result<MemberSession> Create(
         MemberSessionId id,
         MemberId memberId,
-        string tenantId,
+        string scopeId,
         string refreshTokenHash,
         DateTimeOffset refreshTokenExpiresAtUtc,
         DateTimeOffset loginDateTimeUtc)
@@ -53,7 +53,7 @@ public sealed class MemberSession : TenantEntity<MemberSessionId>
             return Result.Failure<MemberSession>(AuthDomainErrors.MemberIdRequired);
         }
 
-        if (!TenantIds.TryNormalize(tenantId, out _))
+        if (!ScopeIds.TryNormalize(scopeId, out _))
         {
             return Result.Failure<MemberSession>(AuthDomainErrors.TenantInvalid);
         }
@@ -66,7 +66,7 @@ public sealed class MemberSession : TenantEntity<MemberSessionId>
         return Result.Success(new MemberSession(
             id,
             memberId,
-            tenantId,
+            scopeId,
             refreshTokenHash,
             refreshTokenExpiresAtUtc,
             loginDateTimeUtc));
