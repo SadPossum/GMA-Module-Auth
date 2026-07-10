@@ -10,11 +10,16 @@ internal sealed class PasswordHashingService : IPasswordHashingService
     public string HashPassword(string password) =>
         this.passwordHasher.HashPassword(new object(), password);
 
-    public bool VerifyPassword(string passwordHash, string password)
+    public PasswordVerificationOutcome VerifyPassword(string passwordHash, string password)
     {
         PasswordVerificationResult result =
             this.passwordHasher.VerifyHashedPassword(new object(), passwordHash, password);
 
-        return result is PasswordVerificationResult.Success or PasswordVerificationResult.SuccessRehashNeeded;
+        return result switch
+        {
+            PasswordVerificationResult.Success => PasswordVerificationOutcome.Success,
+            PasswordVerificationResult.SuccessRehashNeeded => PasswordVerificationOutcome.SuccessRehashNeeded,
+            _ => PasswordVerificationOutcome.Unknown
+        };
     }
 }

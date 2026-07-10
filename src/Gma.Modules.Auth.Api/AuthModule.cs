@@ -159,11 +159,13 @@ public sealed class AuthModule(AuthProfile profile) : IModule
     private static readonly ApiErrorStatusCodeMap PublicErrorStatusCodes = ApiErrorStatusCodeMap.Create(
         new(AuthApplicationErrors.CredentialsNotValid.Code, StatusCodes.Status401Unauthorized),
         new(AuthApplicationErrors.TokenInvalid.Code, StatusCodes.Status401Unauthorized),
+        new(AuthApplicationErrors.PasswordBlocked.Code, StatusCodes.Status400BadRequest),
         new(AuthApplicationErrors.MemberNotFound.Code, StatusCodes.Status401Unauthorized),
         new(AuthApplicationErrors.SessionNotFound.Code, StatusCodes.Status401Unauthorized),
         new(AuthApplicationErrors.SessionInactive.Code, StatusCodes.Status401Unauthorized),
         new(AuthApplicationErrors.RefreshTokenInvalid.Code, StatusCodes.Status401Unauthorized),
         new(AuthApplicationErrors.RefreshTokenExpired.Code, StatusCodes.Status401Unauthorized),
+        new(AuthApplicationErrors.RefreshTokenReused.Code, StatusCodes.Status401Unauthorized),
         new(AuthApplicationErrors.TenantMismatch.Code, StatusCodes.Status403Forbidden),
         new(AuthApplicationErrors.MemberStatusUnknown.Code, StatusCodes.Status403Forbidden),
         new(AuthApplicationErrors.MemberDisabled.Code, StatusCodes.Status403Forbidden),

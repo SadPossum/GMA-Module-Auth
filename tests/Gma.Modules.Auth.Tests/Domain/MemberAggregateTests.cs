@@ -350,6 +350,33 @@ public sealed class MemberAggregateTests
         Assert.Equal(AuthDomainErrors.PasswordNotValid, result.Error);
     }
 
+    [Fact]
+    public void Reusing_previous_refresh_token_revokes_the_member_token_family()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberSessionId firstSessionId = new(Guid.NewGuid());
+        MemberSessionId secondSessionId = new(Guid.NewGuid());
+        member.StartSession(firstSessionId, "refresh-hash-1", Now.AddDays(1), Now);
+        member.StartSession(secondSessionId, "refresh-hash-other", Now.AddDays(1), Now);
+        member.RefreshSession(
+            firstSessionId,
+            "refresh-hash-1",
+            "refresh-hash-2",
+            Now.AddDays(1),
+            Now);
+
+        Result<MemberSession> reuse = member.RefreshSession(
+            firstSessionId,
+            "refresh-hash-1",
+            "refresh-hash-3",
+            Now.AddDays(1),
+            Now.AddMinutes(1));
+
+        Assert.True(reuse.IsFailure);
+        Assert.Equal(AuthDomainErrors.RefreshTokenReused, reuse.Error);
+        Assert.All(member.Sessions, session => Assert.False(session.IsActive));
+    }
+
     private static Gma.Framework.Results.Result<Member> CreateMember(
         string username,
         string scopeId = "tenant-a",

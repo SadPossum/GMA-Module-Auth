@@ -20,6 +20,9 @@ public static class AuthDomainErrors
     public static readonly Error RefreshTokenInvalid = new("Auth.RefreshTokenInvalid", "Refresh token is invalid.");
     public static readonly Error RefreshTokenHashNotValid = new("Auth.RefreshTokenHashNotValid", "Refresh token hash is not valid.");
     public static readonly Error RefreshTokenExpired = new("Auth.RefreshTokenExpired", "Refresh token has expired.");
+    public static readonly Error RefreshTokenReused = new(
+        "Auth.RefreshTokenReused",
+        "Refresh token reuse was detected and all member sessions were revoked.");
     public static readonly Error MemberStatusUnknown = new("Auth.MemberStatusUnknown", "Member status is unknown.");
     public static readonly Error MemberDisabled = new("Auth.MemberDisabled", "Member is disabled.");
     public static readonly Error MemberAlreadyDisabled = new("Auth.MemberAlreadyDisabled", "Member is already disabled.");

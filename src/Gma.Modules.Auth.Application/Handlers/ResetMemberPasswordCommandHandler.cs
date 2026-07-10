@@ -8,10 +8,12 @@ using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Framework.Cqrs;
 using Gma.Framework.Results;
+using Gma.Modules.Auth.Application.Security;
 
 internal sealed class ResetMemberPasswordCommandHandler(
     IMemberRepository memberRepository,
-    IPasswordHashingService passwordHashingService)
+    IPasswordHashingService passwordHashingService,
+    IPasswordBlocklist passwordBlocklist)
     : ICommandHandler<ResetMemberPasswordCommand, Unit>
 {
     public async Task<Result<Unit>> HandleAsync(ResetMemberPasswordCommand command, CancellationToken cancellationToken)
@@ -21,6 +23,11 @@ internal sealed class ResetMemberPasswordCommandHandler(
         if (member is null)
         {
             return Result.Failure<Unit>(AuthDomainErrors.MemberNotFound);
+        }
+
+        if (await passwordBlocklist.IsBlockedAsync(command.NewPassword, cancellationToken).ConfigureAwait(false))
+        {
+            return Result.Failure<Unit>(AuthApplicationErrors.PasswordBlocked);
         }
 
         Result result = member.ResetPassword(passwordHashingService.HashPassword(command.NewPassword));

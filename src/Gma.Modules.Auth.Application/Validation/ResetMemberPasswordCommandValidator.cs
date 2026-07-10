@@ -13,9 +13,14 @@ internal sealed class ResetMemberPasswordCommandValidator : ICommandValidator<Re
             yield return "Member id is required.";
         }
 
-        if (!AuthPasswordPolicy.IsValidPlaintextPassword(command.NewPassword))
+        if (string.IsNullOrEmpty(command.NewPassword) || command.NewPassword.Length < AuthPasswordPolicy.MinimumLength)
         {
             yield return AuthPasswordPolicy.MinimumLengthMessage;
+        }
+
+        if (command.NewPassword?.Length > AuthPasswordPolicy.MaximumLength)
+        {
+            yield return AuthPasswordPolicy.MaximumLengthMessage;
         }
     }
 }

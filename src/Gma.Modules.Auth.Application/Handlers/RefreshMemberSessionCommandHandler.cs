@@ -47,12 +47,12 @@ internal sealed class RefreshMemberSessionCommandHandler(
 
         string accessToken = tokenService.GenerateAccessToken(member.Id, member.ScopeId, claims.SessionId);
         string refreshToken = tokenService.GenerateRefreshToken();
-        string refreshTokenHash = refreshTokenHashingService.HashRefreshToken(command.RefreshToken);
+        IReadOnlyList<string> refreshTokenHashes = refreshTokenHashingService.GetCandidateHashes(command.RefreshToken);
         string newRefreshTokenHash = refreshTokenHashingService.HashRefreshToken(refreshToken);
 
         Result refreshResult = member.RefreshSession(
             claims.SessionId,
-            refreshTokenHash,
+            refreshTokenHashes,
             newRefreshTokenHash,
             clock.UtcNow.AddDays(options.Value.RefreshTokenLifetimeDays),
             clock.UtcNow);

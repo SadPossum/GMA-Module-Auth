@@ -27,7 +27,7 @@ internal sealed class SignOutCommandHandler(
         }
 
         Result result = member.SignOut(
-            refreshTokenHashingService.HashRefreshToken(command.RefreshToken),
+            refreshTokenHashingService.GetCandidateHashes(command.RefreshToken),
             clock.UtcNow);
 
         return result.IsSuccess

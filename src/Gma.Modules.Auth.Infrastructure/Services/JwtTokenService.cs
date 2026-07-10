@@ -17,7 +17,11 @@ internal sealed class JwtTokenService(IOptions<JwtSettings> options, ISystemCloc
     {
         AccessTokenClaims accessTokenClaims = new(memberId, scopeId, sessionId);
         JwtSettings settings = options.Value;
-        SymmetricSecurityKey securityKey = new(Encoding.UTF8.GetBytes(settings.SigningKey));
+        string activeSigningKey = settings.EffectiveSigningKeys[settings.ActiveSigningKeyId];
+        SymmetricSecurityKey securityKey = new(Encoding.UTF8.GetBytes(activeSigningKey))
+        {
+            KeyId = settings.ActiveSigningKeyId
+        };
         SigningCredentials signingCredentials = new(securityKey, SecurityAlgorithms.HmacSha256);
 
         Claim[] claims =

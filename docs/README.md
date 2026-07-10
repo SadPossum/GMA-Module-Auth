@@ -128,20 +128,26 @@ Validators:
 
 Auth infrastructure provides:
 
-- validated issuer, audience, signing key, and access-token lifetime options;
+- validated issuer, audience, signing-key ring, active key id, and access-token lifetime options;
 - `PasswordHasher<T>` based password hashing;
-- versioned HMAC-SHA256 refresh token hashing;
+- versioned/keyed HMAC-SHA256 refresh token hashing with active and previous peppers;
 - access token generation and validation parameters.
 
 Core Auth infrastructure and the JWT bearer adapter live in separate projects. CLI/admin-command hosts use `Gma.Modules.Auth.Infrastructure` and `services.AddAuthInfrastructure(configuration)` for hashing and token services without adding HTTP authentication schemes or ASP.NET Core bearer packages. HTTP Auth surfaces explicitly reference `Gma.Modules.Auth.Infrastructure.JwtBearer` and call `AddAuthJwtBearerAuthentication()` when they need bearer-token validation.
 
-Auth application options validate `Auth:RefreshTokenLifetimeDays` so misconfigured refresh-token sessions fail at composition/startup instead of producing immediately expired or nonsensical sessions.
+Auth application options validate refresh lifetime and failed-login account throttling. The built-in limiter is per process; multi-replica deployments should replace `IAuthenticationAttemptLimiter` with a distributed implementation while retaining edge/IP rate limits.
+
+User-chosen passwords default to 15-128 characters without composition rules. `IPasswordBlocklist` is replaceable so products can use a current breach corpus/service; the built-in list blocks only a small emergency baseline. Successful logins persist a new hash when the configured hasher reports that rehashing is needed.
 
 Refresh tokens are stored as hashes, never as raw token values.
-The HMAC key is configured through `Auth:RefreshTokens:Pepper`. The option class intentionally has no secret default. Checked-in development settings provide a disposable local placeholder, and deployments must override it through a secret provider, for example `Auth__RefreshTokens__Pepper`.
+The option class has no secret default. A one-key deployment can supply `Auth__RefreshTokens__Pepper`. For rotation, configure `Auth:RefreshTokens:ActivePepperId` and `Auth:RefreshTokens:Peppers:<id>`. Keep the prior id/value until its refresh-token lifetime has elapsed. The legacy single `Pepper` property remains compatible for one-key deployments. Immediate reuse of the previous refresh token revokes all active member sessions.
 
-JWT signing is configured through `Auth:Jwt`. The signing key must be at least 32 bytes and should also come from a secret provider outside local development. `Auth:Jwt:Issuer` and `Auth:Jwt:Audience` default to `ApplicationIdentity:DisplayName` when they are not explicitly configured.
+JWT signing is configured through `Auth:Jwt`. Prefer `ActiveSigningKeyId` plus `SigningKeys:<id>`; issued tokens carry `kid` and validation accepts all configured rotation keys. Keep the legacy `SigningKey` only for one-key compatibility. Every key must be at least 32 bytes and come from a secret provider outside local development.
+
+External OIDC providers, account recovery/email delivery, and MFA are product identity decisions rather than implicit core behavior. Add them as explicit adapters that validate the provider assertion/challenge before dispatching Auth commands; do not accept provider/user identifiers directly from an unauthenticated client. Google or another provider can be added without changing the password/session persistence model.
 Auth access tokens use `ClaimTypes.NameIdentifier` for the member id and shared `ApplicationClaimNames` constants for tenant and session claims. Keep claim-name changes centralized in `Gma.Framework.Security.ApplicationClaimNames` so public Auth endpoints, admin APIs, token validation, and test token helpers stay aligned.
+
+Member and session writes use optimistic concurrency tokens. Hosts receive a neutral conflict result when another request wins instead of silently overwriting newer credential/session state.
 
 Login and refresh fail when a member is disabled.
 

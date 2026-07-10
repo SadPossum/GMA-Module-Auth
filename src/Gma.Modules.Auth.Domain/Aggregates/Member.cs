@@ -27,6 +27,7 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
     }
 
     public string PasswordHash { get; private set; } = string.Empty;
+    public Guid ConcurrencyStamp { get; private set; }
     public MemberStatus Status { get; private set; } = MemberStatus.Active;
     public DateTimeOffset RegisteredAtUtc { get; private set; }
     public DateTimeOffset? DisabledAtUtc { get; private set; }
@@ -71,7 +72,8 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
 
         Member member = new(id, normalizedScopeId, passwordHash)
         {
-            RegisteredAtUtc = registeredAtUtc
+            RegisteredAtUtc = registeredAtUtc,
+            ConcurrencyStamp = Guid.CreateVersion7()
         };
         Result<MemberUsername> usernameResult = member.AddUsername(usernameId, username, usernameType);
 
@@ -118,6 +120,7 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
 
         current?.Deactivate();
         this.usernames.Add(newUsername);
+        this.Touch();
 
         return Result.Success(newUsername);
     }
@@ -155,6 +158,7 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
 
         MemberSession session = sessionResult.Value;
         this.sessions.Add(session);
+        this.Touch();
 
         return Result.Success(session);
     }
@@ -162,6 +166,19 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
     public Result<MemberSession> RefreshSession(
         MemberSessionId sessionId,
         string refreshTokenHash,
+        string newRefreshTokenHash,
+        DateTimeOffset newRefreshTokenExpiresAtUtc,
+        DateTimeOffset nowUtc) =>
+        this.RefreshSession(
+            sessionId,
+            [refreshTokenHash],
+            newRefreshTokenHash,
+            newRefreshTokenExpiresAtUtc,
+            nowUtc);
+
+    public Result<MemberSession> RefreshSession(
+        MemberSessionId sessionId,
+        IReadOnlyCollection<string> refreshTokenHashes,
         string newRefreshTokenHash,
         DateTimeOffset newRefreshTokenExpiresAtUtc,
         DateTimeOffset nowUtc)
@@ -172,28 +189,60 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
             return Result.Failure<MemberSession>(statusResult.Error);
         }
 
+        ArgumentNullException.ThrowIfNull(refreshTokenHashes);
+        MemberSession? reusedSession = this.sessions.FirstOrDefault(item =>
+            item.Id == sessionId && refreshTokenHashes.Any(item.HasPreviousRefreshTokenHash));
+        if (reusedSession is not null)
+        {
+            foreach (MemberSession activeSession in this.sessions.Where(item => item.IsActive))
+            {
+                activeSession.SignOut(nowUtc);
+            }
+
+            this.Touch();
+            return Result.Failure<MemberSession>(AuthDomainErrors.RefreshTokenReused);
+        }
+
         MemberSession? session = this.sessions.FirstOrDefault(item =>
-            item.Id == sessionId && item.HasRefreshTokenHash(refreshTokenHash));
+            item.Id == sessionId && refreshTokenHashes.Any(item.HasRefreshTokenHash));
 
         if (session is null)
         {
             return Result.Failure<MemberSession>(AuthDomainErrors.SessionNotFound);
         }
 
-        Result result = session.Refresh(refreshTokenHash, newRefreshTokenHash, newRefreshTokenExpiresAtUtc, nowUtc);
+        string matchingHash = refreshTokenHashes.First(session.HasRefreshTokenHash);
+        Result result = session.Refresh(matchingHash, newRefreshTokenHash, newRefreshTokenExpiresAtUtc, nowUtc);
 
-        return result.IsSuccess
-            ? Result.Success(session)
-            : Result.Failure<MemberSession>(result.Error);
+        if (result.IsFailure)
+        {
+            return Result.Failure<MemberSession>(result.Error);
+        }
+
+        this.Touch();
+        return Result.Success(session);
     }
 
     public Result SignOut(string refreshTokenHash, DateTimeOffset nowUtc)
-    {
-        MemberSession? session = this.sessions.FirstOrDefault(item => item.HasRefreshTokenHash(refreshTokenHash));
+        => this.SignOut([refreshTokenHash], nowUtc);
 
-        return session is null
-            ? Result.Failure(AuthDomainErrors.SessionNotFound)
-            : session.SignOut(nowUtc);
+    public Result SignOut(IReadOnlyCollection<string> refreshTokenHashes, DateTimeOffset nowUtc)
+    {
+        ArgumentNullException.ThrowIfNull(refreshTokenHashes);
+        MemberSession? session = this.sessions.FirstOrDefault(item => refreshTokenHashes.Any(item.HasRefreshTokenHash));
+
+        if (session is null)
+        {
+            return Result.Failure(AuthDomainErrors.SessionNotFound);
+        }
+
+        Result result = session.SignOut(nowUtc);
+        if (result.IsSuccess)
+        {
+            this.Touch();
+        }
+
+        return result;
     }
 
     public Result SignOutAll(DateTimeOffset nowUtc)
@@ -209,6 +258,8 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         {
             session.SignOut(nowUtc);
         }
+
+        this.Touch();
 
         return Result.Success();
     }
@@ -241,6 +292,7 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         this.Status = MemberStatus.Disabled;
         this.DisabledAtUtc = nowUtc;
         this.DisabledReason = trimmedReason;
+        this.Touch();
 
         foreach (MemberSession session in this.sessions.Where(session => session.IsActive))
         {
@@ -273,6 +325,7 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         this.Status = MemberStatus.Active;
         this.DisabledAtUtc = null;
         this.DisabledReason = null;
+        this.Touch();
         this.RaiseDomainEvent(new MemberEnabledDomainEvent(enabledEventId, nowUtc, this.Id, this.ScopeId));
 
         return Result.Success();
@@ -292,6 +345,7 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         }
 
         this.PasswordHash = passwordHash.Trim();
+        this.Touch();
         return Result.Success();
     }
 
@@ -307,6 +361,11 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         foreach (MemberSession session in activeSessions)
         {
             session.SignOut(nowUtc);
+        }
+
+        if (activeSessions.Count > 0)
+        {
+            this.Touch();
         }
 
         if (activeSessions.Count > 0)
@@ -350,4 +409,6 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         this.Status is MemberStatus.Active or MemberStatus.Disabled
             ? Result.Success()
             : Result.Failure(AuthDomainErrors.MemberStatusUnknown);
+
+    private void Touch() => this.ConcurrencyStamp = Guid.CreateVersion7();
 }

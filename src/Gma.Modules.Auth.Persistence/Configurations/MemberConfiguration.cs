@@ -20,6 +20,10 @@ internal sealed class MemberConfiguration : IEntityTypeConfiguration<Member>
             .HasMaxLength(Member.PasswordHashMaxLength)
             .IsRequired();
 
+        builder.Property(member => member.ConcurrencyStamp)
+            .IsConcurrencyToken()
+            .IsRequired();
+
         builder.Property(member => member.Status)
             .HasConversion<int>()
             .HasDefaultValue(MemberStatus.Active)

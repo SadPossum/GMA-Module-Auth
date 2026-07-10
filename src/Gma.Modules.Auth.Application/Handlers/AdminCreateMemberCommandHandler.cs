@@ -8,6 +8,7 @@ using Gma.Modules.Auth.Domain.Errors;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Domain.ValueObjects;
+using Gma.Modules.Auth.Application.Security;
 using Gma.Framework.Cqrs;
 using Gma.Framework.Scoping;
 using Gma.Framework.Runtime.Identity;
@@ -18,6 +19,7 @@ internal sealed class AdminCreateMemberCommandHandler(
     IMemberRepository memberRepository,
     IScopeContext scopeContext,
     IPasswordHashingService passwordHashingService,
+    IPasswordBlocklist passwordBlocklist,
     ISystemClock clock,
     IIdGenerator idGenerator)
     : ICommandHandler<AdminCreateMemberCommand, AdminCreatedMemberResponse>
@@ -35,6 +37,11 @@ internal sealed class AdminCreateMemberCommandHandler(
         if (usernameType.IsFailure)
         {
             return Result.Failure<AdminCreatedMemberResponse>(usernameType.Error);
+        }
+
+        if (await passwordBlocklist.IsBlockedAsync(command.Password, cancellationToken).ConfigureAwait(false))
+        {
+            return Result.Failure<AdminCreatedMemberResponse>(AuthApplicationErrors.PasswordBlocked);
         }
 
         Result<Member> memberResult = Member.Create(

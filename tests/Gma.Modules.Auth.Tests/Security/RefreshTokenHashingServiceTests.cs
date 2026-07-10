@@ -40,6 +40,28 @@ public sealed class RefreshTokenHashingServiceTests
         Assert.NotEqual(firstHash, secondHash);
     }
 
+    [Fact]
+    public void Candidate_hashes_keep_previous_peppers_valid_during_rotation()
+    {
+        const string refreshToken = "refresh-token-value";
+        RefreshTokenHashingService oldService = CreateService(PepperA);
+        RefreshTokenHashingService rotatedService = new(Options.Create(new RefreshTokenHashingOptions
+        {
+            ActivePepperId = "v2",
+            Peppers = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["v2"] = PepperB,
+                ["primary"] = PepperA
+            }
+        }));
+
+        string oldHash = oldService.HashRefreshToken(refreshToken);
+        IReadOnlyList<string> candidates = rotatedService.GetCandidateHashes(refreshToken);
+
+        Assert.Contains(oldHash, candidates);
+        Assert.StartsWith("hmac-sha256:v2:", rotatedService.HashRefreshToken(refreshToken), StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("short")]

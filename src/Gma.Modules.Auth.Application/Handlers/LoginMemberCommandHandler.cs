@@ -11,13 +11,17 @@ using Gma.Framework.Cqrs;
 using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
 using Gma.Framework.Results;
+using Gma.Framework.Scoping;
+using Gma.Modules.Auth.Application.Security;
 
 internal sealed class LoginMemberCommandHandler(
     IMemberRepository memberRepository,
     IPasswordHashingService passwordHashingService,
+    IAuthenticationAttemptLimiter attemptLimiter,
     ITokenService tokenService,
     IRefreshTokenHashingService refreshTokenHashingService,
     IOptions<AuthApplicationOptions> options,
+    IScopeContext scopeContext,
     ISystemClock clock,
     IIdGenerator idGenerator)
     : AuthCommandHandlerBase(tokenService, refreshTokenHashingService, clock, idGenerator),
@@ -27,13 +31,38 @@ internal sealed class LoginMemberCommandHandler(
         LoginMemberCommand command,
         CancellationToken cancellationToken)
     {
-        Member? member = await memberRepository.GetByUsernameAsync(command.Username, cancellationToken).ConfigureAwait(false);
-
-        if (member is null ||
-            !member.HasActiveUsername(command.Username) ||
-            !passwordHashingService.VerifyPassword(member.PasswordHash, command.Password))
+        string scopeId = scopeContext.ScopeId ?? string.Empty;
+        if (!attemptLimiter.IsAllowed(scopeId, command.Username, this.Clock.UtcNow))
         {
             return Result.Failure<AuthTokensResponse>(AuthDomainErrors.CredentialsNotValid);
+        }
+
+        Member? member = await memberRepository.GetByUsernameAsync(command.Username, cancellationToken).ConfigureAwait(false);
+
+        if (member is null || !member.HasActiveUsername(command.Username))
+        {
+            attemptLimiter.RecordFailure(scopeId, command.Username, this.Clock.UtcNow);
+            return Result.Failure<AuthTokensResponse>(AuthDomainErrors.CredentialsNotValid);
+        }
+
+        PasswordVerificationOutcome passwordVerification = passwordHashingService.VerifyPassword(
+            member.PasswordHash,
+            command.Password);
+        if (passwordVerification == PasswordVerificationOutcome.Unknown)
+        {
+            attemptLimiter.RecordFailure(scopeId, command.Username, this.Clock.UtcNow);
+            return Result.Failure<AuthTokensResponse>(AuthDomainErrors.CredentialsNotValid);
+        }
+
+        attemptLimiter.RecordSuccess(scopeId, command.Username);
+
+        if (passwordVerification == PasswordVerificationOutcome.SuccessRehashNeeded)
+        {
+            Result rehashResult = member.ResetPassword(passwordHashingService.HashPassword(command.Password));
+            if (rehashResult.IsFailure)
+            {
+                return Result.Failure<AuthTokensResponse>(rehashResult.Error);
+            }
         }
 
         var tokens = this.CreateTokens(member.Id, member.ScopeId, TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));

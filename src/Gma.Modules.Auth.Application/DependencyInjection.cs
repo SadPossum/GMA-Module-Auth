@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Gma.Framework.Application.Composition;
+using Gma.Modules.Auth.Application.Security;
 
 public static class DependencyInjection
 {
@@ -26,6 +27,8 @@ public static class DependencyInjection
         }
 
         services.AddApplicationServicesFromAssembly(typeof(DependencyInjection).Assembly);
+        services.TryAddSingleton<IPasswordBlocklist, CommonPasswordBlocklist>();
+        services.TryAddSingleton<IAuthenticationAttemptLimiter, InMemoryAuthenticationAttemptLimiter>();
 
         return services;
     }

@@ -22,6 +22,9 @@ internal sealed class MemberSessionConfiguration : IEntityTypeConfiguration<Memb
             .HasMaxLength(MemberSession.RefreshTokenHashMaxLength)
             .IsRequired();
 
+        builder.Property(session => session.PreviousRefreshTokenHash)
+            .HasMaxLength(MemberSession.RefreshTokenHashMaxLength);
+
         builder.HasIndex(session => new { session.ScopeId, session.RefreshTokenHash });
     }
 }

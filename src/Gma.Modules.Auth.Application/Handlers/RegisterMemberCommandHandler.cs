@@ -8,6 +8,7 @@ using Gma.Modules.Auth.Domain.Errors;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Domain.ValueObjects;
+using Gma.Modules.Auth.Application.Security;
 using Microsoft.Extensions.Options;
 using Gma.Framework.Cqrs;
 using Gma.Framework.Scoping;
@@ -19,6 +20,7 @@ internal sealed class RegisterMemberCommandHandler(
     IMemberRepository memberRepository,
     IScopeContext scopeContext,
     IPasswordHashingService passwordHashingService,
+    IPasswordBlocklist passwordBlocklist,
     ITokenService tokenService,
     IRefreshTokenHashingService refreshTokenHashingService,
     IOptions<AuthApplicationOptions> options,
@@ -40,6 +42,11 @@ internal sealed class RegisterMemberCommandHandler(
         if (usernameType.IsFailure)
         {
             return Result.Failure<AuthTokensResponse>(usernameType.Error);
+        }
+
+        if (await passwordBlocklist.IsBlockedAsync(command.Password, cancellationToken).ConfigureAwait(false))
+        {
+            return Result.Failure<AuthTokensResponse>(AuthApplicationErrors.PasswordBlocked);
         }
 
         string passwordHash = passwordHashingService.HashPassword(command.Password);

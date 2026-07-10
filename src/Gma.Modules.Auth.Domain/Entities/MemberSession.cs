@@ -30,6 +30,7 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
 
     public MemberId MemberId { get; private set; }
     public string RefreshTokenHash { get; private set; } = string.Empty;
+    public string? PreviousRefreshTokenHash { get; private set; }
     public DateTimeOffset RefreshTokenExpiresAtUtc { get; private set; }
     public DateTimeOffset LoginDateTimeUtc { get; private set; }
     public DateTimeOffset? SignOutDateTimeUtc { get; private set; }
@@ -98,6 +99,7 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
             return Result.Failure(AuthDomainErrors.RefreshTokenHashNotValid);
         }
 
+        this.PreviousRefreshTokenHash = this.RefreshTokenHash;
         this.RefreshTokenHash = normalizedRefreshTokenHash;
         this.RefreshTokenExpiresAtUtc = newRefreshTokenExpiresAtUtc;
 
@@ -108,6 +110,12 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         this.IsActive &&
         TryNormalizeRefreshTokenHash(refreshTokenHash, out string? normalizedRefreshTokenHash) &&
         this.RefreshTokenHash == normalizedRefreshTokenHash;
+
+    internal bool HasPreviousRefreshTokenHash(string refreshTokenHash) =>
+        this.IsActive &&
+        this.PreviousRefreshTokenHash is not null &&
+        TryNormalizeRefreshTokenHash(refreshTokenHash, out string? normalizedRefreshTokenHash) &&
+        this.PreviousRefreshTokenHash == normalizedRefreshTokenHash;
 
     internal Result SignOut(DateTimeOffset nowUtc)
     {

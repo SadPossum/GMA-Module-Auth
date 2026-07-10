@@ -13,9 +13,14 @@ internal sealed class RegisterMemberCommandValidator : ICommandValidator<Registe
             yield return "Username is required.";
         }
 
-        if (!AuthPasswordPolicy.IsValidPlaintextPassword(command.Password))
+        if (string.IsNullOrEmpty(command.Password) || command.Password.Length < AuthPasswordPolicy.MinimumLength)
         {
             yield return AuthPasswordPolicy.MinimumLengthMessage;
+        }
+
+        if (command.Password?.Length > AuthPasswordPolicy.MaximumLength)
+        {
+            yield return AuthPasswordPolicy.MaximumLengthMessage;
         }
     }
 }

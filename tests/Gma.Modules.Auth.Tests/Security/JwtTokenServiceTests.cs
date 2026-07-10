@@ -71,6 +71,33 @@ public sealed class JwtTokenServiceTests
         Assert.Null(service.GetAccessTokenClaims(accessToken, validateLifetime: false));
     }
 
+    [Fact]
+    public void Rotated_key_ring_accepts_previous_key_and_issues_with_active_key_id()
+    {
+        JwtSettings oldSettings = CreateSettings();
+        JwtTokenService oldService = CreateService(oldSettings);
+        MemberId memberId = new(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+        MemberSessionId sessionId = new(Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff"));
+        string oldToken = oldService.GenerateAccessToken(memberId, "tenant-a", sessionId);
+        JwtSettings rotatedSettings = new()
+        {
+            Issuer = oldSettings.Issuer,
+            Audience = oldSettings.Audience,
+            ActiveSigningKeyId = "v2",
+            SigningKeys = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["primary"] = oldSettings.SigningKey,
+                ["v2"] = "rotated-signing-key-with-enough-bytes-000000000000000000"
+            }
+        };
+        JwtTokenService rotatedService = CreateService(rotatedSettings);
+
+        string newToken = rotatedService.GenerateAccessToken(memberId, "tenant-a", sessionId);
+
+        Assert.NotNull(rotatedService.GetAccessTokenClaims(oldToken, validateLifetime: false));
+        Assert.Equal("v2", new JwtSecurityTokenHandler().ReadJwtToken(newToken).Header.Kid);
+    }
+
     private static JwtTokenService CreateService(JwtSettings? settings = null) =>
         new(Options.Create(settings ?? CreateSettings()), new FixedClock(new DateTimeOffset(2026, 7, 2, 12, 0, 0, TimeSpan.Zero)));
 
