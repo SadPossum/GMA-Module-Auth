@@ -83,6 +83,8 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
 
                     b.HasIndex("Handler", "Status");
 
+                    b.HasIndex("Status", "ProcessedAtUtc");
+
                     b.ToTable("inbox_messages", "auth");
                 });
 
