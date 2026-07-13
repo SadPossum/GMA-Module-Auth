@@ -129,7 +129,7 @@ External-only members can add a password from a fresh provider-authenticated ses
 
 Auth generates a high-entropy verification code, stores only its rotating HMAC hash, and publishes `MemberEmailVerificationRequestedIntegrationEvent`. The raw code exists only in the transactional message path needed for delivery and expires according to `EmailVerificationLifetimeMinutes`. Requests have an account-level cooldown and the public paths are expected to remain edge-rate-limited.
 
-The Notifications repository owns the optional `Gma.Modules.Notifications.Integrations.Auth` bridge. It maps Auth events to mandatory tagged notifications:
+The independent GMA Extensions repository owns the optional `Gma.Extensions.Auth.Notifications` bridge. It maps Auth events to mandatory tagged notifications without making Auth or Notifications depend on one another:
 
 - sign-in: `delivery:web`, `delivery:email`, `domain:security`, `domain:authentication`;
 - authentication-method change: web and email security alert;
@@ -140,12 +140,12 @@ Compose Auth, Notifications, the bridge, and an email transport explicitly:
 
 ```csharp
 builder.AddModule<NotificationsModule>();
-builder.Services.AddAuthNotificationIntegration();
+builder.Services.AddAuthNotificationsExtension();
 builder.Services.AddNotificationEmailAdapter(builder.Configuration);
 builder.Services.AddSingleton<IEmailSender, ProductEmailSender>();
 ```
 
-The shared `Gma.Framework.Email` project contains transport-neutral message contracts only. Vendor credentials and SDKs belong in a product/provider adapter. If the Notifications email adapter is disabled, Auth still records verification state and publishes events, but no email is sent.
+The shared `Gma.Framework.Email` project contains transport-neutral message contracts only. Vendor credentials and SDKs belong in a product/provider adapter. If the extension or Notifications email adapter is absent, Auth still records verification state and publishes events, but no email is sent.
 
 ## Persistence and retention
 

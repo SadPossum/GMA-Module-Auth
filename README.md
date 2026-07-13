@@ -9,4 +9,4 @@ Useful entry points:
 - `Gma.Modules.Auth.slnx`
 - `docs/README.md`
 
-The core remains provider-neutral. `Gma.Modules.Auth.Providers.OpenIdConnect` is an optional adapter for Google, Microsoft, and other standards-compliant OpenID Connect providers. Auth security and verification messages are delivered by the optional Notifications-owned `Gma.Modules.Notifications.Integrations.Auth` bridge.
+The core remains provider-neutral. `Gma.Modules.Auth.Providers.OpenIdConnect` is an optional adapter for Google, Microsoft, and other standards-compliant OpenID Connect providers. Applications that also install Notifications can opt into the composition-owned `Gma.Extensions.Auth.Notifications` bridge without coupling either module to the other.
