@@ -14,11 +14,95 @@ using Microsoft.AspNetCore.Routing;
 
 internal sealed class OpenIdConnectAuthEndpointContributor(
     OpenIdConnectProviderRegistry providers,
-    ExternalReturnUrlPolicy returnUrlPolicy)
+    ExternalReturnUrlPolicy returnUrlPolicy,
+    ExternalAuthenticationChallengeHandoff handoff)
     : IAuthEndpointContributor
 {
     public void MapEndpoints(RouteGroupBuilder authGroup, AuthProfile profile)
     {
+        RouteHandlerBuilder providerList = authGroup.MapGet("/external/providers", () =>
+            Results.Ok(new ExternalAuthenticationProviderListResponse(providers.ProviderCodes)));
+        providerList.Produces<ExternalAuthenticationProviderListResponse>(StatusCodes.Status200OK);
+
+        RouteHandlerBuilder browserSignIn = authGroup.MapPost("/external/{provider}/sign-in/challenge", (
+            string provider,
+            ExternalAuthenticationChallengeRequest request,
+            HttpContext httpContext,
+            IScopeContext scopeContext) =>
+            this.CreateBrowserHandoff(
+                httpContext,
+                provider,
+                request.ReturnUrl,
+                scopeContext.ScopeId,
+                ExternalAuthenticationIntent.SignIn,
+                targetMemberId: null,
+                targetSessionId: null));
+        browserSignIn.Produces<ExternalAuthenticationChallengeResponse>(StatusCodes.Status200OK);
+        ApplyScope(browserSignIn, profile);
+
+        RouteHandlerBuilder browserLink = authGroup.MapPost("/external/{provider}/link/challenge", (
+            string provider,
+            ExternalAuthenticationChallengeRequest request,
+            HttpContext httpContext,
+            ClaimsPrincipal user,
+            IScopeContext scopeContext) =>
+        {
+            if (!TokenScopeMatches(profile, user, scopeContext) ||
+                !TryGetClaimGuid(user, ClaimTypes.NameIdentifier, out Guid memberId) ||
+                !TryGetClaimGuid(user, ApplicationClaimNames.SessionId, out Guid sessionId))
+            {
+                return Results.Unauthorized();
+            }
+
+            return this.CreateBrowserHandoff(
+                httpContext,
+                provider,
+                request.ReturnUrl,
+                scopeContext.ScopeId,
+                ExternalAuthenticationIntent.Link,
+                memberId,
+                sessionId);
+        })
+            .RequireAuthorization();
+        browserLink.Produces<ExternalAuthenticationChallengeResponse>(StatusCodes.Status200OK);
+        ApplyScope(browserLink, profile);
+
+        RouteHandlerBuilder browserChallenge = authGroup.MapGet("/external/challenge/{nonce}", (
+            string nonce,
+            HttpContext httpContext,
+            IScopeContext scopeContext,
+            IScopeContextAccessor scopeAccessor) =>
+        {
+            if (!handoff.TryConsume(httpContext, nonce, out ExternalAuthenticationChallengeHandoff.ChallengePayload? payload) ||
+                payload is null)
+            {
+                return Results.BadRequest(new { error = "The external authentication challenge is missing or expired." });
+            }
+
+            if (scopeContext.IsEnabled)
+            {
+                if (string.IsNullOrWhiteSpace(payload.ScopeId))
+                {
+                    return Results.BadRequest(new { error = "The external authentication challenge is missing its scope." });
+                }
+
+                scopeAccessor.SetScope(payload.ScopeId);
+                if (!string.Equals(scopeAccessor.ScopeId, payload.ScopeId, StringComparison.Ordinal))
+                {
+                    return Results.BadRequest(new { error = "The external authentication challenge scope is invalid." });
+                }
+            }
+
+            return this.CreateChallenge(
+                payload.Provider,
+                payload.ReturnUrl,
+                payload.ScopeId,
+                payload.Intent,
+                payload.TargetMemberId,
+                payload.TargetSessionId);
+        });
+        browserChallenge.ExcludeFromDescription();
+
         RouteHandlerBuilder signIn = authGroup.MapGet("/external/{provider}/sign-in", (
             string provider,
             string returnUrl,
@@ -55,6 +139,35 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
         })
             .RequireAuthorization();
         ApplyScope(link, profile);
+    }
+
+    private IResult CreateBrowserHandoff(
+        HttpContext httpContext,
+        string provider,
+        string returnUrl,
+        string? scopeId,
+        ExternalAuthenticationIntent intent,
+        Guid? targetMemberId,
+        Guid? targetSessionId)
+    {
+        if (!providers.TryGetScheme(provider, out _))
+        {
+            return Results.NotFound();
+        }
+
+        if (!returnUrlPolicy.TryValidate(returnUrl, out string validatedReturnUrl))
+        {
+            return Results.BadRequest(new { error = "The external authentication return URL is not allowed." });
+        }
+
+        return Results.Ok(handoff.Issue(
+            httpContext,
+            provider,
+            validatedReturnUrl,
+            scopeId,
+            intent,
+            targetMemberId,
+            targetSessionId));
     }
 
     private IResult CreateChallenge(

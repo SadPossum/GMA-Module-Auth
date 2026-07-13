@@ -4,6 +4,7 @@ using Gma.Modules.Auth.Api;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -38,16 +39,19 @@ public static class DependencyInjection
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<AuthOpenIdConnectOptions>, AuthOpenIdConnectOptionsValidator>());
 
+        builder.Services.AddSingleton(configured);
+        builder.Services.AddSingleton<OpenIdConnectProviderRegistry>();
+        builder.Services.AddSingleton<ExternalReturnUrlPolicy>();
+        builder.Services.AddDataProtection();
+        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton<ExternalAuthenticationChallengeHandoff>();
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IAuthEndpointContributor, OpenIdConnectAuthEndpointContributor>());
+
         if (!configured.Enabled)
         {
             return builder;
         }
-
-        builder.Services.AddSingleton(configured);
-        builder.Services.AddSingleton<OpenIdConnectProviderRegistry>();
-        builder.Services.AddSingleton<ExternalReturnUrlPolicy>();
-        builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IAuthEndpointContributor, OpenIdConnectAuthEndpointContributor>());
 
         AuthenticationBuilder authentication = builder.Services
             .AddAuthentication()

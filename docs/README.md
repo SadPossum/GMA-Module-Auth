@@ -53,8 +53,11 @@ Base path: `/api/auth`.
 | `POST` | `/email-verification` | Request a bounded, cooldown-protected verification challenge. |
 | `POST` | `/email-verification/confirm` | Confirm a one-time verification code. |
 | `POST` | `/external/exchange` | Exchange a provider callback code for GMA tokens or complete a link. |
-| `GET` | `/external/{provider}/sign-in` | Begin an enabled OpenID Connect sign-in. |
-| `GET` | `/external/{provider}/link` | Begin an authenticated provider link. |
+| `GET` | `/external/providers` | Discover enabled OpenID Connect provider codes. |
+| `POST` | `/external/{provider}/sign-in/challenge` | Create a browser-safe sign-in challenge handoff. |
+| `POST` | `/external/{provider}/link/challenge` | Create an authenticated browser-safe link challenge handoff. |
+| `GET` | `/external/{provider}/sign-in` | Begin an enabled OpenID Connect sign-in for non-browser clients that can send scope headers. |
+| `GET` | `/external/{provider}/link` | Begin a provider link for non-browser clients that can send scope and bearer headers. |
 
 The browser variants under `/api/auth/browser` keep refresh material in HttpOnly cookies. Scope-aware hosts also require `X-Tenant-Id`; protected endpoints require a bearer access token.
 
@@ -117,7 +120,9 @@ https://api.example.com/api/auth/external/callback/microsoft
 
 `TreatEmailAsVerified` is an explicit trust decision for providers that do not emit a boolean verification claim. It is false in the Google and Microsoft examples so generated applications fail closed. Enable it only when the configured issuer guarantees ownership of the selected email claim. It still cannot merge into an existing account; explicit authenticated linking is required. Custom providers can select different email claim names without changing Auth.
 
-The frontend receives `code` and `provider` on its allowlisted return URL, then posts the code once to `/external/exchange` or `/browser/external/exchange`. Do not log the code or place GMA access/refresh tokens in a redirect URL.
+Browser applications first post `{ "returnUrl": "..." }` to the sign-in or link challenge endpoint. The response contains a same-origin `startUrl`; navigate the top-level browser to that URL. GMA transfers the scope and, for links, authenticated member/session identity through a five-minute, HttpOnly, data-protected handoff cookie that the browser deletes when the challenge begins. This avoids putting access tokens, member ids, or protected handoff state in URLs and works with scope-aware applications whose tenant header cannot be attached to top-level navigation. The adapter exposes the same challenge contract with an empty provider list while disabled, so mounted-package OpenAPI remains stable.
+
+The frontend receives `code` and `provider` on its allowlisted return URL, then posts the code once to `/external/exchange` or `/browser/external/exchange`. Do not log the code or place GMA access/refresh tokens in a redirect URL. Browser sign-in/link and callback load balancing require the same persisted Data Protection key ring across API replicas.
 
 ## Password and provider hybrid
 

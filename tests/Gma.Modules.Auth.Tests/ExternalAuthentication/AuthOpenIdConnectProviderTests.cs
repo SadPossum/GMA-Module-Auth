@@ -4,6 +4,8 @@ using Gma.Modules.Auth.Providers.OpenIdConnect;
 using Gma.Framework.Scoping;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -14,14 +16,15 @@ using Xunit;
 public sealed class AuthOpenIdConnectProviderTests
 {
     [Fact]
-    public void Disabled_configuration_registers_without_provider_credentials()
+    public void Disabled_configuration_registers_a_stable_empty_provider_contract()
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder();
 
         builder.AddAuthOpenIdConnectProviders();
 
         using IHost host = builder.Build();
-        Assert.Null(host.Services.GetService<OpenIdConnectProviderRegistry>());
+        Assert.Empty(host.Services.GetRequiredService<OpenIdConnectProviderRegistry>().ProviderCodes);
+        Assert.Single(host.Services.GetServices<Gma.Modules.Auth.Api.IAuthEndpointContributor>());
     }
 
     [Fact]
@@ -190,6 +193,89 @@ public sealed class AuthOpenIdConnectProviderTests
         Assert.False(OpenIdConnectHandoffScope.TryRestore(new AuthenticationProperties(), services));
     }
 
+    [Fact]
+    public void Handoff_allows_global_profiles_without_scope_state()
+    {
+        AuthenticationProperties properties = new();
+        OpenIdConnectHandoffScope.Store(properties, scopeId: null);
+        using ServiceProvider services = new ServiceCollection()
+            .AddSingleton<IScopeContextAccessor>(new TestScopeContextAccessor(enabled: false))
+            .BuildServiceProvider();
+
+        Assert.True(OpenIdConnectHandoffScope.TryRestore(properties, services));
+        Assert.DoesNotContain(OpenIdConnectHandoffProperties.ScopeId, properties.Items.Keys);
+    }
+
+    [Fact]
+    public void Browser_challenge_handoff_is_http_only_bounded_and_consumed_by_the_browser()
+    {
+        var clock = new TestTimeProvider(new DateTimeOffset(2026, 7, 14, 12, 0, 0, TimeSpan.Zero));
+        var handoff = new ExternalAuthenticationChallengeHandoff(
+            new EphemeralDataProtectionProvider(),
+            clock);
+        var issueContext = new DefaultHttpContext();
+        issueContext.Request.Scheme = "https";
+        Guid memberId = Guid.NewGuid();
+        Guid sessionId = Guid.NewGuid();
+
+        ExternalAuthenticationChallengeResponse response = handoff.Issue(
+            issueContext,
+            "GOOGLE",
+            "https://app.example.com/auth/complete",
+            "tenant-a",
+            Gma.Modules.Auth.Application.ExternalAuthentication.ExternalAuthenticationIntent.Link,
+            memberId,
+            sessionId);
+
+        string setCookie = Assert.Single(issueContext.Response.Headers.SetCookie)!;
+        Assert.StartsWith(ExternalAuthenticationChallengeHandoff.StartPath, response.StartUrl, StringComparison.Ordinal);
+        Assert.Contains("httponly", setCookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("samesite=strict", setCookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("max-age=300", setCookie, StringComparison.OrdinalIgnoreCase);
+
+        var consumeContext = new DefaultHttpContext();
+        consumeContext.Request.Scheme = "https";
+        consumeContext.Request.Headers.Cookie = setCookie.Split(';', 2)[0];
+        string nonce = response.StartUrl[(response.StartUrl.LastIndexOf('/') + 1)..];
+
+        Assert.True(handoff.TryConsume(consumeContext, nonce, out var payload));
+        Assert.NotNull(payload);
+        Assert.Equal("google", payload.Provider);
+        Assert.Equal("tenant-a", payload.ScopeId);
+        Assert.Equal(memberId, payload.TargetMemberId);
+        Assert.Equal(sessionId, payload.TargetSessionId);
+        Assert.Contains("expires=", Assert.Single(consumeContext.Response.Headers.SetCookie)!,
+            StringComparison.OrdinalIgnoreCase);
+
+        var replayContext = new DefaultHttpContext();
+        Assert.False(handoff.TryConsume(replayContext, nonce, out _));
+    }
+
+    [Fact]
+    public void Browser_challenge_handoff_rejects_expired_state()
+    {
+        var clock = new TestTimeProvider(new DateTimeOffset(2026, 7, 14, 12, 0, 0, TimeSpan.Zero));
+        var handoff = new ExternalAuthenticationChallengeHandoff(
+            new EphemeralDataProtectionProvider(),
+            clock);
+        var issueContext = new DefaultHttpContext();
+        ExternalAuthenticationChallengeResponse response = handoff.Issue(
+            issueContext,
+            "google",
+            "/auth/complete",
+            "tenant-a",
+            Gma.Modules.Auth.Application.ExternalAuthentication.ExternalAuthenticationIntent.SignIn,
+            targetMemberId: null,
+            targetSessionId: null);
+        string setCookie = Assert.Single(issueContext.Response.Headers.SetCookie)!;
+        string nonce = response.StartUrl[(response.StartUrl.LastIndexOf('/') + 1)..];
+        clock.Advance(TimeSpan.FromMinutes(6));
+        var consumeContext = new DefaultHttpContext();
+        consumeContext.Request.Headers.Cookie = setCookie.Split(';', 2)[0];
+
+        Assert.False(handoff.TryConsume(consumeContext, nonce, out _));
+    }
+
     private static AuthOpenIdConnectOptions CreateOptions() =>
         new()
         {
@@ -206,12 +292,21 @@ public sealed class AuthOpenIdConnectProviderTests
             },
         };
 
-    private sealed class TestScopeContextAccessor : IScopeContextAccessor
+    private sealed class TestScopeContextAccessor(bool enabled = true) : IScopeContextAccessor
     {
-        public bool IsEnabled => true;
+        public bool IsEnabled => enabled;
         public string? ScopeId { get; private set; }
 
         public void SetScope(string scopeId) => this.ScopeId = scopeId;
         public void ClearScope() => this.ScopeId = null;
+    }
+
+    private sealed class TestTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private DateTimeOffset utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => this.utcNow;
+
+        public void Advance(TimeSpan duration) => this.utcNow = this.utcNow.Add(duration);
     }
 }

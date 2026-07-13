@@ -10,19 +10,31 @@ internal static class OpenIdConnectHandoffScope
     public static void Store(AuthenticationProperties properties, string? scopeId)
     {
         ArgumentNullException.ThrowIfNull(properties);
-        properties.Items[OpenIdConnectHandoffProperties.ScopeId] = ScopeIds.Normalize(scopeId!);
+        if (ScopeIds.TryNormalize(scopeId, out string? normalizedScopeId))
+        {
+            properties.Items[OpenIdConnectHandoffProperties.ScopeId] = normalizedScopeId;
+        }
+        else
+        {
+            properties.Items.Remove(OpenIdConnectHandoffProperties.ScopeId);
+        }
     }
 
     public static bool TryRestore(AuthenticationProperties? properties, IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(services);
+        IScopeContextAccessor scopeContext = services.GetRequiredService<IScopeContextAccessor>();
+        if (!scopeContext.IsEnabled)
+        {
+            return true;
+        }
+
         if (properties?.Items.TryGetValue(OpenIdConnectHandoffProperties.ScopeId, out string? scopeId) != true ||
             !ScopeIds.TryNormalize(scopeId, out string? normalizedScopeId))
         {
             return false;
         }
 
-        IScopeContextAccessor scopeContext = services.GetRequiredService<IScopeContextAccessor>();
         scopeContext.SetScope(normalizedScopeId);
         return string.Equals(scopeContext.ScopeId, normalizedScopeId, StringComparison.Ordinal);
     }

@@ -17,6 +17,8 @@ internal sealed partial class OpenIdConnectProviderRegistry(AuthOpenIdConnectOpt
     public bool TryGetScheme(string provider, out string scheme) =>
         this.schemes.TryGetValue(NormalizeProviderKey(provider), out scheme!);
 
+    public IReadOnlyList<string> ProviderCodes => this.schemes.Keys.Order(StringComparer.Ordinal).ToArray();
+
     public static bool IsValidProviderKey(string provider) =>
         !string.IsNullOrWhiteSpace(provider) && ProviderKeyRegex().IsMatch(provider.Trim());
 

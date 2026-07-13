@@ -4,6 +4,7 @@ using Gma.Framework.Api.Modules;
 using Gma.Framework.Infrastructure;
 using Gma.Modules.Auth.Api;
 using Gma.Modules.Auth.Contracts;
+using Gma.Modules.Auth.Providers.OpenIdConnect;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
@@ -25,6 +26,7 @@ public sealed class AuthEndpointContractTests
         ]);
         builder.AddGmaInfrastructure();
         builder.AddAuthModule(AuthProfile.Global("global"));
+        builder.AddAuthOpenIdConnectProviders();
 
         await using WebApplication app = builder.Build();
         app.MapModules();
@@ -37,5 +39,9 @@ public sealed class AuthEndpointContractTests
 
         Assert.Contains("/api/auth/password/remove", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external-identities/{externalIdentityId:guid}/unlink", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/external/providers", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/external/{provider}/sign-in/challenge", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/external/{provider}/link/challenge", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/external/challenge/{nonce}", routes, StringComparer.Ordinal);
     }
 }
