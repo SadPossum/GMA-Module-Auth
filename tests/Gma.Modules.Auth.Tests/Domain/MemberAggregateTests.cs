@@ -377,6 +377,165 @@ public sealed class MemberAggregateTests
         Assert.All(member.Sessions, session => Assert.False(session.IsActive));
     }
 
+    [Fact]
+    public void External_registration_creates_verified_email_and_passwordless_identity()
+    {
+        Result<Member> result = Member.CreateExternal(
+            new MemberId(Guid.NewGuid()),
+            "tenant-a",
+            "member@example.com",
+            new MemberUsernameId(Guid.NewGuid()),
+            new MemberExternalIdentityId(Guid.NewGuid()),
+            "Google",
+            "https://accounts.google.com",
+            "provider-subject",
+            Guid.NewGuid(),
+            Now);
+
+        Assert.True(result.IsSuccess);
+        Assert.False(result.Value.HasPassword);
+        Assert.True(Assert.Single(result.Value.Usernames).IsVerified);
+        Assert.Equal("google", Assert.Single(result.Value.ExternalIdentities).ProviderCode);
+    }
+
+    [Fact]
+    public void External_registration_rejects_control_characters_in_identity_components()
+    {
+        Result<Member> result = Member.CreateExternal(
+            new MemberId(Guid.NewGuid()),
+            "tenant-a",
+            "member@example.com",
+            new MemberUsernameId(Guid.NewGuid()),
+            new MemberExternalIdentityId(Guid.NewGuid()),
+            "google",
+            "https://accounts.google.com",
+            "subject\n2",
+            Guid.NewGuid(),
+            Now);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthDomainErrors.ExternalIdentityNotValid, result.Error);
+    }
+
+    [Fact]
+    public void Removing_last_authentication_method_is_rejected()
+    {
+        Member passwordOnly = CreateMember("password@example.com").Value;
+        Result removePassword = passwordOnly.RemovePassword();
+
+        Member externalOnly = Member.CreateExternal(
+            new MemberId(Guid.NewGuid()),
+            "tenant-a",
+            "external@example.com",
+            new MemberUsernameId(Guid.NewGuid()),
+            new MemberExternalIdentityId(Guid.NewGuid()),
+            "google",
+            "https://accounts.google.com",
+            "subject",
+            Guid.NewGuid(),
+            Now).Value;
+        Result unlink = externalOnly.UnlinkExternalIdentity(Assert.Single(externalOnly.ExternalIdentities).Id);
+
+        Assert.Equal(AuthDomainErrors.AuthenticationMethodRequired, removePassword.Error);
+        Assert.Equal(AuthDomainErrors.AuthenticationMethodRequired, unlink.Error);
+    }
+
+    [Fact]
+    public void Multiple_external_identities_can_be_linked_and_unlinked_without_lockout()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        Result<MemberExternalIdentity> google = member.LinkExternalIdentity(
+            new MemberExternalIdentityId(Guid.NewGuid()),
+            "google",
+            "https://accounts.google.com",
+            "google-subject",
+            Now);
+        Result<MemberExternalIdentity> microsoft = member.LinkExternalIdentity(
+            new MemberExternalIdentityId(Guid.NewGuid()),
+            "microsoft",
+            "https://login.microsoftonline.com/common/v2.0",
+            "microsoft-subject",
+            Now);
+        Result unlink = member.UnlinkExternalIdentity(google.Value.Id);
+
+        Assert.True(google.IsSuccess);
+        Assert.True(microsoft.IsSuccess);
+        Assert.True(unlink.IsSuccess);
+        Assert.Equal("microsoft", Assert.Single(member.ExternalIdentities).ProviderCode);
+    }
+
+    [Fact]
+    public void Session_records_the_authentication_method()
+    {
+        Member member = CreateMember("member@example.com").Value;
+
+        Result<MemberSession> result = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "refresh-hash",
+            Now.AddDays(1),
+            Now,
+            MemberAuthenticationMethods.External("Google"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("external:google", result.Value.AuthenticationMethod);
+    }
+
+    [Fact]
+    public void Email_verification_is_single_use_and_expires()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberUsername username = Assert.Single(member.Usernames);
+
+        Result requested = member.RequestEmailVerification(
+            username.Id,
+            "verification-hash",
+            "verification-code",
+            Guid.NewGuid(),
+            Now.AddMinutes(30),
+            Now);
+        Result invalid = member.ConfirmEmailVerification(
+            username.Id,
+            "wrong-hash",
+            Guid.NewGuid(),
+            Now.AddMinutes(1));
+        Result confirmed = member.ConfirmEmailVerification(
+            username.Id,
+            "verification-hash",
+            Guid.NewGuid(),
+            Now.AddMinutes(1));
+        Result repeated = member.ConfirmEmailVerification(
+            username.Id,
+            "verification-hash",
+            Guid.NewGuid(),
+            Now.AddMinutes(2));
+
+        Assert.True(requested.IsSuccess);
+        Assert.Equal(AuthDomainErrors.EmailVerificationTokenNotValid, invalid.Error);
+        Assert.True(confirmed.IsSuccess);
+        Assert.True(repeated.IsSuccess);
+        Assert.True(username.IsVerified);
+        Assert.Null(username.VerificationTokenHash);
+    }
+
+    [Fact]
+    public void Authentication_method_changes_raise_an_auditable_domain_event()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        member.ClearDomainEvents();
+
+        Result result = member.RecordAuthenticationMethodChanged(
+            MemberAuthenticationMethods.External("Google"),
+            MemberAuthenticationMethodChange.Added,
+            Guid.NewGuid(),
+            Now);
+
+        Assert.True(result.IsSuccess);
+        MemberAuthenticationMethodChangedDomainEvent domainEvent = Assert.Single(
+            member.DomainEvents.OfType<MemberAuthenticationMethodChangedDomainEvent>());
+        Assert.Equal("external:google", domainEvent.AuthenticationMethod);
+        Assert.Equal(MemberAuthenticationMethodChange.Added, domainEvent.Change);
+    }
+
     private static Gma.Framework.Results.Result<Member> CreateMember(
         string username,
         string scopeId = "tenant-a",

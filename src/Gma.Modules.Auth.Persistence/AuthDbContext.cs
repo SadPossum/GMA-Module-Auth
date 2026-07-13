@@ -13,6 +13,9 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, IScop
     public DbSet<Member> Members => this.Set<Member>();
     public DbSet<MemberUsername> MemberUsernames => this.Set<MemberUsername>();
     public DbSet<MemberSession> MemberSessions => this.Set<MemberSession>();
+    public DbSet<MemberExternalIdentity> MemberExternalIdentities => this.Set<MemberExternalIdentity>();
+    internal DbSet<ExternalAuthenticationExchangeRecord> ExternalAuthenticationExchanges =>
+        this.Set<ExternalAuthenticationExchangeRecord>();
     public DbSet<OutboxMessage> OutboxMessages => this.Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => this.Set<InboxMessage>();
 

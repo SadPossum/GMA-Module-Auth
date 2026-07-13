@@ -25,6 +25,13 @@ internal sealed class MemberSessionConfiguration : IEntityTypeConfiguration<Memb
         builder.Property(session => session.PreviousRefreshTokenHash)
             .HasMaxLength(MemberSession.RefreshTokenHashMaxLength);
 
+        builder.Property(session => session.AuthenticationMethod)
+            .HasMaxLength(MemberAuthenticationMethods.MaxLength)
+            .HasDefaultValue(MemberAuthenticationMethods.Password)
+            .IsRequired();
+
         builder.HasIndex(session => new { session.ScopeId, session.RefreshTokenHash });
+        builder.HasIndex(session => session.RefreshTokenExpiresAtUtc);
+        builder.HasIndex(session => new { session.IsActive, session.SignOutDateTimeUtc });
     }
 }

@@ -6,6 +6,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Gma.Framework.Application.Composition;
 using Gma.Modules.Auth.Application.Security;
+using Gma.Modules.Auth.Application.ExternalAuthentication;
+using Gma.Modules.Auth.Application.Ports;
 
 public static class DependencyInjection
 {
@@ -29,6 +31,7 @@ public static class DependencyInjection
         services.AddApplicationServicesFromAssembly(typeof(DependencyInjection).Assembly);
         services.TryAddSingleton<IPasswordBlocklist, CommonPasswordBlocklist>();
         services.TryAddSingleton<IAuthenticationAttemptLimiter, InMemoryAuthenticationAttemptLimiter>();
+        services.TryAddScoped<IExternalAuthenticationHandoffService, ExternalAuthenticationHandoffService>();
 
         return services;
     }

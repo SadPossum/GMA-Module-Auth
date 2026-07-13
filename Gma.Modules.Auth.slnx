@@ -40,6 +40,7 @@
   <Folder Name="/src/Infrastructure/">
     <Project Path="src/Gma.Modules.Auth.Infrastructure.JwtBearer/Gma.Modules.Auth.Infrastructure.JwtBearer.csproj" />
     <Project Path="src/Gma.Modules.Auth.Infrastructure/Gma.Modules.Auth.Infrastructure.csproj" />
+    <Project Path="src/Gma.Modules.Auth.Providers.OpenIdConnect/Gma.Modules.Auth.Providers.OpenIdConnect.csproj" />
   </Folder>
   <Folder Name="/src/Persistence/">
     <Project Path="src/Gma.Modules.Auth.Persistence.PostgreSqlMigrations/Gma.Modules.Auth.Persistence.PostgreSqlMigrations.csproj" />

@@ -8,8 +8,9 @@ using Microsoft.EntityFrameworkCore;
 using Gma.Framework.Pagination;
 using ContractMemberStatus = Gma.Modules.Auth.Contracts.MemberStatus;
 using DomainMemberStatus = Gma.Modules.Auth.Domain.Enums.MemberStatus;
+using Gma.Framework.Runtime.Time;
 
-internal sealed class AdminMemberReadRepository(AuthDbContext dbContext) : IAdminMemberReadRepository
+internal sealed class AdminMemberReadRepository(AuthDbContext dbContext, ISystemClock clock) : IAdminMemberReadRepository
 {
     public async Task<AdminMemberListResponse> ListMembersAsync(
         PageRequest pageRequest,
@@ -36,7 +37,7 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext) : IAdmi
                 ToContractStatus(member.Status),
                 GetActiveUsername(member),
                 member.RegisteredAtUtc,
-                member.Sessions.Count(session => session.IsActive)))
+                CountActiveSessions(member, clock.UtcNow)))
             .ToArray();
 
         return new AdminMemberListResponse(items, pageRequest.Page, pageRequest.PageSize, totalCount);
@@ -48,6 +49,7 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext) : IAdmi
             .AsNoTracking()
             .Include(item => item.Usernames)
             .Include(item => item.Sessions)
+            .Include(item => item.ExternalIdentities)
             .AsSplitQuery()
             .SingleOrDefaultAsync(item => item.Id == new MemberId(memberId), cancellationToken)
             .ConfigureAwait(false);
@@ -62,8 +64,15 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext) : IAdmi
                 member.RegisteredAtUtc,
                 member.DisabledAtUtc,
                 member.DisabledReason,
-                member.Sessions.Count(session => session.IsActive),
-                member.Sessions.Count);
+                CountActiveSessions(member, clock.UtcNow),
+                member.Sessions.Count,
+                member.HasPassword,
+                member.Usernames.Any(username => username.IsActive && username.IsVerified),
+                member.ExternalIdentities
+                    .Select(identity => identity.ProviderCode)
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray());
     }
 
     private static string? GetActiveUsername(Member member) =>
@@ -72,6 +81,9 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext) : IAdmi
             .OrderBy(username => username.UsernameType)
             .Select(username => username.Value)
             .FirstOrDefault();
+
+    private static int CountActiveSessions(Member member, DateTimeOffset nowUtc) =>
+        member.Sessions.Count(session => session.IsActive && session.RefreshTokenExpiresAtUtc > nowUtc);
 
     private static ContractMemberStatus ToContractStatus(DomainMemberStatus status) =>
         status switch

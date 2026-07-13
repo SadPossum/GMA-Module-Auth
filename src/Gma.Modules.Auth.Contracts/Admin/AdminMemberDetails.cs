@@ -9,4 +9,7 @@ public sealed record AdminMemberDetails(
     DateTimeOffset? DisabledAtUtc,
     string? DisabledReason,
     int ActiveSessionCount,
-    int TotalSessionCount);
+    int TotalSessionCount,
+    bool HasPassword = true,
+    bool HasVerifiedEmail = false,
+    IReadOnlyList<string>? ExternalProviders = null);

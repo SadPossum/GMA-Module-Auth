@@ -12,6 +12,36 @@ public static class AuthApplicationErrors
     public static readonly Error PasswordBlocked = new(
         "Auth.PasswordBlocked",
         "Choose a password that is not commonly used or known to be compromised.");
+    public static readonly Error ExternalExchangeInvalid = new(
+        "Auth.ExternalExchangeInvalid",
+        "External authentication exchange is invalid, expired, or already used.");
+    public static readonly Error ExternalVerifiedEmailRequired = new(
+        "Auth.ExternalVerifiedEmailRequired",
+        "A provider-verified email is required to create an account.");
+    public static readonly Error ExternalAccountLinkRequired = new(
+        "Auth.ExternalAccountLinkRequired",
+        "An account already uses this email. Sign in and link the provider explicitly.");
+    public static readonly Error ExternalLinkAuthorizationRequired = new(
+        "Auth.ExternalLinkAuthorizationRequired",
+        "The external identity link must be completed by the authenticated member who started it.");
+    public static readonly Error FreshAuthenticationRequired = new(
+        "Auth.FreshAuthenticationRequired",
+        "Fresh authentication is required for this security-sensitive operation.");
+    public static readonly Error AlternateAuthenticationRequired = new(
+        "Auth.AlternateAuthenticationRequired",
+        "Authenticate with a different linked method or confirm the account password before unlinking this identity.");
+    public static readonly Error ExternalIdentityAlreadyLinked = AuthDomainErrors.ExternalIdentityAlreadyLinked;
+    public static readonly Error ExternalIdentityNotFound = AuthDomainErrors.ExternalIdentityNotFound;
+    public static readonly Error PasswordNotConfigured = AuthDomainErrors.PasswordNotConfigured;
+    public static readonly Error AuthenticationMethodRequired = AuthDomainErrors.AuthenticationMethodRequired;
+    public static readonly Error EmailUsernameNotFound = AuthDomainErrors.EmailUsernameNotFound;
+    public static readonly Error EmailAlreadyVerified = AuthDomainErrors.EmailAlreadyVerified;
+    public static readonly Error EmailVerificationInvalid = new(
+        "Auth.EmailVerificationInvalid",
+        "Email verification code is invalid or expired.");
+    public static readonly Error EmailVerificationRequestTooSoon = new(
+        "Auth.EmailVerificationRequestTooSoon",
+        "Wait before requesting another email verification message.");
     public static readonly Error CredentialsNotValid = AuthDomainErrors.CredentialsNotValid;
     public static readonly Error UsernameAlreadyExists = AuthDomainErrors.UsernameAlreadyExists;
     public static readonly Error MemberNotFound = AuthDomainErrors.MemberNotFound;

@@ -1,12 +1,15 @@
 namespace Gma.Modules.Auth.Persistence;
 
 using Gma.Modules.Auth.Application.Ports;
+using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Gma.Framework.Messaging;
 using Gma.Framework.Cqrs.UnitOfWork;
 using Gma.Framework.Persistence.EntityFrameworkCore;
@@ -18,6 +21,25 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.Services.AddPersistenceOptions(builder.Configuration);
+        AuthRetentionOptions retentionOptions = builder.Configuration
+            .GetSection(AuthRetentionOptions.SectionName)
+            .Get<AuthRetentionOptions>() ?? new();
+        ValidateOptionsResult retentionValidation = new AuthRetentionOptionsValidator()
+            .Validate(name: null, retentionOptions);
+        if (retentionValidation.Failed)
+        {
+            throw new OptionsValidationException(
+                AuthRetentionOptions.SectionName,
+                typeof(AuthRetentionOptions),
+                retentionValidation.Failures);
+        }
+
+        builder.Services
+            .AddOptions<AuthRetentionOptions>()
+            .Bind(builder.Configuration.GetSection(AuthRetentionOptions.SectionName))
+            .ValidateOnStart();
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<AuthRetentionOptions>, AuthRetentionOptionsValidator>());
 
         builder.Services.TryAddModuleDbContext<AuthDbContext>(options =>
             options.UseConfiguredProvider(
@@ -29,11 +51,18 @@ public static class DependencyInjection
 
         builder.Services.TryAddScoped<IMemberRepository, MemberRepository>();
         builder.Services.TryAddScoped<IAdminMemberReadRepository, AdminMemberReadRepository>();
+        builder.Services.TryAddScoped<IAuthMemberContactReader, AuthMemberContactReader>();
+        builder.Services.TryAddScoped<IExternalAuthenticationExchangeStore, ExternalAuthenticationExchangeStore>();
         builder.Services.TryAddEnumerable([
             ServiceDescriptor.Scoped<IUnitOfWork, AuthUnitOfWork>(),
             ServiceDescriptor.Scoped<IOutboxWriter, AuthOutboxWriter>(),
             ServiceDescriptor.Scoped<IOutboxStore, AuthOutboxStore>()
         ]);
+        if (retentionOptions.Enabled)
+        {
+            builder.Services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IHostedService, AuthRetentionService>());
+        }
 
         return builder;
     }

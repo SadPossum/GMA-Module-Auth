@@ -31,6 +31,9 @@ public sealed class AuthIntegrationEventContractTests
         Assert.Equal(
             "acme-orders.auth.member-sessions-revoked.v1",
             AuthIntegrationSubjects.CreateMemberSessionsRevoked("acme-orders"));
+        Assert.Equal(
+            "acme-orders.auth.member-authentication-method-changed.v1",
+            AuthIntegrationSubjects.CreateMemberAuthenticationMethodChanged("acme-orders"));
     }
 
     [Fact]
@@ -134,5 +137,27 @@ public sealed class AuthIntegrationEventContractTests
             OccurredAtUtc,
             MemberId,
             -1));
+    }
+
+    [Fact]
+    public void Authentication_method_change_accepts_known_changes_and_rejects_unknown_values()
+    {
+        MemberAuthenticationMethodChangedIntegrationEvent integrationEvent = new(
+            EventId,
+            "tenant-a",
+            OccurredAtUtc,
+            MemberId,
+            "external:google",
+            AuthenticationMethodChange.Added);
+
+        Assert.Equal("external:google", integrationEvent.AuthenticationMethod);
+        Assert.Equal(AuthenticationMethodChange.Added, integrationEvent.Change);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MemberAuthenticationMethodChangedIntegrationEvent(
+            EventId,
+            "tenant-a",
+            OccurredAtUtc,
+            MemberId,
+            "external:google",
+            AuthenticationMethodChange.Unknown));
     }
 }

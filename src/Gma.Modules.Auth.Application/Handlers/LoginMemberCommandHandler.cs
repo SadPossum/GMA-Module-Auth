@@ -39,7 +39,7 @@ internal sealed class LoginMemberCommandHandler(
 
         Member? member = await memberRepository.GetByUsernameAsync(command.Username, cancellationToken).ConfigureAwait(false);
 
-        if (member is null || !member.HasActiveUsername(command.Username))
+        if (member is null || !member.HasActiveUsername(command.Username) || member.PasswordHash is null)
         {
             attemptLimiter.RecordFailure(scopeId, command.Username, this.Clock.UtcNow);
             return Result.Failure<AuthTokensResponse>(AuthDomainErrors.CredentialsNotValid);
@@ -71,6 +71,17 @@ internal sealed class LoginMemberCommandHandler(
         if (startSessionResult.IsFailure)
         {
             return Result.Failure<AuthTokensResponse>(startSessionResult.Error);
+        }
+
+        Result authenticated = member.RecordAuthentication(
+            tokens.SessionId,
+            this.IdGenerator.NewId(),
+            this.Clock.UtcNow,
+            AuthenticationClientContext.NormalizeIpAddress(command.IpAddress),
+            AuthenticationClientContext.NormalizeUserAgent(command.UserAgent));
+        if (authenticated.IsFailure)
+        {
+            return Result.Failure<AuthTokensResponse>(authenticated.Error);
         }
 
         return Result.Success(new AuthTokensResponse(tokens.AccessToken, tokens.RefreshToken));

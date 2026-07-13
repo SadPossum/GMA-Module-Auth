@@ -1,8 +1,8 @@
 # Auth Module
 
-The Auth module is a reusable first-party module. It proves the architecture end to end: endpoints, CQRS handlers, aggregate behavior, EF Core persistence, tenant isolation, JWT auth, refresh token hashing, domain events, outbox writing, and JetStream publishing.
+The Auth module owns account credentials, external identity links, email ownership state, sessions, JWTs, and security events. Product profile data, provider-specific UI, email transport, notification history, KYC/KYB, and authorization policy remain outside Auth.
 
-## Projects
+## Projects and boundaries
 
 ```text
 Gma.Modules.Auth.Contracts
@@ -14,253 +14,188 @@ Gma.Modules.Auth.Persistence
 Gma.Modules.Auth.Persistence.SqlServerMigrations
 Gma.Modules.Auth.Persistence.PostgreSqlMigrations
 Gma.Modules.Auth.Api
+Gma.Modules.Auth.Providers.OpenIdConnect
 Gma.Modules.Auth.Admin.Contracts
 Gma.Modules.Auth.AdminCli
 Gma.Modules.Auth.AdminApi
 ```
 
-## Public Endpoints
+The domain and application layers do not depend on ASP.NET Core authentication handlers or a vendor SDK. Provider adapters validate an upstream assertion and pass a normalized `ValidatedExternalIdentity` into Auth. Other modules consume Auth contracts or the narrow `IAuthMemberContactReader`; they do not query Auth tables.
 
-Base path:
+## Security invariants
+
+- An external identity key is the exact `(scope, issuer, subject)` tuple. Email is never an external identity key. Persistence indexes a fixed SHA-256 key and still verifies issuer/subject exactly, avoiding oversized SQL Server keys while making the theoretical collision case fail closed.
+- A provider email can create a new account only when it is provider-verified. A matching local email returns `link-required`; Auth never auto-merges accounts by email.
+- Linking is bound to the exact authenticated member and session that initiated it, and that session must be fresh.
+- A member can link multiple providers. Removing a password or external identity cannot leave the member with no authentication method.
+- Provider access/refresh tokens are not stored. The browser callback receives only a short-lived, hashed, single-use GMA exchange code.
+- Passwords and verification codes are stored only as hashes. Refresh-token hashing supports active and previous peppers for rotation.
+- Refresh-token replay revokes active sessions. Admin password reset also revokes active sessions.
+- Sign-ins and authentication-method changes publish security events with bounded client context; secrets and provider tokens are excluded.
+- Scope context and the access-token scope claim must agree on protected scope-aware endpoints.
+- Scope-aware OIDC challenges carry the normalized scope only inside protected authentication state and restore it before the callback transaction; provider redirects do not depend on tenant headers surviving the round trip.
+
+## User API
+
+Base path: `/api/auth`.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/register` | Create a password account. |
+| `POST` | `/login` | Authenticate with username/password. |
+| `POST` | `/refresh` | Rotate a refresh token. |
+| `POST` | `/sign-out` | Revoke one session. |
+| `POST` | `/sign-out-all` | Revoke all sessions. |
+| `GET` | `/methods` | List password, email verification, and linked-provider state. |
+| `PUT` | `/password` | Add or change a password after fresh authentication. |
+| `POST` | `/password/remove` | Remove a password when another method remains. |
+| `POST` | `/external-identities/{id}/unlink` | Unlink a provider without account lockout. |
+| `POST` | `/email-verification` | Request a bounded, cooldown-protected verification challenge. |
+| `POST` | `/email-verification/confirm` | Confirm a one-time verification code. |
+| `POST` | `/external/exchange` | Exchange a provider callback code for GMA tokens or complete a link. |
+| `GET` | `/external/{provider}/sign-in` | Begin an enabled OpenID Connect sign-in. |
+| `GET` | `/external/{provider}/link` | Begin an authenticated provider link. |
+
+The browser variants under `/api/auth/browser` keep refresh material in HttpOnly cookies. Scope-aware hosts also require `X-Tenant-Id`; protected endpoints require a bearer access token.
+
+Registration remains backward-compatible: creating a password account does not suddenly require verified email. Products can request verification after registration and enforce `IsVerified` in their own onboarding/access policy. This avoids silently breaking existing applications while making verification state and delivery durable.
+
+## OpenID Connect adapter
+
+Compose the adapter explicitly after Auth:
+
+```csharp
+builder.AddAuthModule(AuthProfile.ScopeAware());
+builder.AddAuthOpenIdConnectProviders();
+```
+
+The adapter uses confidential authorization-code flow with PKCE, HTTPS metadata, a short-lived secure temporary cookie, `SaveTokens = false`, and an allowlist for absolute return origins. Relative local return paths are allowed. The callback path is deterministic:
 
 ```text
-/api/auth
+/api/auth/external/callback/{provider-key}
 ```
 
-Endpoints:
-
-- `POST /register`
-- `POST /login`
-- `POST /refresh`
-- `POST /sign-out`
-- `POST /sign-out-all`
-
-Scope-aware endpoints require:
-
-```http
-X-Tenant-Id: <tenant-id>
-```
-
-Protected endpoints require:
-
-```http
-Authorization: Bearer <access-token>
-```
-
-## Contracts
-
-`Gma.Modules.Auth.Contracts` contains:
-
-- `Api/` self-service request/response records such as `RegisterMemberRequest`, `LoginMemberRequest`, `RefreshTokenRequest`, `SignOutRequest`, and `AuthTokensResponse`;
-- `Admin/` admin member projection/response records used by CLI and admin HTTP flows;
-- `Events/` integration event payloads and subject constants;
-- `Metadata/` module metadata, permission code strings, and contract limits;
-- `Types/` public enum-like contract types such as `UsernameType` and `MemberStatus`.
-
-These types are the public surface of the module.
-
-Permission code strings live in `Gma.Modules.Auth.Contracts` for module metadata. Typed `AdminPermission` constants live in `Gma.Modules.Auth.Admin.Contracts` so public contracts do not reference the shared administration framework.
-
-## Domain Model
-
-Primary aggregate:
-
-- `Member`
-
-Supporting domain types:
-
-- `MemberSession`
-- `MemberUsername`
-- `MemberId`
-- `MemberSessionId`
-- `MemberUsernameId`
-- `MemberUsernameType`
-
-Important domain behavior:
-
-- create member;
-- normalize usernames and keep username values within persistence limits;
-- keep password hashes within persistence limits before member creation or reset;
-- start session with a bounded refresh-token hash;
-- refresh session with a bounded replacement refresh-token hash;
-- sign out one session;
-- sign out all sessions;
-- disable member with a trimmed, 512-character maximum reason and revoke active sessions;
-- enable disabled member;
-- reset password;
-- revoke active sessions as an admin action;
-- raise member lifecycle domain events.
-
-## Application Layer
-
-Commands:
-
-- `RegisterMemberCommand`
-- `LoginMemberCommand`
-- `RefreshMemberSessionCommand`
-- `SignOutCommand`
-- `SignOutAllCommand`
-- `AdminCreateMemberCommand`
-- `DisableMemberCommand`
-- `EnableMemberCommand`
-- `ResetMemberPasswordCommand`
-- `RevokeMemberSessionsCommand`
-
-Queries:
-
-- `ListAdminMembersQuery`
-- `GetAdminMemberQuery`
-
-Handlers:
-
-- create and authenticate members;
-- rotate refresh tokens;
-- verify session and tenant claims;
-- project `MemberRegisteredDomainEvent` to the outbox.
-- project member disabled, enabled, and session-revoked domain events to the outbox.
-
-Validators:
-
-- validate command shape before handler execution;
-- keep endpoint handlers thin.
-
-## Infrastructure
-
-Auth infrastructure provides:
-
-- validated issuer, audience, signing-key ring, active key id, and access-token lifetime options;
-- `PasswordHasher<T>` based password hashing;
-- versioned/keyed HMAC-SHA256 refresh token hashing with active and previous peppers;
-- access token generation and validation parameters.
-
-Core Auth infrastructure and the JWT bearer adapter live in separate projects. CLI/admin-command hosts use `Gma.Modules.Auth.Infrastructure` and `services.AddAuthInfrastructure(configuration)` for hashing and token services without adding HTTP authentication schemes or ASP.NET Core bearer packages. HTTP Auth surfaces explicitly reference `Gma.Modules.Auth.Infrastructure.JwtBearer` and call `AddAuthJwtBearerAuthentication()` when they need bearer-token validation.
-
-Auth application options validate refresh lifetime and failed-login account throttling. The built-in limiter is per process; multi-replica deployments should replace `IAuthenticationAttemptLimiter` with a distributed implementation while retaining edge/IP rate limits.
-
-User-chosen passwords default to 15-128 characters without composition rules. `IPasswordBlocklist` is replaceable so products can use a current breach corpus/service; the built-in list blocks only a small emergency baseline. Successful logins persist a new hash when the configured hasher reports that rehashing is needed.
-
-Refresh tokens are stored as hashes, never as raw token values.
-The option class has no secret default. A one-key deployment can supply `Auth__RefreshTokens__Pepper`. For rotation, configure `Auth:RefreshTokens:ActivePepperId` and `Auth:RefreshTokens:Peppers:<id>`. Keep the prior id/value until its refresh-token lifetime has elapsed. The legacy single `Pepper` property remains compatible for one-key deployments. Immediate reuse of the previous refresh token revokes all active member sessions.
-
-JWT signing is configured through `Auth:Jwt`. Prefer `ActiveSigningKeyId` plus `SigningKeys:<id>`; issued tokens carry `kid` and validation accepts all configured rotation keys. Keep the legacy `SigningKey` only for one-key compatibility. Every key must be at least 32 bytes and come from a secret provider outside local development.
-
-External OIDC providers, account recovery/email delivery, and MFA are product identity decisions rather than implicit core behavior. Add them as explicit adapters that validate the provider assertion/challenge before dispatching Auth commands; do not accept provider/user identifiers directly from an unauthenticated client. Google or another provider can be added without changing the password/session persistence model.
-Auth access tokens use `ClaimTypes.NameIdentifier` for the member id and shared `ApplicationClaimNames` constants for tenant and session claims. Keep claim-name changes centralized in `Gma.Framework.Security.ApplicationClaimNames` so public Auth endpoints, admin APIs, token validation, and test token helpers stay aligned.
-
-Member and session writes use optimistic concurrency tokens. Hosts receive a neutral conflict result when another request wins instead of silently overwriting newer credential/session state.
-
-Login and refresh fail when a member is disabled.
-
-## Persistence
-
-Auth persistence owns:
-
-- `AuthDbContext`
-- EF configurations
-- `MemberRepository`
-- `AuthUnitOfWork`
-- `AuthOutboxWriter`
-- `AuthOutboxStore`
-- admin member read projections
-- provider-specific migrations
-
-Auth uses schema:
+For example, register these redirect URIs with the providers:
 
 ```text
-auth
+https://api.example.com/api/auth/external/callback/google
+https://api.example.com/api/auth/external/callback/microsoft
 ```
 
-Migration history table:
-
-```text
-auth.__ef_migrations_history
+```json
+{
+  "Auth": {
+    "OpenIdConnect": {
+      "Enabled": true,
+      "AllowedReturnUrls": [ "https://app.example.com/auth/complete" ],
+      "Providers": {
+        "google": {
+          "Enabled": true,
+          "Authority": "https://accounts.google.com",
+          "ClientId": "from-secret-provider",
+          "ClientSecret": "from-secret-provider",
+          "Scopes": [ "openid", "email", "profile" ],
+          "EmailClaim": "email",
+          "EmailVerifiedClaim": "email_verified",
+          "TreatEmailAsVerified": false
+        },
+        "microsoft": {
+          "Enabled": true,
+          "Authority": "https://login.microsoftonline.com/common/v2.0",
+          "ClientId": "from-secret-provider",
+          "ClientSecret": "from-secret-provider",
+          "Scopes": [ "openid", "email", "profile" ],
+          "EmailClaim": "email",
+          "EmailVerifiedClaim": "email_verified",
+          "TreatEmailAsVerified": false
+        }
+      }
+    }
+  }
+}
 ```
 
-## Integration Events
+`TreatEmailAsVerified` is an explicit trust decision for providers that do not emit a boolean verification claim. It is false in the Google and Microsoft examples so generated applications fail closed. Enable it only when the configured issuer guarantees ownership of the selected email claim. It still cannot merge into an existing account; explicit authenticated linking is required. Custom providers can select different email claim names without changing Auth.
 
-Auth publishes:
+The frontend receives `code` and `provider` on its allowlisted return URL, then posts the code once to `/external/exchange` or `/browser/external/exchange`. Do not log the code or place GMA access/refresh tokens in a redirect URL.
 
-```text
-{application-namespace}.auth.member-registered.v1
-{application-namespace}.auth.member-disabled.v1
-{application-namespace}.auth.member-enabled.v1
-{application-namespace}.auth.member-sessions-revoked.v1
+## Password and provider hybrid
+
+External-only members can add a password from a fresh provider-authenticated session. Password members can link any number of configured providers. Existing passwords require the current password before change/removal. Unlinking the provider used by the current session requires an alternate proof; another linked provider or password must remain.
+
+`GET /methods` is the self-service source for account-security UI. Admin member details additively expose password presence, verified-email presence, and linked provider names.
+
+## Email verification and notifications
+
+Auth generates a high-entropy verification code, stores only its rotating HMAC hash, and publishes `MemberEmailVerificationRequestedIntegrationEvent`. The raw code exists only in the transactional message path needed for delivery and expires according to `EmailVerificationLifetimeMinutes`. Requests have an account-level cooldown and the public paths are expected to remain edge-rate-limited.
+
+The Notifications repository owns the optional `Gma.Modules.Notifications.Integrations.Auth` bridge. It maps Auth events to mandatory tagged notifications:
+
+- sign-in: `delivery:web`, `delivery:email`, `domain:security`, `domain:authentication`;
+- authentication-method change: web and email security alert;
+- verification request: mandatory email delivery to the exact pending address;
+- verification completed: mandatory web security notification.
+
+Compose Auth, Notifications, the bridge, and an email transport explicitly:
+
+```csharp
+builder.AddModule<NotificationsModule>();
+builder.Services.AddAuthNotificationIntegration();
+builder.Services.AddNotificationEmailAdapter(builder.Configuration);
+builder.Services.AddSingleton<IEmailSender, ProductEmailSender>();
 ```
 
-The default application namespace is `gma`. Subject accessors in `AuthIntegrationSubjects` render through shared integration-event naming helpers so production apps can set `ApplicationIdentity:Namespace` without editing Auth contracts.
+The shared `Gma.Framework.Email` project contains transport-neutral message contracts only. Vendor credentials and SDKs belong in a product/provider adapter. If the Notifications email adapter is disabled, Auth still records verification state and publishes events, but no email is sent.
 
-Source domain event:
+## Persistence and retention
 
-```text
-MemberRegisteredDomainEvent
+Auth owns the `auth` schema and `auth.__ef_migrations_history`. SQL Server and PostgreSQL migrations include nullable password hashes, external identities, verification state, authentication methods on sessions, one-time exchange records, uniqueness constraints, and cleanup indexes.
+
+Retention is opt-in and bounded through the shared `BoundedBatchProcessor`. It deletes old expired exchanges and sessions in configured batches across scopes. Active-session projections treat refresh-expired sessions as inactive even before cleanup.
+
+```json
+{
+  "Auth": {
+    "ExternalExchangeLifetimeMinutes": 5,
+    "ExternalLinkSessionFreshnessMinutes": 10,
+    "EmailVerificationLifetimeMinutes": 1440,
+    "EmailVerificationRequestCooldownSeconds": 60,
+    "Retention": {
+      "Enabled": false,
+      "ExpiredExchangeHistoryHours": 24,
+      "SessionHistoryDays": 365,
+      "BatchSize": 500,
+      "MaxBatchesPerCategoryPerCycle": 4,
+      "IntervalMinutes": 60
+    }
+  }
+}
 ```
 
-Public integration event:
+Run the selected provider migrations before enabling external identities. Keep database and message storage encrypted at rest because short-lived delivery payloads necessarily contain verification content until consumed/retained.
 
-```text
-MemberRegisteredIntegrationEvent
-MemberDisabledIntegrationEvent
-MemberEnabledIntegrationEvent
-MemberSessionsRevokedIntegrationEvent
-```
+## Integration events
 
-## Admin Commands
+Auth publishes versioned, scope-aware events under `{application-namespace}.auth.*`:
 
-`Gma.Modules.Auth.AdminCli` is optional and is composed by `Host.AdminCli`.
-It shares typed permission constants with `Gma.Modules.Auth.AdminApi` through `Gma.Modules.Auth.Admin.Contracts`.
+- `member-registered.v1`;
+- `member-disabled.v1`;
+- `member-enabled.v1`;
+- `member-sessions-revoked.v1`;
+- `member-authenticated.v1`;
+- `member-authentication-method-changed.v1`;
+- `member-email-verification-requested.v1`;
+- `member-email-verified.v1`.
 
-Commands:
+Consumers bind explicitly to Auth as producer. Event ids are reused as notification ids, giving inbox processing and notification projection natural idempotency.
 
-- `auth members list --tenant <id> [--page] [--page-size] [--output table|json]`
-- `auth members get --tenant <id> --member-id <id>`
-- `auth members create --tenant <id> --username <value> --username-type email|phone`
-- `auth members disable --tenant <id> --member-id <id> --reason <text> --yes`
-- `auth members enable --tenant <id> --member-id <id>`
-- `auth members reset-password --tenant <id> --member-id <id>`
-- `auth members revoke-sessions --tenant <id> --member-id <id> --yes`
+## Operational notes
 
-Permissions:
-
-- `auth.members.read`
-- `auth.members.create`
-- `auth.members.disable`
-- `auth.members.enable`
-- `auth.members.reset-password`
-- `auth.members.revoke-sessions`
-
-Password input supports hidden prompt, `--password-stdin`, or `--generate-password`. There is no `--password` option. Generated passwords are printed once after a successful command and must not be logged or audited.
-
-## Admin API
-
-`Gma.Modules.Auth.AdminApi` is optional and is composed by `Host.AdminApi`.
-
-Routes:
-
-- `GET /api/admin/auth/members`
-- `GET /api/admin/auth/members/{memberId}`
-- `POST /api/admin/auth/members`
-- `POST /api/admin/auth/members/{memberId}/disable`
-- `POST /api/admin/auth/members/{memberId}/enable`
-- `POST /api/admin/auth/members/{memberId}/reset-password`
-- `POST /api/admin/auth/members/{memberId}/revoke-sessions`
-
-Scope-aware routes require `X-Tenant-Id`. Destructive routes require an explicit `confirmed: true` request body field. Generated passwords are returned once and must not be logged or audited.
-
-## Tests
-
-Relevant test groups:
-
-- `Gma.Modules.Auth.Tests` for aggregate and unit-of-work behavior.
-- `Integration.Tests` for lifecycle, tenant isolation, outbox publishing, and outbox store behavior.
-- `Architecture.Tests` for module boundaries.
-
-## Extension Points
-
-Likely future changes:
-
-- add email verification;
-- add password reset;
-- add member profile module that consumes Auth contracts/events;
-- replace first-party auth infrastructure with external identity provider adapter while keeping contracts stable.
-
-Keep the module reusable. Do not tie Auth to a specific product domain.
+- Use secret providers for JWT signing keys, refresh-token peppers, and OIDC client secrets.
+- Persist and share the ASP.NET Core Data Protection key ring across replicas, with a stable application name, so OIDC state and correlation cookies survive restarts and callback load balancing.
+- Auth has no secret default. A single-key deployment can inject `Auth__RefreshTokens__Pepper`; use the keyed pepper ring for rotation.
+- Replace the in-process `IAuthenticationAttemptLimiter` in multi-replica deployments with a distributed implementation while retaining edge/IP rate limits.
+- Replace the small built-in password blocklist with a current breach corpus/service for production products.
+- Alert on failed Auth outbox/inbox processing and Notifications exhausted/unroutable delivery jobs.
+- Keep provider callbacks and exchange/verification endpoints on the sensitive rate-limit policy.
+- MFA, passkeys, account recovery, profile data, and KYC/KYB should be separate adapters/modules built on these identity and event seams, not embedded in the `Member` aggregate prematurely.

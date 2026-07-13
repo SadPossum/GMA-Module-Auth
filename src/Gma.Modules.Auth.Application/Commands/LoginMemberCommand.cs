@@ -3,4 +3,8 @@ namespace Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Contracts;
 using Gma.Framework.Cqrs;
 
-public sealed record LoginMemberCommand(string Username, string Password) : ITransactionalCommand<AuthTokensResponse>;
+public sealed record LoginMemberCommand(
+    string Username,
+    string Password,
+    string? IpAddress = null,
+    string? UserAgent = null) : ITransactionalCommand<AuthTokensResponse>;

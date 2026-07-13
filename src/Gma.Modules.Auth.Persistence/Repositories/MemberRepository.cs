@@ -12,6 +12,7 @@ internal sealed class MemberRepository(AuthDbContext dbContext) : IMemberReposit
         dbContext.Members
             .Include(member => member.Usernames)
             .Include(member => member.Sessions)
+            .Include(member => member.ExternalIdentities)
             .AsSplitQuery()
             .FirstOrDefaultAsync(member => member.Id == id, cancellationToken);
 
@@ -22,9 +23,26 @@ internal sealed class MemberRepository(AuthDbContext dbContext) : IMemberReposit
         return dbContext.Members
             .Include(member => member.Usernames)
             .Include(member => member.Sessions)
+            .Include(member => member.ExternalIdentities)
             .AsSplitQuery()
             .FirstOrDefaultAsync(member => member.Usernames.Any(memberUsername =>
                 memberUsername.IsActive && memberUsername.NormalizedValue == normalizedUsername), cancellationToken);
+    }
+
+    public Task<Member?> GetByExternalIdentityAsync(string issuer, string subject, CancellationToken cancellationToken)
+    {
+        string normalizedIssuer = issuer.Trim();
+        string normalizedSubject = subject.Trim();
+        string identityKeyHash = MemberExternalIdentity.CreateIdentityKeyHash(normalizedIssuer, normalizedSubject);
+        return dbContext.Members
+            .Include(member => member.Usernames)
+            .Include(member => member.Sessions)
+            .Include(member => member.ExternalIdentities)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(member => member.ExternalIdentities.Any(identity =>
+                identity.IdentityKeyHash == identityKeyHash &&
+                identity.Issuer == normalizedIssuer &&
+                identity.Subject == normalizedSubject), cancellationToken);
     }
 
     public Task<bool> UsernameExistsAsync(string username, CancellationToken cancellationToken)
@@ -33,6 +51,43 @@ internal sealed class MemberRepository(AuthDbContext dbContext) : IMemberReposit
 
         return dbContext.MemberUsernames.AnyAsync(memberUsername =>
             memberUsername.NormalizedValue == normalizedUsername, cancellationToken);
+    }
+
+    public Task<bool> ExternalIdentityExistsAsync(string issuer, string subject, CancellationToken cancellationToken)
+    {
+        string normalizedIssuer = issuer.Trim();
+        string normalizedSubject = subject.Trim();
+        string identityKeyHash = MemberExternalIdentity.CreateIdentityKeyHash(normalizedIssuer, normalizedSubject);
+        return dbContext.MemberExternalIdentities.AnyAsync(
+            identity => identity.IdentityKeyHash == identityKeyHash &&
+                        identity.Issuer == normalizedIssuer &&
+                        identity.Subject == normalizedSubject,
+            cancellationToken);
+    }
+
+    public async Task<EmailVerificationTarget?> GetByEmailVerificationTokenHashesAsync(
+        IReadOnlyCollection<string> verificationTokenHashes,
+        CancellationToken cancellationToken)
+    {
+        string[] hashes = [.. verificationTokenHashes.Distinct(StringComparer.Ordinal)];
+        Member? member = await dbContext.Members
+            .Include(item => item.Usernames)
+            .Include(item => item.Sessions)
+            .Include(item => item.ExternalIdentities)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(
+                item => item.Usernames.Any(username =>
+                    username.VerificationTokenHash != null && hashes.Contains(username.VerificationTokenHash)),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (member is null)
+        {
+            return null;
+        }
+
+        MemberUsername username = member.Usernames.Single(item =>
+            item.VerificationTokenHash is not null && hashes.Contains(item.VerificationTokenHash, StringComparer.Ordinal));
+        return new EmailVerificationTarget(member, username.Id, username.VerificationTokenHash!);
     }
 
     public async Task AddAsync(Member member, CancellationToken cancellationToken) =>

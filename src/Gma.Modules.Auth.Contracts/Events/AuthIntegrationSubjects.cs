@@ -8,6 +8,10 @@ public static class AuthIntegrationSubjects
     public static string MemberDisabled => CreateMemberDisabled();
     public static string MemberEnabled => CreateMemberEnabled();
     public static string MemberSessionsRevoked => CreateMemberSessionsRevoked();
+    public static string MemberAuthenticated => CreateMemberAuthenticated();
+    public static string MemberEmailVerificationRequested => CreateMemberEmailVerificationRequested();
+    public static string MemberEmailVerified => CreateMemberEmailVerified();
+    public static string MemberAuthenticationMethodChanged => CreateMemberAuthenticationMethodChanged();
 
     public static string CreateMemberRegistered(string subjectPrefix = IntegrationEventNaming.DefaultSubjectPrefix) =>
         IntegrationEventNaming.CreateSubject(subjectPrefix, AuthModuleMetadata.Name, MemberRegisteredIntegrationEvent.EventType, MemberRegisteredIntegrationEvent.EventVersion);
@@ -20,4 +24,16 @@ public static class AuthIntegrationSubjects
 
     public static string CreateMemberSessionsRevoked(string subjectPrefix = IntegrationEventNaming.DefaultSubjectPrefix) =>
         IntegrationEventNaming.CreateSubject(subjectPrefix, AuthModuleMetadata.Name, MemberSessionsRevokedIntegrationEvent.EventType, MemberSessionsRevokedIntegrationEvent.EventVersion);
+
+    public static string CreateMemberAuthenticated(string subjectPrefix = IntegrationEventNaming.DefaultSubjectPrefix) =>
+        IntegrationEventNaming.CreateSubject(subjectPrefix, AuthModuleMetadata.Name, MemberAuthenticatedIntegrationEvent.EventType, MemberAuthenticatedIntegrationEvent.EventVersion);
+
+    public static string CreateMemberEmailVerificationRequested(string subjectPrefix = IntegrationEventNaming.DefaultSubjectPrefix) =>
+        IntegrationEventNaming.CreateSubject(subjectPrefix, AuthModuleMetadata.Name, MemberEmailVerificationRequestedIntegrationEvent.EventType, MemberEmailVerificationRequestedIntegrationEvent.EventVersion);
+
+    public static string CreateMemberEmailVerified(string subjectPrefix = IntegrationEventNaming.DefaultSubjectPrefix) =>
+        IntegrationEventNaming.CreateSubject(subjectPrefix, AuthModuleMetadata.Name, MemberEmailVerifiedIntegrationEvent.EventType, MemberEmailVerifiedIntegrationEvent.EventVersion);
+
+    public static string CreateMemberAuthenticationMethodChanged(string subjectPrefix = IntegrationEventNaming.DefaultSubjectPrefix) =>
+        IntegrationEventNaming.CreateSubject(subjectPrefix, AuthModuleMetadata.Name, MemberAuthenticationMethodChangedIntegrationEvent.EventType, MemberAuthenticationMethodChangedIntegrationEvent.EventVersion);
 }

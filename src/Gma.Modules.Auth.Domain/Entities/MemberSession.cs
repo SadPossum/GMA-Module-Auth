@@ -18,13 +18,15 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         string scopeId,
         string refreshTokenHash,
         DateTimeOffset refreshTokenExpiresAtUtc,
-        DateTimeOffset loginDateTimeUtc)
+        DateTimeOffset loginDateTimeUtc,
+        string authenticationMethod)
         : base(id, scopeId)
     {
         this.MemberId = memberId;
         this.RefreshTokenHash = NormalizeRefreshTokenHash(refreshTokenHash);
         this.RefreshTokenExpiresAtUtc = refreshTokenExpiresAtUtc;
         this.LoginDateTimeUtc = loginDateTimeUtc;
+        this.AuthenticationMethod = authenticationMethod;
         this.IsActive = true;
     }
 
@@ -33,6 +35,7 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
     public string? PreviousRefreshTokenHash { get; private set; }
     public DateTimeOffset RefreshTokenExpiresAtUtc { get; private set; }
     public DateTimeOffset LoginDateTimeUtc { get; private set; }
+    public string AuthenticationMethod { get; private set; } = MemberAuthenticationMethods.Password;
     public DateTimeOffset? SignOutDateTimeUtc { get; private set; }
     public bool IsActive { get; private set; }
 
@@ -42,7 +45,8 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         string scopeId,
         string refreshTokenHash,
         DateTimeOffset refreshTokenExpiresAtUtc,
-        DateTimeOffset loginDateTimeUtc)
+        DateTimeOffset loginDateTimeUtc,
+        string authenticationMethod = MemberAuthenticationMethods.Password)
     {
         if (id.Value == Guid.Empty)
         {
@@ -64,13 +68,19 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
             return Result.Failure<MemberSession>(AuthDomainErrors.RefreshTokenHashNotValid);
         }
 
+        if (!MemberAuthenticationMethods.TryNormalize(authenticationMethod, out string normalizedAuthenticationMethod))
+        {
+            return Result.Failure<MemberSession>(AuthDomainErrors.AuthenticationMethodNotValid);
+        }
+
         return Result.Success(new MemberSession(
             id,
             memberId,
             scopeId,
             refreshTokenHash,
             refreshTokenExpiresAtUtc,
-            loginDateTimeUtc));
+            loginDateTimeUtc,
+            normalizedAuthenticationMethod));
     }
 
     internal Result Refresh(

@@ -13,6 +13,7 @@ internal abstract class AuthCommandHandlerBase(
 {
     protected ISystemClock Clock => clock;
     protected IIdGenerator IdGenerator => idGenerator;
+    protected IRefreshTokenHashingService TokenHashingService => refreshTokenHashingService;
 
     protected (MemberSessionId SessionId, string AccessToken, string RefreshToken, string RefreshTokenHash, DateTimeOffset ExpiresAtUtc)
         CreateTokens(MemberId memberId, string scopeId, TimeSpan refreshTokenLifetime)

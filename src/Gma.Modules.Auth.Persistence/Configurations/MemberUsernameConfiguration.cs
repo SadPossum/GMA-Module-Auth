@@ -26,7 +26,13 @@ internal sealed class MemberUsernameConfiguration : IEntityTypeConfiguration<Mem
             .HasMaxLength(MemberUsername.NormalizedValueMaxLength)
             .IsRequired();
 
+        builder.Property(username => username.VerificationTokenHash)
+            .HasMaxLength(MemberUsername.VerificationTokenHashMaxLength);
+
+        builder.Ignore(username => username.IsVerified);
+
         builder.HasIndex(username => new { username.ScopeId, username.NormalizedValue })
             .IsUnique();
+        builder.HasIndex(username => new { username.ScopeId, username.VerificationTokenHash });
     }
 }

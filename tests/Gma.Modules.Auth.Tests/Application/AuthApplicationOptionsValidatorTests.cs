@@ -20,7 +20,8 @@ public sealed class AuthApplicationOptionsValidatorTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void Validate_rejects_non_positive_refresh_token_lifetime(int refreshTokenLifetimeDays)
+    [InlineData(3_651)]
+    public void Validate_rejects_out_of_range_refresh_token_lifetime(int refreshTokenLifetimeDays)
     {
         ValidateOptionsResult result = this.validator.Validate(
             name: null,

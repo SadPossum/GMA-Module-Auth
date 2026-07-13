@@ -115,4 +115,31 @@ public sealed class AuthContractEnumJsonTests
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize(MemberStatus.Unknown, JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize((MemberStatus)999, JsonOptions));
     }
+
+    [Theory]
+    [InlineData(ExternalAuthenticationStatus.Authenticated, "authenticated")]
+    [InlineData(ExternalAuthenticationStatus.Linked, "linked")]
+    public void External_authentication_status_uses_stable_string_names(
+        ExternalAuthenticationStatus status,
+        string expected)
+    {
+        string json = JsonSerializer.Serialize(status, JsonOptions);
+
+        Assert.Equal($"\"{expected}\"", json);
+        Assert.Equal(status, JsonSerializer.Deserialize<ExternalAuthenticationStatus>(json, JsonOptions));
+    }
+
+    [Theory]
+    [InlineData(AuthenticationMethodChange.Added, "added")]
+    [InlineData(AuthenticationMethodChange.Updated, "updated")]
+    [InlineData(AuthenticationMethodChange.Removed, "removed")]
+    public void Authentication_method_change_uses_stable_string_names(
+        AuthenticationMethodChange change,
+        string expected)
+    {
+        string json = JsonSerializer.Serialize(change, JsonOptions);
+
+        Assert.Equal($"\"{expected}\"", json);
+        Assert.Equal(change, JsonSerializer.Deserialize<AuthenticationMethodChange>(json, JsonOptions));
+    }
 }

@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Security.Claims;
 using Gma.Modules.Auth.Application;
 using Gma.Modules.Auth.Application.Commands;
+using Gma.Modules.Auth.Application.Queries;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Infrastructure;
 using Gma.Modules.Auth.Infrastructure.JwtBearer;
@@ -69,10 +70,15 @@ public sealed class AuthModule(AuthProfile profile) : IModule
 
         RouteHandlerBuilder login = group.MapPost("/login", async (
             LoginMemberRequest request,
+            HttpContext httpContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
             (await dispatcher.SendAsync(
-                new LoginMemberCommand(request.Username, request.Password),
+                new LoginMemberCommand(
+                    request.Username,
+                    request.Password,
+                    GetClientIpAddress(httpContext),
+                    GetUserAgent(httpContext)),
                 cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes));
         RequireScopeWhenNeeded(login, requireScope);
 
@@ -84,6 +90,23 @@ public sealed class AuthModule(AuthProfile profile) : IModule
                 new RefreshMemberSessionCommand(request.AccessToken, request.RefreshToken),
                 cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes));
         RequireScopeWhenNeeded(refresh, requireScope);
+
+        RouteHandlerBuilder externalExchange = group.MapPost("/external/exchange", async (
+            ExternalAuthenticationExchangeRequest request,
+            ClaimsPrincipal user,
+            HttpContext httpContext,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+            (await dispatcher.SendAsync(
+                new ExchangeExternalAuthenticationCommand(
+                    request.Code,
+                    GetMemberId(user),
+                    GetSessionId(user),
+                    GetClientIpAddress(httpContext),
+                    GetUserAgent(httpContext)),
+                cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes));
+        externalExchange.Produces<ExternalAuthenticationResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(externalExchange, requireScope);
 
         RouteHandlerBuilder signOut = group.MapPost("/sign-out", async (
             SignOutRequest request,
@@ -140,7 +163,138 @@ public sealed class AuthModule(AuthProfile profile) : IModule
             .RequireAuthorization();
         RequireScopeWhenNeeded(signOutAll, requireScope);
 
+        RouteHandlerBuilder methods = group.MapGet("/methods", async (
+            ClaimsPrincipal user,
+            IScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) || GetMemberId(user) is not { } memberId)
+            {
+                return Results.Unauthorized();
+            }
+
+            return (await dispatcher.QueryAsync(
+                new GetAuthenticationMethodsQuery(memberId),
+                cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes);
+        })
+            .RequireAuthorization();
+        methods.Produces<AuthenticationMethodsResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(methods, requireScope);
+
+        RouteHandlerBuilder setPassword = group.MapPut("/password", async (
+            SetPasswordRequest request,
+            ClaimsPrincipal user,
+            IScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) ||
+                GetMemberId(user) is not { } memberId ||
+                GetSessionId(user) is not { } sessionId)
+            {
+                return Results.Unauthorized();
+            }
+
+            Result<Unit> result = await dispatcher.SendAsync(
+                new SetMemberPasswordCommand(
+                    memberId,
+                    sessionId,
+                    request.NewPassword,
+                    request.CurrentPassword),
+                cancellationToken).ConfigureAwait(false);
+            return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
+        })
+            .RequireAuthorization();
+        RequireScopeWhenNeeded(setPassword, requireScope);
+
+        RouteHandlerBuilder removePassword = group.MapPost("/password/remove", async (
+            RemovePasswordRequest request,
+            ClaimsPrincipal user,
+            IScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) ||
+                GetMemberId(user) is not { } memberId ||
+                GetSessionId(user) is not { } sessionId)
+            {
+                return Results.Unauthorized();
+            }
+
+            Result<Unit> result = await dispatcher.SendAsync(
+                new RemoveMemberPasswordCommand(memberId, sessionId, request.CurrentPassword),
+                cancellationToken).ConfigureAwait(false);
+            return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
+        })
+            .RequireAuthorization();
+        RequireScopeWhenNeeded(removePassword, requireScope);
+
+        RouteHandlerBuilder unlinkIdentity = group.MapPost("/external-identities/{externalIdentityId:guid}/unlink", async (
+            Guid externalIdentityId,
+            UnlinkExternalIdentityRequest request,
+            ClaimsPrincipal user,
+            IScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) ||
+                GetMemberId(user) is not { } memberId ||
+                GetSessionId(user) is not { } sessionId)
+            {
+                return Results.Unauthorized();
+            }
+
+            Result<Unit> result = await dispatcher.SendAsync(
+                new UnlinkExternalIdentityCommand(
+                    memberId,
+                    sessionId,
+                    externalIdentityId,
+                    request.CurrentPassword),
+                cancellationToken).ConfigureAwait(false);
+            return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
+        })
+            .RequireAuthorization();
+        RequireScopeWhenNeeded(unlinkIdentity, requireScope);
+
+        RouteHandlerBuilder requestEmailVerification = group.MapPost("/email-verification", async (
+            RequestEmailVerificationRequest request,
+            ClaimsPrincipal user,
+            IScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) || GetMemberId(user) is not { } memberId)
+            {
+                return Results.Unauthorized();
+            }
+
+            Result<Unit> result = await dispatcher.SendAsync(
+                new RequestEmailVerificationCommand(memberId, request.EmailId),
+                cancellationToken).ConfigureAwait(false);
+            return result.IsSuccess ? Results.Accepted() : result.ToHttpResult(PublicErrorStatusCodes);
+        })
+            .RequireAuthorization();
+        RequireScopeWhenNeeded(requestEmailVerification, requireScope);
+
+        RouteHandlerBuilder confirmEmailVerification = group.MapPost("/email-verification/confirm", async (
+            ConfirmEmailVerificationRequest request,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            Result<Unit> result = await dispatcher.SendAsync(
+                new ConfirmEmailVerificationCommand(request.Code),
+                cancellationToken).ConfigureAwait(false);
+            return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
+        });
+        RequireScopeWhenNeeded(confirmEmailVerification, requireScope);
+
         this.MapBrowserEndpoints(group, requireScope);
+
+        foreach (IAuthEndpointContributor contributor in endpoints.ServiceProvider.GetServices<IAuthEndpointContributor>())
+        {
+            contributor.MapEndpoints(group, this.profile);
+        }
     }
 
     private void MapBrowserEndpoints(RouteGroupBuilder authGroup, bool requireScope)
@@ -174,7 +328,11 @@ public sealed class AuthModule(AuthProfile profile) : IModule
             CancellationToken cancellationToken) =>
         {
             Result<AuthTokensResponse> result = await dispatcher.SendAsync(
-                new LoginMemberCommand(request.Username, request.Password),
+                new LoginMemberCommand(
+                    request.Username,
+                    request.Password,
+                    GetClientIpAddress(httpContext),
+                    GetUserAgent(httpContext)),
                 cancellationToken).ConfigureAwait(false);
 
             return ToBrowserAuthResult(result, httpContext, options.Value.RefreshTokenLifetimeDays);
@@ -238,6 +396,44 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         })
             .RequireAuthorization();
         RequireScopeWhenNeeded(signOut, requireScope);
+
+        RouteHandlerBuilder externalExchange = browser.MapPost("/external/exchange", async (
+            ExternalAuthenticationExchangeRequest request,
+            ClaimsPrincipal user,
+            HttpContext httpContext,
+            IRequestDispatcher dispatcher,
+            IOptions<AuthApplicationOptions> options,
+            CancellationToken cancellationToken) =>
+        {
+            Result<ExternalAuthenticationResponse> result = await dispatcher.SendAsync(
+                new ExchangeExternalAuthenticationCommand(
+                    request.Code,
+                    GetMemberId(user),
+                    GetSessionId(user),
+                    GetClientIpAddress(httpContext),
+                    GetUserAgent(httpContext)),
+                cancellationToken).ConfigureAwait(false);
+
+            if (result.IsFailure || result.Value.Status != ExternalAuthenticationStatus.Authenticated)
+            {
+                return result.ToHttpResult(PublicErrorStatusCodes);
+            }
+
+            httpContext.Response.Headers.CacheControl = "no-store";
+            httpContext.Response.Headers.Pragma = "no-cache";
+            httpContext.Response.Cookies.Append(
+                BrowserRefreshCookieName,
+                result.Value.RefreshToken!,
+                CreateBrowserRefreshCookieOptions(httpContext, options.Value.RefreshTokenLifetimeDays));
+            httpContext.Response.Cookies.Append(
+                BrowserAccessCookieName,
+                result.Value.AccessToken!,
+                CreateBrowserRefreshCookieOptions(httpContext, options.Value.RefreshTokenLifetimeDays));
+
+            return Results.Ok(new BrowserAuthResponse(result.Value.AccessToken!));
+        });
+        externalExchange.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(externalExchange, requireScope);
     }
 
     private static IResult ToBrowserAuthResult(
@@ -331,7 +527,22 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         new(AuthApplicationErrors.TenantMismatch.Code, StatusCodes.Status403Forbidden),
         new(AuthApplicationErrors.MemberStatusUnknown.Code, StatusCodes.Status403Forbidden),
         new(AuthApplicationErrors.MemberDisabled.Code, StatusCodes.Status403Forbidden),
-        new(AuthApplicationErrors.UsernameAlreadyExists.Code, StatusCodes.Status409Conflict));
+        new(AuthApplicationErrors.ExternalExchangeInvalid.Code, StatusCodes.Status400BadRequest),
+        new(AuthApplicationErrors.ExternalVerifiedEmailRequired.Code, StatusCodes.Status400BadRequest),
+        new(AuthApplicationErrors.ExternalLinkAuthorizationRequired.Code, StatusCodes.Status403Forbidden),
+        new(AuthApplicationErrors.FreshAuthenticationRequired.Code, StatusCodes.Status403Forbidden),
+        new(AuthApplicationErrors.AlternateAuthenticationRequired.Code, StatusCodes.Status403Forbidden),
+        new(AuthApplicationErrors.ExternalIdentityNotFound.Code, StatusCodes.Status404NotFound),
+        new(AuthApplicationErrors.PasswordNotConfigured.Code, StatusCodes.Status409Conflict),
+        new(AuthApplicationErrors.AuthenticationMethodRequired.Code, StatusCodes.Status409Conflict),
+        new(AuthApplicationErrors.EmailUsernameNotFound.Code, StatusCodes.Status404NotFound),
+        new(AuthApplicationErrors.EmailAlreadyVerified.Code, StatusCodes.Status409Conflict),
+        new(AuthApplicationErrors.EmailVerificationInvalid.Code, StatusCodes.Status400BadRequest),
+        new(AuthApplicationErrors.EmailVerificationRequestTooSoon.Code, StatusCodes.Status429TooManyRequests),
+        new(AuthApplicationErrors.UsernameAlreadyExists.Code, StatusCodes.Status409Conflict),
+        new(AuthApplicationErrors.ExternalAccountLinkRequired.Code, StatusCodes.Status409Conflict),
+        new(AuthApplicationErrors.ExternalIdentityAlreadyLinked.Code, StatusCodes.Status409Conflict));
+
 
     public sealed record RegisterMemberApiRequest(string Username, JsonElement UsernameType, string Password);
 
@@ -343,6 +554,21 @@ public sealed class AuthModule(AuthProfile profile) : IModule
             ? parsed
             : null;
     }
+
+    private static Guid? GetSessionId(ClaimsPrincipal user)
+    {
+        string? sessionId = user.FindFirstValue(ApplicationClaimNames.SessionId);
+
+        return Guid.TryParse(sessionId, out Guid parsed)
+            ? parsed
+            : null;
+    }
+
+    private static string? GetClientIpAddress(HttpContext httpContext) =>
+        httpContext.Connection.RemoteIpAddress?.ToString();
+
+    private static string? GetUserAgent(HttpContext httpContext) =>
+        httpContext.Request.Headers.UserAgent.ToString();
 
     private bool TokenTenantMatches(ClaimsPrincipal user, IScopeContext scopeContext)
     {

@@ -165,7 +165,6 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("nvarchar(512)");
 
                     b.Property<string>("PasswordHash")
-                        .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
@@ -189,10 +188,70 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     b.ToTable("members", "auth");
                 });
 
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberExternalIdentity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("IdentityKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("Issuer")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("LastAuthenticatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("LinkedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ProviderCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("Provider");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MemberId");
+
+                    b.HasIndex("ScopeId", "IdentityKeyHash")
+                        .IsUnique();
+
+                    b.HasIndex("ScopeId", "MemberId", "ProviderCode");
+
+                    b.ToTable("member_external_identities", "auth");
+                });
+
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberSession", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AuthenticationMethod")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasDefaultValue("password");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -226,6 +285,10 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("MemberId");
+
+                    b.HasIndex("RefreshTokenExpiresAtUtc");
+
+                    b.HasIndex("IsActive", "SignOutDateTimeUtc");
 
                     b.HasIndex("ScopeId", "RefreshTokenHash");
 
@@ -261,6 +324,19 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<DateTimeOffset?>("VerificationExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("VerificationRequestedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("VerificationTokenHash")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("VerifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.HasKey("Id");
 
                     b.HasIndex("MemberId");
@@ -268,7 +344,91 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     b.HasIndex("ScopeId", "NormalizedValue")
                         .IsUnique();
 
+                    b.HasIndex("ScopeId", "VerificationTokenHash");
+
                     b.ToTable("member_usernames", "auth");
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Persistence.ExternalAuthenticationExchangeRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("ConsumedAtUtc")
+                        .IsConcurrencyToken()
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("EmailVerified")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Intent")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Issuer")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("ProviderCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("Provider");
+
+                    b.Property<string>("ReturnUrl")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<Guid?>("TargetMemberId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("TargetSessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("ScopeId", "CodeHash")
+                        .IsUnique();
+
+                    b.ToTable("external_authentication_exchanges", "auth");
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberExternalIdentity", b =>
+                {
+                    b.HasOne("Gma.Modules.Auth.Domain.Aggregates.Member", null)
+                        .WithMany("ExternalIdentities")
+                        .HasForeignKey("MemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberSession", b =>
@@ -291,6 +451,8 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
 
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.Member", b =>
                 {
+                    b.Navigation("ExternalIdentities");
+
                     b.Navigation("Sessions");
 
                     b.Navigation("Usernames");

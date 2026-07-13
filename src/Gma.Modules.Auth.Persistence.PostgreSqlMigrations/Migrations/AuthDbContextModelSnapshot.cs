@@ -165,7 +165,6 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                         .HasColumnType("character varying(512)");
 
                     b.Property<string>("PasswordHash")
-                        .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
@@ -189,10 +188,70 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.ToTable("members", "auth");
                 });
 
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberExternalIdentity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("IdentityKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("Issuer")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset?>("LastAuthenticatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("LinkedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProviderCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("Provider");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MemberId");
+
+                    b.HasIndex("ScopeId", "IdentityKeyHash")
+                        .IsUnique();
+
+                    b.HasIndex("ScopeId", "MemberId", "ProviderCode");
+
+                    b.ToTable("member_external_identities", "auth");
+                });
+
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberSession", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("AuthenticationMethod")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasDefaultValue("password");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -226,6 +285,10 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("MemberId");
+
+                    b.HasIndex("RefreshTokenExpiresAtUtc");
+
+                    b.HasIndex("IsActive", "SignOutDateTimeUtc");
 
                     b.HasIndex("ScopeId", "RefreshTokenHash");
 
@@ -261,6 +324,19 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<DateTimeOffset?>("VerificationExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("VerificationRequestedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VerificationTokenHash")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset?>("VerifiedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("MemberId");
@@ -268,7 +344,91 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.HasIndex("ScopeId", "NormalizedValue")
                         .IsUnique();
 
+                    b.HasIndex("ScopeId", "VerificationTokenHash");
+
                     b.ToTable("member_usernames", "auth");
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Persistence.ExternalAuthenticationExchangeRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset?>("ConsumedAtUtc")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<bool>("EmailVerified")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Intent")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Issuer")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("ProviderCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("Provider");
+
+                    b.Property<string>("ReturnUrl")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<Guid?>("TargetMemberId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("TargetSessionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("ScopeId", "CodeHash")
+                        .IsUnique();
+
+                    b.ToTable("external_authentication_exchanges", "auth");
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberExternalIdentity", b =>
+                {
+                    b.HasOne("Gma.Modules.Auth.Domain.Aggregates.Member", null)
+                        .WithMany("ExternalIdentities")
+                        .HasForeignKey("MemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberSession", b =>
@@ -291,6 +451,8 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
 
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.Member", b =>
                 {
+                    b.Navigation("ExternalIdentities");
+
                     b.Navigation("Sessions");
 
                     b.Navigation("Usernames");

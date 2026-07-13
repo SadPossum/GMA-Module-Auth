@@ -16,17 +16,19 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
 
     private readonly List<MemberSession> sessions = [];
     private readonly List<MemberUsername> usernames = [];
+    private readonly List<MemberExternalIdentity> externalIdentities = [];
 
     private Member() { }
 
-    private Member(MemberId id, string scopeId, string passwordHash)
+    private Member(MemberId id, string scopeId, string? passwordHash)
         : base(id, scopeId)
     {
         this.PasswordHash = passwordHash;
         this.Status = MemberStatus.Active;
     }
 
-    public string PasswordHash { get; private set; } = string.Empty;
+    public string? PasswordHash { get; private set; }
+    public bool HasPassword => this.PasswordHash is not null;
     public Guid ConcurrencyStamp { get; private set; }
     public MemberStatus Status { get; private set; } = MemberStatus.Active;
     public DateTimeOffset RegisteredAtUtc { get; private set; }
@@ -34,6 +36,7 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
     public string? DisabledReason { get; private set; }
     public IReadOnlyCollection<MemberUsername> Usernames => this.usernames;
     public IReadOnlyCollection<MemberSession> Sessions => this.sessions;
+    public IReadOnlyCollection<MemberExternalIdentity> ExternalIdentities => this.externalIdentities;
 
     public static Result<Member> Create(
         MemberId id,
@@ -92,10 +95,66 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         return Result.Success(member);
     }
 
+    public static Result<Member> CreateExternal(
+        MemberId id,
+        string scopeId,
+        string verifiedEmail,
+        MemberUsernameId usernameId,
+        MemberExternalIdentityId externalIdentityId,
+        string provider,
+        string issuer,
+        string subject,
+        Guid registeredEventId,
+        DateTimeOffset registeredAtUtc)
+    {
+        if (registeredEventId == Guid.Empty)
+        {
+            return Result.Failure<Member>(AuthDomainErrors.DomainEventIdRequired);
+        }
+
+        Result<Member> memberResult = CreateCore(id, scopeId, null, registeredAtUtc);
+        if (memberResult.IsFailure)
+        {
+            return memberResult;
+        }
+
+        Member member = memberResult.Value;
+        Result<MemberUsername> usernameResult = member.AddUsername(
+            usernameId,
+            verifiedEmail,
+            MemberUsernameType.Email,
+            registeredAtUtc);
+        if (usernameResult.IsFailure)
+        {
+            return Result.Failure<Member>(usernameResult.Error);
+        }
+
+        Result<MemberExternalIdentity> identityResult = member.LinkExternalIdentity(
+            externalIdentityId,
+            provider,
+            issuer,
+            subject,
+            registeredAtUtc);
+        if (identityResult.IsFailure)
+        {
+            return Result.Failure<Member>(identityResult.Error);
+        }
+
+        member.RaiseDomainEvent(new MemberRegisteredDomainEvent(
+            registeredEventId,
+            registeredAtUtc,
+            member.Id,
+            member.ScopeId,
+            usernameResult.Value.Value));
+
+        return Result.Success(member);
+    }
+
     public Result<MemberUsername> AddUsername(
         MemberUsernameId usernameId,
         string value,
-        MemberUsernameType usernameType)
+        MemberUsernameType usernameType,
+        DateTimeOffset? verifiedAtUtc = null)
     {
         Result<MemberUsername> usernameResult = MemberUsername.Create(
             usernameId,
@@ -119,6 +178,11 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
             username.UsernameType == usernameType && username.IsActive);
 
         current?.Deactivate();
+        if (verifiedAtUtc is not null)
+        {
+            newUsername.MarkVerified(verifiedAtUtc.Value);
+        }
+
         this.usernames.Add(newUsername);
         this.Touch();
 
@@ -135,7 +199,8 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         MemberSessionId sessionId,
         string refreshTokenHash,
         DateTimeOffset refreshTokenExpiresAtUtc,
-        DateTimeOffset nowUtc)
+        DateTimeOffset nowUtc,
+        string authenticationMethod = MemberAuthenticationMethods.Password)
     {
         Result statusResult = this.EnsureCanAuthenticate();
         if (statusResult.IsFailure)
@@ -149,7 +214,8 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
             this.ScopeId,
             refreshTokenHash,
             refreshTokenExpiresAtUtc,
-            nowUtc);
+            nowUtc,
+            authenticationMethod);
 
         if (sessionResult.IsFailure)
         {
@@ -349,6 +415,235 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         return Result.Success();
     }
 
+    public Result RemovePassword()
+    {
+        Result statusResult = this.EnsureKnownStatus();
+        if (statusResult.IsFailure)
+        {
+            return statusResult;
+        }
+
+        if (this.PasswordHash is null)
+        {
+            return Result.Failure(AuthDomainErrors.PasswordNotConfigured);
+        }
+
+        if (this.externalIdentities.Count == 0)
+        {
+            return Result.Failure(AuthDomainErrors.AuthenticationMethodRequired);
+        }
+
+        this.PasswordHash = null;
+        this.Touch();
+        return Result.Success();
+    }
+
+    public Result<MemberExternalIdentity> LinkExternalIdentity(
+        MemberExternalIdentityId identityId,
+        string provider,
+        string issuer,
+        string subject,
+        DateTimeOffset nowUtc)
+    {
+        Result statusResult = this.EnsureCanAuthenticate();
+        if (statusResult.IsFailure)
+        {
+            return Result.Failure<MemberExternalIdentity>(statusResult.Error);
+        }
+
+        Result<MemberExternalIdentity> identityResult = MemberExternalIdentity.Create(
+            identityId,
+            this.Id,
+            this.ScopeId,
+            provider,
+            issuer,
+            subject,
+            nowUtc);
+        if (identityResult.IsFailure)
+        {
+            return identityResult;
+        }
+
+        MemberExternalIdentity identity = identityResult.Value;
+        if (this.externalIdentities.Any(item => item.Matches(identity.Issuer, identity.Subject)))
+        {
+            return Result.Failure<MemberExternalIdentity>(AuthDomainErrors.ExternalIdentityAlreadyLinked);
+        }
+
+        this.externalIdentities.Add(identity);
+        this.Touch();
+        return Result.Success(identity);
+    }
+
+    public Result UnlinkExternalIdentity(MemberExternalIdentityId identityId)
+    {
+        Result statusResult = this.EnsureKnownStatus();
+        if (statusResult.IsFailure)
+        {
+            return statusResult;
+        }
+
+        MemberExternalIdentity? identity = this.externalIdentities.FirstOrDefault(item => item.Id == identityId);
+        if (identity is null)
+        {
+            return Result.Failure(AuthDomainErrors.ExternalIdentityNotFound);
+        }
+
+        if (this.PasswordHash is null && this.externalIdentities.Count == 1)
+        {
+            return Result.Failure(AuthDomainErrors.AuthenticationMethodRequired);
+        }
+
+        this.externalIdentities.Remove(identity);
+        this.Touch();
+        return Result.Success();
+    }
+
+    public Result MarkExternalIdentityAuthenticated(MemberExternalIdentityId identityId, DateTimeOffset nowUtc)
+    {
+        MemberExternalIdentity? identity = this.externalIdentities.FirstOrDefault(item => item.Id == identityId);
+        if (identity is null)
+        {
+            return Result.Failure(AuthDomainErrors.ExternalIdentityNotFound);
+        }
+
+        identity.MarkAuthenticated(nowUtc);
+        this.Touch();
+        return Result.Success();
+    }
+
+    public Result RequestEmailVerification(
+        MemberUsernameId usernameId,
+        string verificationTokenHash,
+        string verificationCode,
+        Guid requestedEventId,
+        DateTimeOffset expiresAtUtc,
+        DateTimeOffset nowUtc)
+    {
+        if (requestedEventId == Guid.Empty)
+        {
+            return Result.Failure(AuthDomainErrors.DomainEventIdRequired);
+        }
+
+        if (string.IsNullOrWhiteSpace(verificationCode))
+        {
+            return Result.Failure(AuthDomainErrors.EmailVerificationTokenNotValid);
+        }
+
+        MemberUsername? username = this.usernames.FirstOrDefault(item => item.Id == usernameId && item.IsActive);
+        if (username is null || username.UsernameType != MemberUsernameType.Email)
+        {
+            return Result.Failure(AuthDomainErrors.EmailUsernameNotFound);
+        }
+
+        Result result = username.RequestVerification(verificationTokenHash, expiresAtUtc, nowUtc);
+        if (result.IsSuccess)
+        {
+            this.Touch();
+            this.RaiseDomainEvent(new MemberEmailVerificationRequestedDomainEvent(
+                requestedEventId,
+                nowUtc,
+                this.Id,
+                this.ScopeId,
+                username.Value,
+                verificationCode,
+                expiresAtUtc));
+        }
+
+        return result;
+    }
+
+    public Result ConfirmEmailVerification(
+        MemberUsernameId usernameId,
+        string verificationTokenHash,
+        Guid verifiedEventId,
+        DateTimeOffset nowUtc)
+    {
+        if (verifiedEventId == Guid.Empty)
+        {
+            return Result.Failure(AuthDomainErrors.DomainEventIdRequired);
+        }
+
+        MemberUsername? username = this.usernames.FirstOrDefault(item => item.Id == usernameId && item.IsActive);
+        if (username is null || username.UsernameType != MemberUsernameType.Email)
+        {
+            return Result.Failure(AuthDomainErrors.EmailUsernameNotFound);
+        }
+
+        bool wasVerified = username.IsVerified;
+        Result result = username.ConfirmVerification(verificationTokenHash, nowUtc);
+        if (result.IsSuccess && !wasVerified)
+        {
+            this.Touch();
+            this.RaiseDomainEvent(new MemberEmailVerifiedDomainEvent(
+                verifiedEventId,
+                nowUtc,
+                this.Id,
+                this.ScopeId,
+                username.Value));
+        }
+
+        return result;
+    }
+
+    public Result RecordAuthentication(
+        MemberSessionId sessionId,
+        Guid authenticatedEventId,
+        DateTimeOffset nowUtc,
+        string? ipAddress = null,
+        string? userAgent = null)
+    {
+        if (authenticatedEventId == Guid.Empty)
+        {
+            return Result.Failure(AuthDomainErrors.DomainEventIdRequired);
+        }
+
+        MemberSession? session = this.sessions.FirstOrDefault(item => item.Id == sessionId && item.IsActive);
+        if (session is null)
+        {
+            return Result.Failure(AuthDomainErrors.SessionNotFound);
+        }
+
+        this.RaiseDomainEvent(new MemberAuthenticatedDomainEvent(
+            authenticatedEventId,
+            nowUtc,
+            this.Id,
+            session.Id,
+            this.ScopeId,
+            session.AuthenticationMethod,
+            ipAddress,
+            userAgent));
+        return Result.Success();
+    }
+
+    public Result RecordAuthenticationMethodChanged(
+        string authenticationMethod,
+        MemberAuthenticationMethodChange change,
+        Guid changedEventId,
+        DateTimeOffset nowUtc)
+    {
+        if (changedEventId == Guid.Empty)
+        {
+            return Result.Failure(AuthDomainErrors.DomainEventIdRequired);
+        }
+
+        if (!MemberAuthenticationMethods.TryNormalize(authenticationMethod, out string normalizedMethod) ||
+            change is MemberAuthenticationMethodChange.Unknown ||
+            !Enum.IsDefined(change))
+        {
+            return Result.Failure(AuthDomainErrors.AuthenticationMethodNotValid);
+        }
+
+        this.RaiseDomainEvent(new MemberAuthenticationMethodChangedDomainEvent(
+            changedEventId,
+            nowUtc,
+            this.Id,
+            this.ScopeId,
+            normalizedMethod,
+            change));
+        return Result.Success();
+    }
+
     public Result<int> RevokeSessions(Guid revokedEventId, DateTimeOffset nowUtc)
     {
         if (revokedEventId == Guid.Empty)
@@ -411,4 +706,32 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
             : Result.Failure(AuthDomainErrors.MemberStatusUnknown);
 
     private void Touch() => this.ConcurrencyStamp = Guid.CreateVersion7();
+
+    private static Result<Member> CreateCore(
+        MemberId id,
+        string scopeId,
+        string? passwordHash,
+        DateTimeOffset registeredAtUtc)
+    {
+        if (id.Value == Guid.Empty)
+        {
+            return Result.Failure<Member>(AuthDomainErrors.MemberIdRequired);
+        }
+
+        if (string.IsNullOrWhiteSpace(scopeId))
+        {
+            return Result.Failure<Member>(AuthDomainErrors.TenantRequired);
+        }
+
+        if (!ScopeIds.TryNormalize(scopeId, out string? normalizedScopeId))
+        {
+            return Result.Failure<Member>(AuthDomainErrors.TenantInvalid);
+        }
+
+        return Result.Success(new Member(id, normalizedScopeId, passwordHash)
+        {
+            RegisteredAtUtc = registeredAtUtc,
+            ConcurrencyStamp = Guid.CreateVersion7()
+        });
+    }
 }

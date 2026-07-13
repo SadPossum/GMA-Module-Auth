@@ -6,10 +6,10 @@ internal sealed class AuthApplicationOptionsValidator : IValidateOptions<AuthApp
 {
     public ValidateOptionsResult Validate(string? name, AuthApplicationOptions options)
     {
-        if (options.RefreshTokenLifetimeDays <= 0)
+        if (options.RefreshTokenLifetimeDays is < 1 or > 3_650)
         {
             return ValidateOptionsResult.Fail(
-                $"{AuthApplicationOptions.SectionName}:RefreshTokenLifetimeDays must be positive.");
+                $"{AuthApplicationOptions.SectionName}:RefreshTokenLifetimeDays must be between 1 and 3650.");
         }
 
         if (options.FailedLoginLimit is < 1 or > 100)
@@ -22,6 +22,30 @@ internal sealed class AuthApplicationOptionsValidator : IValidateOptions<AuthApp
         {
             return ValidateOptionsResult.Fail(
                 $"{AuthApplicationOptions.SectionName}:FailedLoginWindowMinutes must be between 1 and 1440.");
+        }
+
+        if (options.ExternalExchangeLifetimeMinutes is < 1 or > 30)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{AuthApplicationOptions.SectionName}:ExternalExchangeLifetimeMinutes must be between 1 and 30.");
+        }
+
+        if (options.ExternalLinkSessionFreshnessMinutes is < 1 or > 60)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{AuthApplicationOptions.SectionName}:ExternalLinkSessionFreshnessMinutes must be between 1 and 60.");
+        }
+
+        if (options.EmailVerificationLifetimeMinutes is < 5 or > 10_080)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{AuthApplicationOptions.SectionName}:EmailVerificationLifetimeMinutes must be between 5 and 10080.");
+        }
+
+        if (options.EmailVerificationRequestCooldownSeconds is < 1 or > 3_600)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{AuthApplicationOptions.SectionName}:EmailVerificationRequestCooldownSeconds must be between 1 and 3600.");
         }
 
         return ValidateOptionsResult.Success;

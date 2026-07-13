@@ -17,8 +17,9 @@ internal sealed class MemberConfiguration : IEntityTypeConfiguration<Member>
             .HasConversion(id => id.Value, value => new MemberId(value));
 
         builder.Property(member => member.PasswordHash)
-            .HasMaxLength(Member.PasswordHashMaxLength)
-            .IsRequired();
+            .HasMaxLength(Member.PasswordHashMaxLength);
+
+        builder.Ignore(member => member.HasPassword);
 
         builder.Property(member => member.ConcurrencyStamp)
             .IsConcurrencyToken()
@@ -52,6 +53,14 @@ internal sealed class MemberConfiguration : IEntityTypeConfiguration<Member>
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.Navigation(member => member.Sessions)
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.HasMany(member => member.ExternalIdentities)
+            .WithOne()
+            .HasForeignKey(identity => identity.MemberId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Navigation(member => member.ExternalIdentities)
             .UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }
