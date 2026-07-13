@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Gma.Framework.Api.Modules;
 using Gma.Framework.Api.Observability;
 using Gma.Framework.Api.Scoping;
@@ -25,6 +26,9 @@ using Gma.Framework.Results;
 
 public sealed class AuthModule(AuthProfile profile) : IModule
 {
+    private const string BrowserAccessCookieName = "gma.auth.access";
+    private const string BrowserRefreshCookieName = "gma.auth.refresh";
+    private const string BrowserRefreshCookiePath = "/api/auth/browser";
     private readonly AuthProfile profile = profile ?? throw new ArgumentNullException(nameof(profile));
 
     public AuthModule()
@@ -135,6 +139,164 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         })
             .RequireAuthorization();
         RequireScopeWhenNeeded(signOutAll, requireScope);
+
+        this.MapBrowserEndpoints(group, requireScope);
+    }
+
+    private void MapBrowserEndpoints(RouteGroupBuilder authGroup, bool requireScope)
+    {
+        RouteGroupBuilder browser = authGroup.MapGroup("/browser");
+
+        RouteHandlerBuilder register = browser.MapPost("/register", async (
+            RegisterMemberApiRequest request,
+            HttpContext httpContext,
+            IRequestDispatcher dispatcher,
+            IOptions<AuthApplicationOptions> options,
+            CancellationToken cancellationToken) =>
+        {
+            Result<AuthTokensResponse> result = await dispatcher.SendAsync(
+                new RegisterMemberCommand(
+                    request.Username,
+                    UsernameTypeInput.FromJsonElement(request.UsernameType).Value,
+                    request.Password),
+                cancellationToken).ConfigureAwait(false);
+
+            return ToBrowserAuthResult(result, httpContext, options.Value.RefreshTokenLifetimeDays);
+        });
+        register.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(register, requireScope);
+
+        RouteHandlerBuilder login = browser.MapPost("/login", async (
+            LoginMemberRequest request,
+            HttpContext httpContext,
+            IRequestDispatcher dispatcher,
+            IOptions<AuthApplicationOptions> options,
+            CancellationToken cancellationToken) =>
+        {
+            Result<AuthTokensResponse> result = await dispatcher.SendAsync(
+                new LoginMemberCommand(request.Username, request.Password),
+                cancellationToken).ConfigureAwait(false);
+
+            return ToBrowserAuthResult(result, httpContext, options.Value.RefreshTokenLifetimeDays);
+        });
+        login.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(login, requireScope);
+
+        RouteHandlerBuilder refresh = browser.MapPost("/refresh", async (
+            HttpContext httpContext,
+            IRequestDispatcher dispatcher,
+            IOptions<AuthApplicationOptions> options,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetBrowserCookie(httpContext, BrowserAccessCookieName, out string? accessToken) ||
+                !TryGetBrowserCookie(httpContext, BrowserRefreshCookieName, out string? refreshToken))
+            {
+                return Results.Unauthorized();
+            }
+
+            Result<AuthTokensResponse> result = await dispatcher.SendAsync(
+                new RefreshMemberSessionCommand(accessToken, refreshToken),
+                cancellationToken).ConfigureAwait(false);
+
+            if (result.IsFailure)
+            {
+                DeleteBrowserCookies(httpContext);
+                return result.ToHttpResult(PublicErrorStatusCodes);
+            }
+
+            return ToBrowserAuthResult(result, httpContext, options.Value.RefreshTokenLifetimeDays);
+        });
+        refresh.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(refresh, requireScope);
+
+        RouteHandlerBuilder signOut = browser.MapPost("/sign-out", async (
+            ClaimsPrincipal user,
+            HttpContext httpContext,
+            IScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                if (!this.TokenTenantMatches(user, scopeContext) ||
+                    GetMemberId(user) is not { } memberId ||
+                    !TryGetBrowserCookie(httpContext, BrowserRefreshCookieName, out string? refreshToken))
+                {
+                    return Results.Unauthorized();
+                }
+
+                Result<Unit> result = await dispatcher.SendAsync(
+                    new SignOutCommand(memberId, refreshToken),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
+            }
+            finally
+            {
+                DeleteBrowserCookies(httpContext);
+            }
+        })
+            .RequireAuthorization();
+        RequireScopeWhenNeeded(signOut, requireScope);
+    }
+
+    private static IResult ToBrowserAuthResult(
+        Result<AuthTokensResponse> result,
+        HttpContext httpContext,
+        int refreshTokenLifetimeDays)
+    {
+        if (result.IsFailure)
+        {
+            return result.ToHttpResult(PublicErrorStatusCodes);
+        }
+
+        httpContext.Response.Headers.CacheControl = "no-store";
+        httpContext.Response.Headers.Pragma = "no-cache";
+        httpContext.Response.Cookies.Append(
+            BrowserRefreshCookieName,
+            result.Value.RefreshToken,
+            CreateBrowserRefreshCookieOptions(httpContext, refreshTokenLifetimeDays));
+        httpContext.Response.Cookies.Append(
+            BrowserAccessCookieName,
+            result.Value.AccessToken,
+            CreateBrowserRefreshCookieOptions(httpContext, refreshTokenLifetimeDays));
+
+        return Results.Ok(new BrowserAuthResponse(result.Value.AccessToken));
+    }
+
+    private static CookieOptions CreateBrowserRefreshCookieOptions(
+        HttpContext httpContext,
+        int refreshTokenLifetimeDays) =>
+        new()
+        {
+            HttpOnly = true,
+            IsEssential = true,
+            MaxAge = TimeSpan.FromDays(refreshTokenLifetimeDays),
+            Path = BrowserRefreshCookiePath,
+            SameSite = SameSiteMode.Strict,
+            Secure = httpContext.Request.IsHttps
+        };
+
+    private static bool TryGetBrowserCookie(
+        HttpContext httpContext,
+        string cookieName,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? value) =>
+        httpContext.Request.Cookies.TryGetValue(cookieName, out value) &&
+        !string.IsNullOrWhiteSpace(value);
+
+    private static void DeleteBrowserCookies(HttpContext httpContext)
+    {
+        CookieOptions options = new()
+        {
+            HttpOnly = true,
+            IsEssential = true,
+            Path = BrowserRefreshCookiePath,
+            SameSite = SameSiteMode.Strict,
+            Secure = httpContext.Request.IsHttps
+        };
+
+        httpContext.Response.Cookies.Delete(BrowserRefreshCookieName, options);
+        httpContext.Response.Cookies.Delete(BrowserAccessCookieName, options);
     }
 
     private static void AddProfileServices(IHostApplicationBuilder builder, AuthProfile profile)
