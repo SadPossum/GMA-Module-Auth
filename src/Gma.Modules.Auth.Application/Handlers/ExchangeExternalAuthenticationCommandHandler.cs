@@ -135,6 +135,11 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
         ExternalAuthenticationExchange exchange,
         CancellationToken cancellationToken)
     {
+        if (!options.Value.SelfRegistration.ExternalEnabled)
+        {
+            return Result.Failure<Member>(AuthApplicationErrors.SelfRegistrationDisabled);
+        }
+
         if (!exchange.EmailVerified || string.IsNullOrWhiteSpace(exchange.Email))
         {
             return Result.Failure<Member>(AuthApplicationErrors.ExternalVerifiedEmailRequired);

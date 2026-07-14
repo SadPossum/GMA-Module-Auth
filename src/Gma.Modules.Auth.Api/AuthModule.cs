@@ -56,6 +56,14 @@ public sealed class AuthModule(AuthProfile profile) : IModule
             .WithModuleName(this.Name)
             .WithTags("Auth");
 
+        RouteHandlerBuilder selfRegistration = group.MapGet("/self-registration", (
+            IOptions<AuthApplicationOptions> options) =>
+            Results.Ok(new AuthSelfRegistrationResponse(
+                options.Value.SelfRegistration.PasswordEnabled,
+                options.Value.SelfRegistration.ExternalEnabled)));
+        selfRegistration.Produces<AuthSelfRegistrationResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(selfRegistration, requireScope);
+
         RouteHandlerBuilder register = group.MapPost("/register", async (
             RegisterMemberApiRequest request,
             IRequestDispatcher dispatcher,
@@ -524,6 +532,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         new(AuthApplicationErrors.RefreshTokenInvalid.Code, StatusCodes.Status401Unauthorized),
         new(AuthApplicationErrors.RefreshTokenExpired.Code, StatusCodes.Status401Unauthorized),
         new(AuthApplicationErrors.RefreshTokenReused.Code, StatusCodes.Status401Unauthorized),
+        new(AuthApplicationErrors.SelfRegistrationDisabled.Code, StatusCodes.Status403Forbidden),
         new(AuthApplicationErrors.TenantMismatch.Code, StatusCodes.Status403Forbidden),
         new(AuthApplicationErrors.MemberStatusUnknown.Code, StatusCodes.Status403Forbidden),
         new(AuthApplicationErrors.MemberDisabled.Code, StatusCodes.Status403Forbidden),

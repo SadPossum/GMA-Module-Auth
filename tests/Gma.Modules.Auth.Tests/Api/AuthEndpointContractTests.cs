@@ -38,6 +38,7 @@ public sealed class AuthEndpointContractTests
             .OfType<string>()];
 
         Assert.Contains("/api/auth/password/remove", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/self-registration", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external-identities/{externalIdentityId:guid}/unlink", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external/providers", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external/{provider}/sign-in/challenge", routes, StringComparer.Ordinal);

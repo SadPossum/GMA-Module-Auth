@@ -30,4 +30,15 @@ public sealed class AuthApplicationOptionsValidatorTests
         Assert.True(result.Failed);
         Assert.Contains("RefreshTokenLifetimeDays", result.FailureMessage, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Validate_rejects_missing_self_registration_settings()
+    {
+        ValidateOptionsResult result = this.validator.Validate(
+            name: null,
+            new AuthApplicationOptions { SelfRegistration = null! });
+
+        Assert.True(result.Failed);
+        Assert.Contains("SelfRegistration", result.FailureMessage, StringComparison.Ordinal);
+    }
 }

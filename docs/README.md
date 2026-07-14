@@ -26,6 +26,7 @@ The domain and application layers do not depend on ASP.NET Core authentication h
 
 - An external identity key is the exact `(scope, issuer, subject)` tuple. Email is never an external identity key. Persistence indexes a fixed SHA-256 key and still verifies issuer/subject exactly, avoiding oversized SQL Server keys while making the theoretical collision case fail closed.
 - A provider email can create a new account only when it is provider-verified. A matching local email returns `link-required`; Auth never auto-merges accounts by email.
+- Password and external self-registration are independently configurable and default to enabled for backward compatibility. Disabled registration fails closed in the application handlers; hiding a client control is never the security boundary.
 - Linking is bound to the exact authenticated member and session that initiated it, and that session must be fresh.
 - A member can link multiple providers. Removing a password or external identity cannot leave the member with no authentication method.
 - Provider access/refresh tokens are not stored. The browser callback receives only a short-lived, hashed, single-use GMA exchange code.
@@ -41,6 +42,7 @@ Base path: `/api/auth`.
 
 | Method | Route | Purpose |
 | --- | --- | --- |
+| `GET` | `/self-registration` | Discover whether password and external self-registration are enabled for the active scope. |
 | `POST` | `/register` | Create a password account. |
 | `POST` | `/login` | Authenticate with username/password. |
 | `POST` | `/refresh` | Rotate a refresh token. |
@@ -62,6 +64,19 @@ Base path: `/api/auth`.
 The browser variants under `/api/auth/browser` keep refresh material in HttpOnly cookies. Scope-aware hosts also require `X-Tenant-Id`; protected endpoints require a bearer access token.
 
 Registration remains backward-compatible: creating a password account does not suddenly require verified email. Products can request verification after registration and enforce `IsVerified` in their own onboarding/access policy. This avoids silently breaking existing applications while making verification state and delivery durable.
+
+Products that provision accounts through an administrator or invitation workflow should disable both public account-creation paths. Existing password/provider sign-in, explicit provider linking, and admin member creation remain available:
+
+```json
+{
+  "Auth": {
+    "SelfRegistration": {
+      "PasswordEnabled": false,
+      "ExternalEnabled": false
+    }
+  }
+}
+```
 
 ## OpenID Connect adapter
 

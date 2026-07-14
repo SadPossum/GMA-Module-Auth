@@ -38,6 +38,11 @@ internal sealed class RegisterMemberCommandHandler(
             return Result.Failure<AuthTokensResponse>(AuthApplicationErrors.TenantRequired);
         }
 
+        if (!options.Value.SelfRegistration.PasswordEnabled)
+        {
+            return Result.Failure<AuthTokensResponse>(AuthApplicationErrors.SelfRegistrationDisabled);
+        }
+
         Result<MemberUsernameType> usernameType = UsernameTypeMapper.Map(command.UsernameType);
         if (usernameType.IsFailure)
         {

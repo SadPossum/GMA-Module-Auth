@@ -6,6 +6,12 @@ internal sealed class AuthApplicationOptionsValidator : IValidateOptions<AuthApp
 {
     public ValidateOptionsResult Validate(string? name, AuthApplicationOptions options)
     {
+        if (options.SelfRegistration is null)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{AuthApplicationOptions.SectionName}:SelfRegistration must be configured.");
+        }
+
         if (options.RefreshTokenLifetimeDays is < 1 or > 3_650)
         {
             return ValidateOptionsResult.Fail(

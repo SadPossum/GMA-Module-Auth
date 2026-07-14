@@ -10,6 +10,7 @@ using Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Application.ExternalAuthentication;
 using Gma.Modules.Auth.Application.Handlers;
 using Gma.Modules.Auth.Application.Ports;
+using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
@@ -27,6 +28,31 @@ using Xunit;
 public sealed class ExternalAuthenticationFlowTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 13, 12, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task Password_self_registration_can_be_disabled()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        MemberRepository repository = new(dbContext);
+        var handler = new RegisterMemberCommandHandler(
+            repository,
+            new TestScopeContext(),
+            new FakePasswordHashingService(),
+            new AllowAllPasswordBlocklist(),
+            new FakeTokenService("refresh-token"),
+            new FakeHashingService(),
+            Options.Create(CreateClosedRegistrationOptions()),
+            new FakeClock(),
+            new SequentialIdGenerator());
+
+        Result<AuthTokensResponse> result = await handler.HandleAsync(
+            new RegisterMemberCommand("member@example.com", UsernameType.Email, "safe-test-password"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthApplicationErrors.SelfRegistrationDisabled, result.Error);
+        Assert.Null(await repository.GetByUsernameAsync("member@example.com", CancellationToken.None));
+    }
 
     [Fact]
     public async Task Verified_external_identity_creates_account_and_exchange_is_single_use()
@@ -75,6 +101,63 @@ public sealed class ExternalAuthenticationFlowTests
 
         Assert.True(result.IsFailure);
         Assert.Equal(AuthApplicationErrors.ExternalVerifiedEmailRequired, result.Error);
+    }
+
+    [Fact]
+    public async Task External_self_registration_can_be_disabled()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        MemberRepository repository = new(dbContext);
+        var store = new InMemoryExchangeStore();
+        store.Add(CreateExchange("member@example.com", emailVerified: true));
+
+        Result<ExternalAuthenticationResponse> result = await CreateExchangeHandler(
+                store,
+                repository,
+                CreateClosedRegistrationOptions())
+            .HandleAsync(
+                new ExchangeExternalAuthenticationCommand("one-time-code", null, null),
+                CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthApplicationErrors.SelfRegistrationDisabled, result.Error);
+        Assert.Null(await repository.GetByExternalIdentityAsync(
+            "https://accounts.example.test",
+            "provider-subject",
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Disabled_external_registration_does_not_block_an_existing_identity()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        MemberRepository repository = new(dbContext);
+        Member existing = Member.CreateExternal(
+            new MemberId(Guid.NewGuid()),
+            "tenant-a",
+            "member@example.com",
+            new MemberUsernameId(Guid.NewGuid()),
+            new MemberExternalIdentityId(Guid.NewGuid()),
+            "google",
+            "https://accounts.example.test",
+            "provider-subject",
+            Guid.NewGuid(),
+            Now).Value;
+        await repository.AddAsync(existing, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var store = new InMemoryExchangeStore();
+        store.Add(CreateExchange("member@example.com", emailVerified: true));
+
+        Result<ExternalAuthenticationResponse> result = await CreateExchangeHandler(
+                store,
+                repository,
+                CreateClosedRegistrationOptions())
+            .HandleAsync(
+                new ExchangeExternalAuthenticationCommand("one-time-code", null, null),
+                CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ExternalAuthenticationStatus.Authenticated, result.Value.Status);
     }
 
     [Fact]
@@ -199,16 +282,27 @@ public sealed class ExternalAuthenticationFlowTests
 
     private static ExchangeExternalAuthenticationCommandHandler CreateExchangeHandler(
         IExternalAuthenticationExchangeStore store,
-        IMemberRepository repository) =>
+        IMemberRepository repository,
+        AuthApplicationOptions? options = null) =>
         new(
             store,
             repository,
             new FakeTokenService("refresh-token"),
             new FakeHashingService(),
-            Options.Create(new AuthApplicationOptions()),
+            Options.Create(options ?? new AuthApplicationOptions()),
             new TestScopeContext(),
             new FakeClock(),
             new SequentialIdGenerator());
+
+    private static AuthApplicationOptions CreateClosedRegistrationOptions() =>
+        new()
+        {
+            SelfRegistration = new AuthSelfRegistrationOptions
+            {
+                PasswordEnabled = false,
+                ExternalEnabled = false,
+            },
+        };
 
     private static ExternalAuthenticationExchange CreateExchange(
         string? email,
@@ -326,6 +420,22 @@ public sealed class ExternalAuthenticationFlowTests
     {
         public string HashRefreshToken(string refreshToken) => Hash(refreshToken);
         public IReadOnlyList<string> GetCandidateHashes(string refreshToken) => [Hash(refreshToken)];
+    }
+
+    private sealed class FakePasswordHashingService : IPasswordHashingService
+    {
+        public string HashPassword(string password) => $"hash:{password}";
+
+        public PasswordVerificationOutcome VerifyPassword(string passwordHash, string password) =>
+            passwordHash == $"hash:{password}"
+                ? PasswordVerificationOutcome.Success
+                : PasswordVerificationOutcome.Unknown;
+    }
+
+    private sealed class AllowAllPasswordBlocklist : IPasswordBlocklist
+    {
+        public ValueTask<bool> IsBlockedAsync(string password, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(false);
     }
 
     private sealed class FakeTokenService(string refreshToken) : ITokenService
