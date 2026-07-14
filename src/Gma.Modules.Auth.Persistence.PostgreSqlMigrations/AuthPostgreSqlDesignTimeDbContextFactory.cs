@@ -14,6 +14,6 @@ public sealed class AuthPostgreSqlDesignTimeDbContextFactory : IDesignTimeDbCont
                 AuthMigrations.PostgreSqlAssembly,
                 AuthMigrations.Schema,
                 AuthMigrations.HistoryTable),
-            new DesignTimeScopeContext());
+            new DesignTimeAuthScopeContext());
     }
 }

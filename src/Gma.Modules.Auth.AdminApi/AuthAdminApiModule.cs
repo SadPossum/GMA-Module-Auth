@@ -23,7 +23,6 @@ using Gma.Framework.Api.Observability;
 using Gma.Framework.Cqrs;
 using Gma.Framework.ModuleComposition;
 using Gma.Framework.Pagination;
-using Gma.Framework.Scoping;
 using Gma.Framework.Results;
 
 public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
@@ -40,11 +39,11 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
     public void AddServices(IHostApplicationBuilder builder)
     {
         AddProfileServices(builder, this.profile);
-        builder.Services.AddAuthApplication(builder.Configuration);
+        builder.Services.AddAuthApplication(builder.Configuration, this.profile);
         builder.Services.AddAuthInfrastructure(builder.Configuration);
         builder
             .AddAuthJwtBearerAuthentication()
-            .AddAuthPersistence();
+            .AddAuthPersistence(this.profile);
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -176,12 +175,6 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
     private static void AddProfileServices(IHostApplicationBuilder builder, AuthProfile profile)
     {
         builder.SelectModuleProfile(profile.Descriptor, "Gma.Modules.Auth.AdminApi");
-
-        if (!profile.RequiresScopeContext &&
-            !string.IsNullOrWhiteSpace(profile.GlobalScopeId))
-        {
-            builder.Services.PostConfigure<ScopeOptions>(options => options.LocalDefaultScopeId = profile.GlobalScopeId);
-        }
     }
 
     private static async Task<Result<AdminCreatedMemberApiResponse>> CreateMemberAsync(

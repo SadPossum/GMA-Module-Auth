@@ -2,7 +2,6 @@ namespace Gma.Modules.Auth.Application.ExternalAuthentication;
 
 using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
-using Gma.Framework.Scoping;
 using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Domain.Services;
 using Microsoft.Extensions.Options;
@@ -13,7 +12,7 @@ internal sealed class ExternalAuthenticationHandoffService(
     IRefreshTokenHashingService tokenHashingService,
     ISystemClock clock,
     IIdGenerator idGenerator,
-    IScopeContext scopeContext,
+    IAuthScopeContext scopeContext,
     IOptions<AuthApplicationOptions> options)
     : IExternalAuthenticationHandoffService
 {

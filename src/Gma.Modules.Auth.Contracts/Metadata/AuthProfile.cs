@@ -45,7 +45,7 @@ public sealed record AuthProfile
                     AuthCompositionFeatures.GlobalScopeProvided(provider)
                 ],
                 displayName: "Auth global",
-                description: $"Stores all Auth members in the '{normalizedScopeId}' scope without requiring scope context."));
+                description: $"Stores all Auth members in the fixed '{normalizedScopeId}' scope independently of any ambient host scope."));
     }
 
     public static AuthProfile ScopeAware()
@@ -69,7 +69,7 @@ public sealed record AuthProfile
                     new RequiredCompositionFeature(
                         ScopeCompositionFeatures.Context,
                         provider,
-                        reason: "Register scoping infrastructure plus a scope provider, or choose AuthProfile.Global(\"global\") for scope-context-free projects.")
+                        reason: "Register scoping infrastructure plus a scope provider, or choose AuthProfile.Global(\"global\") for a fixed identity scope.")
                 ],
                 displayName: "Auth scope-aware",
                 description: "Stores Auth members in the resolved scope context and requires scope context."));

@@ -9,15 +9,15 @@ using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Modules.Auth.Application.Security;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Framework.Cqrs;
-using Gma.Framework.Scoping;
 using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
 using Gma.Framework.Results;
 
 internal sealed class AdminCreateMemberCommandHandler(
     IMemberRepository memberRepository,
-    IScopeContext scopeContext,
+    IAuthScopeContext scopeContext,
     IPasswordHashingService passwordHashingService,
     IPasswordBlocklist passwordBlocklist,
     ISystemClock clock,

@@ -6,6 +6,7 @@ using Gma.Framework.Results;
 using Gma.Modules.Auth.Application;
 using Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Application.Handlers;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
@@ -220,9 +221,11 @@ public sealed class AuthenticationMethodHandlerTests
         public Guid NewId() => Guid.NewGuid();
     }
 
-    private sealed class TestScopeContext : Gma.Framework.Scoping.IScopeContext
+    private sealed class TestScopeContext : IAuthScopeContext
     {
         public bool IsEnabled => true;
         public string? ScopeId => "tenant-a";
+        public bool TryRestoreScope(string? scopeId) =>
+            string.Equals(this.ScopeId, scopeId, StringComparison.Ordinal);
     }
 }

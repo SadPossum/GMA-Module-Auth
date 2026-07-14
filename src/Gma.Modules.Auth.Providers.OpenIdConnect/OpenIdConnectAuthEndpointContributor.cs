@@ -2,10 +2,10 @@ namespace Gma.Modules.Auth.Providers.OpenIdConnect;
 
 using System.Security.Claims;
 using Gma.Framework.Api.Scoping;
-using Gma.Framework.Scoping;
 using Gma.Framework.Security;
 using Gma.Modules.Auth.Api;
 using Gma.Modules.Auth.Application.ExternalAuthentication;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Contracts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -28,7 +28,7 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
             string provider,
             ExternalAuthenticationChallengeRequest request,
             HttpContext httpContext,
-            IScopeContext scopeContext) =>
+            IAuthScopeContext scopeContext) =>
             this.CreateBrowserHandoff(
                 httpContext,
                 provider,
@@ -45,7 +45,7 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
             ExternalAuthenticationChallengeRequest request,
             HttpContext httpContext,
             ClaimsPrincipal user,
-            IScopeContext scopeContext) =>
+            IAuthScopeContext scopeContext) =>
         {
             if (!TokenScopeMatches(profile, user, scopeContext) ||
                 !TryGetClaimGuid(user, ClaimTypes.NameIdentifier, out Guid memberId) ||
@@ -70,8 +70,7 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
         RouteHandlerBuilder browserChallenge = authGroup.MapGet("/external/challenge/{nonce}", (
             string nonce,
             HttpContext httpContext,
-            IScopeContext scopeContext,
-            IScopeContextAccessor scopeAccessor) =>
+            IAuthScopeContext scopeContext) =>
         {
             if (!handoff.TryConsume(httpContext, nonce, out ExternalAuthenticationChallengeHandoff.ChallengePayload? payload) ||
                 payload is null)
@@ -79,18 +78,9 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
                 return Results.BadRequest(new { error = "The external authentication challenge is missing or expired." });
             }
 
-            if (scopeContext.IsEnabled)
+            if (!scopeContext.TryRestoreScope(payload.ScopeId))
             {
-                if (string.IsNullOrWhiteSpace(payload.ScopeId))
-                {
-                    return Results.BadRequest(new { error = "The external authentication challenge is missing its scope." });
-                }
-
-                scopeAccessor.SetScope(payload.ScopeId);
-                if (!string.Equals(scopeAccessor.ScopeId, payload.ScopeId, StringComparison.Ordinal))
-                {
-                    return Results.BadRequest(new { error = "The external authentication challenge scope is invalid." });
-                }
+                return Results.BadRequest(new { error = "The external authentication challenge scope is invalid." });
             }
 
             return this.CreateChallenge(
@@ -106,7 +96,7 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
         RouteHandlerBuilder signIn = authGroup.MapGet("/external/{provider}/sign-in", (
             string provider,
             string returnUrl,
-            IScopeContext scopeContext) =>
+            IAuthScopeContext scopeContext) =>
             this.CreateChallenge(
                 provider,
                 returnUrl,
@@ -120,7 +110,7 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
             string provider,
             string returnUrl,
             ClaimsPrincipal user,
-            IScopeContext scopeContext) =>
+            IAuthScopeContext scopeContext) =>
         {
             if (!TokenScopeMatches(profile, user, scopeContext) ||
                 !TryGetClaimGuid(user, ClaimTypes.NameIdentifier, out Guid memberId) ||
@@ -223,7 +213,7 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
         }
     }
 
-    private static bool TokenScopeMatches(AuthProfile profile, ClaimsPrincipal user, IScopeContext scopeContext) =>
+    private static bool TokenScopeMatches(AuthProfile profile, ClaimsPrincipal user, IAuthScopeContext scopeContext) =>
         !profile.RequiresScopeContext ||
         !scopeContext.IsEnabled ||
         string.Equals(

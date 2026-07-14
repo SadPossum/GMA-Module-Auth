@@ -8,13 +8,22 @@ using Gma.Framework.Application.Composition;
 using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Application.ExternalAuthentication;
 using Gma.Modules.Auth.Application.Ports;
+using Gma.Modules.Auth.Application.Scoping;
+using Gma.Modules.Auth.Contracts;
 
 public static class DependencyInjection
 {
     public static IServiceCollection AddAuthApplication(this IServiceCollection services, IConfiguration configuration)
+        => services.AddAuthApplication(configuration, AuthProfile.ScopeAware());
+
+    public static IServiceCollection AddAuthApplication(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        AuthProfile profile)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(profile);
 
         if (!services.Any(descriptor => descriptor.ServiceType == typeof(AuthApplicationOptionsRegistrationMarker)))
         {
@@ -28,6 +37,7 @@ public static class DependencyInjection
                 ServiceDescriptor.Singleton<IValidateOptions<AuthApplicationOptions>, AuthApplicationOptionsValidator>());
         }
 
+        services.AddAuthScopeContext(profile);
         services.AddApplicationServicesFromAssembly(typeof(DependencyInjection).Assembly);
         services.TryAddSingleton<IPasswordBlocklist, CommonPasswordBlocklist>();
         services.TryAddSingleton<IAuthenticationAttemptLimiter, InMemoryAuthenticationAttemptLimiter>();

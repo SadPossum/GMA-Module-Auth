@@ -1,7 +1,9 @@
 namespace Gma.Modules.Auth.Tests.Contracts;
 
 using Gma.Modules.Auth.Api;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Contracts;
+using Gma.Modules.Auth.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -47,13 +49,47 @@ public sealed class AuthProfileTests
         SelectedModuleProfile selectedProfile = Assert.Single(scope.ServiceProvider.GetServices<SelectedModuleProfile>());
         ScopeOptions scopeOptions = scope.ServiceProvider.GetRequiredService<IOptions<ScopeOptions>>().Value;
         IScopeContext scopeContext = scope.ServiceProvider.GetRequiredService<IScopeContext>();
+        IAuthScopeContext authScopeContext = scope.ServiceProvider.GetRequiredService<IAuthScopeContext>();
+        AuthDbContext dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
 
         Assert.Equal(AuthModuleMetadata.Name, selectedProfile.Profile.ModuleName);
         Assert.Equal(AuthProfile.GlobalProfileName, selectedProfile.Profile.ProfileName);
         Assert.False(scopeOptions.Enabled);
-        Assert.Equal("global", scopeOptions.LocalDefaultScopeId);
+        Assert.Equal("default", scopeOptions.LocalDefaultScopeId);
         Assert.False(scopeContext.IsEnabled);
-        Assert.Equal("global", scopeContext.ScopeId);
+        Assert.Equal("default", scopeContext.ScopeId);
+        Assert.True(authScopeContext.IsEnabled);
+        Assert.Equal("global", authScopeContext.ScopeId);
+        Assert.True(dbContext.ScopeFilterEnabled);
+        Assert.Equal("global", dbContext.CurrentScopeId);
+    }
+
+    [Fact]
+    public void Global_profile_keeps_auth_global_when_the_host_has_an_active_tenant_scope()
+    {
+        IHostApplicationBuilder builder = Host.CreateApplicationBuilder();
+        builder.Configuration.AddInMemoryCollection(CreateValidAuthConfiguration()
+            .Concat([
+                new KeyValuePair<string, string?>("Scoping:Enabled", "true"),
+                new KeyValuePair<string, string?>("Scoping:LocalDefaultScopeId", "tenant-a")
+            ]));
+
+        builder.AddScopingInfrastructure();
+        builder.AddAuthModule(AuthProfile.Global("identity"));
+
+        using ServiceProvider provider = builder.Services.BuildServiceProvider();
+        using IServiceScope scope = provider.CreateScope();
+
+        IScopeContext ambientScope = scope.ServiceProvider.GetRequiredService<IScopeContext>();
+        IAuthScopeContext authScope = scope.ServiceProvider.GetRequiredService<IAuthScopeContext>();
+        AuthDbContext dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+
+        Assert.True(ambientScope.IsEnabled);
+        Assert.Equal("tenant-a", ambientScope.ScopeId);
+        Assert.True(authScope.IsEnabled);
+        Assert.Equal("identity", authScope.ScopeId);
+        Assert.True(dbContext.ScopeFilterEnabled);
+        Assert.Equal("identity", dbContext.CurrentScopeId);
     }
 
     [Fact]

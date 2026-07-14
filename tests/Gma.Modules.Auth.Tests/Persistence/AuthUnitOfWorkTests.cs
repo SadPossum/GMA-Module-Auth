@@ -1,6 +1,7 @@
 namespace Gma.Modules.Auth.Tests;
 
 using Gma.Modules.Auth.Domain.Aggregates;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Domain.Enums;
 using Gma.Modules.Auth.Domain.Events;
 using Gma.Modules.Auth.Domain.ValueObjects;
@@ -101,9 +102,10 @@ public sealed class AuthUnitOfWorkTests
             throw new InvalidOperationException("Domain event dispatch failed.");
     }
 
-    private sealed class TestTenantContext : IScopeContext
+    private sealed class TestTenantContext : IAuthScopeContext
     {
         public bool IsEnabled => false;
         public string? ScopeId => "default";
+        public bool TryRestoreScope(string? scopeId) => true;
     }
 }

@@ -11,7 +11,7 @@ using Gma.Framework.Cqrs;
 using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
 using Gma.Framework.Results;
-using Gma.Framework.Scoping;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Application.Security;
 
 internal sealed class LoginMemberCommandHandler(
@@ -21,7 +21,7 @@ internal sealed class LoginMemberCommandHandler(
     ITokenService tokenService,
     IRefreshTokenHashingService refreshTokenHashingService,
     IOptions<AuthApplicationOptions> options,
-    IScopeContext scopeContext,
+    IAuthScopeContext scopeContext,
     ISystemClock clock,
     IIdGenerator idGenerator)
     : AuthCommandHandlerBase(tokenService, refreshTokenHashingService, clock, idGenerator),

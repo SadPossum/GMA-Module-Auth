@@ -1,7 +1,9 @@
 namespace Gma.Modules.Auth.Tests;
 
 using Gma.Modules.Auth.Providers.OpenIdConnect;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Framework.Scoping;
+using Gma.Framework.Naming;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.DataProtection;
@@ -174,7 +176,7 @@ public sealed class AuthOpenIdConnectProviderTests
         OpenIdConnectHandoffScope.Store(properties, "tenant-a");
         var accessor = new TestScopeContextAccessor();
         using ServiceProvider services = new ServiceCollection()
-            .AddSingleton<IScopeContextAccessor>(accessor)
+            .AddSingleton<IAuthScopeContext>(accessor)
             .BuildServiceProvider();
 
         bool restored = OpenIdConnectHandoffScope.TryRestore(properties, services);
@@ -187,7 +189,7 @@ public sealed class AuthOpenIdConnectProviderTests
     public void Handoff_rejects_missing_scope_state()
     {
         using ServiceProvider services = new ServiceCollection()
-            .AddSingleton<IScopeContextAccessor>(new TestScopeContextAccessor())
+            .AddSingleton<IAuthScopeContext>(new TestScopeContextAccessor())
             .BuildServiceProvider();
 
         Assert.False(OpenIdConnectHandoffScope.TryRestore(new AuthenticationProperties(), services));
@@ -199,11 +201,28 @@ public sealed class AuthOpenIdConnectProviderTests
         AuthenticationProperties properties = new();
         OpenIdConnectHandoffScope.Store(properties, scopeId: null);
         using ServiceProvider services = new ServiceCollection()
-            .AddSingleton<IScopeContextAccessor>(new TestScopeContextAccessor(enabled: false))
+            .AddSingleton<IAuthScopeContext>(new TestScopeContextAccessor(enabled: false))
             .BuildServiceProvider();
 
         Assert.True(OpenIdConnectHandoffScope.TryRestore(properties, services));
         Assert.DoesNotContain(OpenIdConnectHandoffProperties.ScopeId, properties.Items.Keys);
+    }
+
+    [Fact]
+    public void Handoff_for_a_fixed_global_profile_accepts_only_its_global_scope()
+    {
+        var scopeContext = new FixedTestAuthScopeContext("identity");
+        using ServiceProvider services = new ServiceCollection()
+            .AddSingleton<IAuthScopeContext>(scopeContext)
+            .BuildServiceProvider();
+        AuthenticationProperties matching = new();
+        OpenIdConnectHandoffScope.Store(matching, "identity");
+        AuthenticationProperties mismatched = new();
+        OpenIdConnectHandoffScope.Store(mismatched, "tenant-a");
+
+        Assert.True(OpenIdConnectHandoffScope.TryRestore(matching, services));
+        Assert.False(OpenIdConnectHandoffScope.TryRestore(mismatched, services));
+        Assert.Equal("identity", scopeContext.ScopeId);
     }
 
     [Fact]
@@ -292,13 +311,39 @@ public sealed class AuthOpenIdConnectProviderTests
             },
         };
 
-    private sealed class TestScopeContextAccessor(bool enabled = true) : IScopeContextAccessor
+    private sealed class TestScopeContextAccessor(bool enabled = true) : IAuthScopeContext
     {
         public bool IsEnabled => enabled;
         public string? ScopeId { get; private set; }
 
         public void SetScope(string scopeId) => this.ScopeId = scopeId;
         public void ClearScope() => this.ScopeId = null;
+
+        public bool TryRestoreScope(string? scopeId)
+        {
+            if (!enabled)
+            {
+                return true;
+            }
+
+            if (!ScopeIds.TryNormalize(scopeId, out string? normalizedScopeId))
+            {
+                return false;
+            }
+
+            this.SetScope(normalizedScopeId);
+            return string.Equals(this.ScopeId, normalizedScopeId, StringComparison.Ordinal);
+        }
+    }
+
+    private sealed class FixedTestAuthScopeContext(string scopeId) : IAuthScopeContext
+    {
+        public bool IsEnabled => true;
+        public string ScopeId { get; } = ScopeIds.Normalize(scopeId);
+
+        public bool TryRestoreScope(string? scopeId) =>
+            ScopeIds.TryNormalize(scopeId, out string? normalizedScopeId) &&
+            string.Equals(this.ScopeId, normalizedScopeId, StringComparison.Ordinal);
     }
 
     private sealed class TestTimeProvider(DateTimeOffset utcNow) : TimeProvider

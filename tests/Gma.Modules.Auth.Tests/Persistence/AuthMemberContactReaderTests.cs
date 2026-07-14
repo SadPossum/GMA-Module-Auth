@@ -1,6 +1,7 @@
 namespace Gma.Modules.Auth.Tests;
 
 using Gma.Framework.Scoping;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Modules.Auth.Persistence;
@@ -55,9 +56,11 @@ public sealed class AuthMemberContactReaderTests
                 .Options,
             new TestScopeContext(scopeId));
 
-    private sealed class TestScopeContext(string scopeId) : IScopeContext
+    private sealed class TestScopeContext(string scopeId) : IAuthScopeContext
     {
         public bool IsEnabled => true;
         public string? ScopeId => scopeId;
+        public bool TryRestoreScope(string? candidate) =>
+            string.Equals(scopeId, candidate, StringComparison.Ordinal);
     }
 }

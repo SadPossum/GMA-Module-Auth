@@ -16,7 +16,6 @@ using Gma.Framework.Administration;
 using Gma.Framework.Administration.Cli;
 using Gma.Framework.Cqrs;
 using Gma.Framework.Pagination;
-using Gma.Framework.Scoping;
 using Gma.Framework.Results;
 
 public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
@@ -33,9 +32,9 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
     public void AddServices(IHostApplicationBuilder builder)
     {
         AddProfileServices(builder, this.profile);
-        builder.Services.AddAuthApplication(builder.Configuration);
+        builder.Services.AddAuthApplication(builder.Configuration, this.profile);
         builder.Services.AddAuthInfrastructure(builder.Configuration);
-        builder.AddAuthPersistence();
+        builder.AddAuthPersistence(this.profile);
     }
 
     public void MapCommands(IAdminCliCommandRegistry commands)
@@ -63,12 +62,6 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
     private static void AddProfileServices(IHostApplicationBuilder builder, AuthProfile profile)
     {
         builder.SelectModuleProfile(profile.Descriptor, "Gma.Modules.Auth.AdminCli");
-
-        if (!profile.RequiresScopeContext &&
-            !string.IsNullOrWhiteSpace(profile.GlobalScopeId))
-        {
-            builder.Services.PostConfigure<ScopeOptions>(options => options.LocalDefaultScopeId = profile.GlobalScopeId);
-        }
     }
 
     private static Command CreateListCommand(IServiceProvider services, AdminCliGlobalOptions globalOptions, bool requireTenant)

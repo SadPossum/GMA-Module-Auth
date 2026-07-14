@@ -1,6 +1,7 @@
 namespace Gma.Modules.Auth.Persistence;
 
 using Gma.Modules.Auth.Application.Ports;
+using Gma.Modules.Auth.Application.Scoping;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Persistence.Repositories;
@@ -17,9 +18,16 @@ using Gma.Framework.Persistence.EntityFrameworkCore;
 public static class DependencyInjection
 {
     public static IHostApplicationBuilder AddAuthPersistence(this IHostApplicationBuilder builder)
+        => builder.AddAuthPersistence(AuthProfile.ScopeAware());
+
+    public static IHostApplicationBuilder AddAuthPersistence(
+        this IHostApplicationBuilder builder,
+        AuthProfile profile)
     {
         ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(profile);
 
+        builder.Services.AddAuthScopeContext(profile);
         builder.Services.AddPersistenceOptions(builder.Configuration);
         AuthRetentionOptions retentionOptions = builder.Configuration
             .GetSection(AuthRetentionOptions.SectionName)

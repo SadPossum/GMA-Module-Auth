@@ -86,9 +86,11 @@ public sealed class ExternalAuthenticationExchangeStoreTests
                 .Options,
             new TestScopeContext());
 
-    private sealed class TestScopeContext : IScopeContext
+    private sealed class TestScopeContext : IAuthScopeContext
     {
         public bool IsEnabled => true;
         public string? ScopeId => "tenant-a";
+        public bool TryRestoreScope(string? scopeId) =>
+            string.Equals(this.ScopeId, scopeId, StringComparison.Ordinal);
     }
 }

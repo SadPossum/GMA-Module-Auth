@@ -6,8 +6,9 @@ using Microsoft.EntityFrameworkCore;
 using Gma.Framework.Persistence.EntityFrameworkCore;
 using Gma.Framework.Scoping;
 using Gma.Framework.Messaging.Infrastructure;
+using Gma.Modules.Auth.Application.Ports;
 
-public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, IScopeContext scopeContext)
+public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, IAuthScopeContext scopeContext)
     : ScopeAwareDbContext<AuthDbContext>(options, scopeContext)
 {
     public DbSet<Member> Members => this.Set<Member>();

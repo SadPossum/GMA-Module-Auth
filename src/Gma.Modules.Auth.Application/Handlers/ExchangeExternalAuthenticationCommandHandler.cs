@@ -4,7 +4,6 @@ using Gma.Framework.Cqrs;
 using Gma.Framework.Results;
 using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
-using Gma.Framework.Scoping;
 using Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Application.ExternalAuthentication;
 using Gma.Modules.Auth.Application.Ports;
@@ -25,7 +24,7 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
     ITokenService tokenService,
     IRefreshTokenHashingService tokenHashingService,
     IOptions<AuthApplicationOptions> options,
-    IScopeContext scopeContext,
+    IAuthScopeContext scopeContext,
     ISystemClock clock,
     IIdGenerator idGenerator)
     : AuthCommandHandlerBase(tokenService, tokenHashingService, clock, idGenerator),

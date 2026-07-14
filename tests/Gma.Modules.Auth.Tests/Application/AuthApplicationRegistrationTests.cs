@@ -31,6 +31,31 @@ public sealed class AuthApplicationRegistrationTests
     }
 
     [Fact]
+    public void Auth_application_registration_accepts_the_same_profile_repeatedly()
+    {
+        ServiceCollection services = new();
+        IConfiguration configuration = new ConfigurationBuilder().Build();
+
+        services.AddAuthApplication(configuration, AuthProfile.Global("identity"));
+        services.AddAuthApplication(configuration, AuthProfile.Global("identity"));
+
+        Assert.Single(services, descriptor => descriptor.ServiceType.Name == "AuthScopeProfileSelection");
+    }
+
+    [Fact]
+    public void Auth_application_registration_rejects_conflicting_profiles()
+    {
+        ServiceCollection services = new();
+        IConfiguration configuration = new ConfigurationBuilder().Build();
+        services.AddAuthApplication(configuration, AuthProfile.Global("identity"));
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddAuthApplication(configuration, AuthProfile.ScopeAware()));
+
+        Assert.Contains("conflicts with already selected profile", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Auth_application_registration_rejects_invalid_options_before_service_mutation()
     {
         ServiceCollection services = new();

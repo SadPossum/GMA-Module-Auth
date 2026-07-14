@@ -1,5 +1,7 @@
 # Auth Module
 
+Implementation planning: [Global Identity With Ambient Tenancy](global-identity-with-tenancy-task.md).
+
 The Auth module owns account credentials, external identity links, email ownership state, sessions, JWTs, and security events. Product profile data, provider-specific UI, email transport, notification history, KYC/KYB, and authorization policy remain outside Auth.
 
 ## Projects and boundaries
@@ -21,6 +23,8 @@ Gma.Modules.Auth.AdminApi
 ```
 
 The domain and application layers do not depend on ASP.NET Core authentication handlers or a vendor SDK. Provider adapters validate an upstream assertion and pass a normalized `ValidatedExternalIdentity` into Auth. Other modules consume Auth contracts or the narrow `IAuthMemberContactReader`; they do not query Auth tables.
+
+Auth can be composed in two scope modes. `AuthProfile.ScopeAware()` follows the ambient scope and preserves tenant-isolated identity stores. `AuthProfile.Global("identity")` uses one fixed Auth-owned scope even when the host also has an active tenant context. The latter is appropriate for products where one public account can join multiple tenant-owned organizations; tenant membership and authorization remain outside Auth.
 
 ## Security invariants
 

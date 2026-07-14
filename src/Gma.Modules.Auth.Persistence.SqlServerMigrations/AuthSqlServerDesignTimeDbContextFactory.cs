@@ -14,6 +14,6 @@ public sealed class AuthSqlServerDesignTimeDbContextFactory : IDesignTimeDbConte
                 AuthMigrations.SqlServerAssembly,
                 AuthMigrations.Schema,
                 AuthMigrations.HistoryTable),
-            new DesignTimeScopeContext());
+            new DesignTimeAuthScopeContext());
     }
 }

@@ -1,7 +1,7 @@
 namespace Gma.Modules.Auth.Providers.OpenIdConnect;
 
 using Gma.Framework.Naming;
-using Gma.Framework.Scoping;
+using Gma.Modules.Auth.Application.Ports;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,19 +23,10 @@ internal static class OpenIdConnectHandoffScope
     public static bool TryRestore(AuthenticationProperties? properties, IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        IScopeContextAccessor scopeContext = services.GetRequiredService<IScopeContextAccessor>();
-        if (!scopeContext.IsEnabled)
-        {
-            return true;
-        }
-
-        if (properties?.Items.TryGetValue(OpenIdConnectHandoffProperties.ScopeId, out string? scopeId) != true ||
-            !ScopeIds.TryNormalize(scopeId, out string? normalizedScopeId))
-        {
-            return false;
-        }
-
-        scopeContext.SetScope(normalizedScopeId);
-        return string.Equals(scopeContext.ScopeId, normalizedScopeId, StringComparison.Ordinal);
+        IAuthScopeContext scopeContext = services.GetRequiredService<IAuthScopeContext>();
+        string? scopeId = properties?.Items.TryGetValue(OpenIdConnectHandoffProperties.ScopeId, out string? storedScopeId) == true
+            ? storedScopeId
+            : null;
+        return scopeContext.TryRestoreScope(scopeId);
     }
 }

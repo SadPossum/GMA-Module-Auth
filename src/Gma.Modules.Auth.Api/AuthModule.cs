@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Gma.Modules.Auth.Application;
 using Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Application.Queries;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Infrastructure;
 using Gma.Modules.Auth.Infrastructure.JwtBearer;
@@ -21,7 +22,6 @@ using Gma.Framework.Api.Scoping;
 using Gma.Framework.Api.Results;
 using Gma.Framework.Cqrs;
 using Gma.Framework.ModuleComposition;
-using Gma.Framework.Scoping;
 using Gma.Framework.Security;
 using Gma.Framework.Results;
 
@@ -42,11 +42,11 @@ public sealed class AuthModule(AuthProfile profile) : IModule
     public void AddServices(IHostApplicationBuilder builder)
     {
         AddProfileServices(builder, this.profile);
-        builder.Services.AddAuthApplication(builder.Configuration);
+        builder.Services.AddAuthApplication(builder.Configuration, this.profile);
         builder.Services.AddAuthInfrastructure(builder.Configuration);
         builder
             .AddAuthJwtBearerAuthentication()
-            .AddAuthPersistence();
+            .AddAuthPersistence(this.profile);
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -119,7 +119,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         RouteHandlerBuilder signOut = group.MapPost("/sign-out", async (
             SignOutRequest request,
             ClaimsPrincipal user,
-            IScopeContext scopeContext,
+            IAuthScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
         {
@@ -146,7 +146,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
 
         RouteHandlerBuilder signOutAll = group.MapPost("/sign-out-all", async (
             ClaimsPrincipal user,
-            IScopeContext scopeContext,
+            IAuthScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
         {
@@ -173,7 +173,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
 
         RouteHandlerBuilder methods = group.MapGet("/methods", async (
             ClaimsPrincipal user,
-            IScopeContext scopeContext,
+            IAuthScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
         {
@@ -193,7 +193,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         RouteHandlerBuilder setPassword = group.MapPut("/password", async (
             SetPasswordRequest request,
             ClaimsPrincipal user,
-            IScopeContext scopeContext,
+            IAuthScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
         {
@@ -219,7 +219,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         RouteHandlerBuilder removePassword = group.MapPost("/password/remove", async (
             RemovePasswordRequest request,
             ClaimsPrincipal user,
-            IScopeContext scopeContext,
+            IAuthScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
         {
@@ -242,7 +242,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
             Guid externalIdentityId,
             UnlinkExternalIdentityRequest request,
             ClaimsPrincipal user,
-            IScopeContext scopeContext,
+            IAuthScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
         {
@@ -268,7 +268,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         RouteHandlerBuilder requestEmailVerification = group.MapPost("/email-verification", async (
             RequestEmailVerificationRequest request,
             ClaimsPrincipal user,
-            IScopeContext scopeContext,
+            IAuthScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
         {
@@ -378,7 +378,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         RouteHandlerBuilder signOut = browser.MapPost("/sign-out", async (
             ClaimsPrincipal user,
             HttpContext httpContext,
-            IScopeContext scopeContext,
+            IAuthScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
         {
@@ -506,12 +506,6 @@ public sealed class AuthModule(AuthProfile profile) : IModule
     private static void AddProfileServices(IHostApplicationBuilder builder, AuthProfile profile)
     {
         builder.SelectModuleProfile(profile.Descriptor, "Gma.Modules.Auth.Api");
-
-        if (!profile.RequiresScopeContext &&
-            !string.IsNullOrWhiteSpace(profile.GlobalScopeId))
-        {
-            builder.Services.PostConfigure<ScopeOptions>(options => options.LocalDefaultScopeId = profile.GlobalScopeId);
-        }
     }
 
     private static void RequireScopeWhenNeeded(RouteHandlerBuilder builder, bool requireScope)
@@ -579,7 +573,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
     private static string? GetUserAgent(HttpContext httpContext) =>
         httpContext.Request.Headers.UserAgent.ToString();
 
-    private bool TokenTenantMatches(ClaimsPrincipal user, IScopeContext scopeContext)
+    private bool TokenTenantMatches(ClaimsPrincipal user, IAuthScopeContext scopeContext)
     {
         if (!this.profile.RequiresScopeContext)
         {

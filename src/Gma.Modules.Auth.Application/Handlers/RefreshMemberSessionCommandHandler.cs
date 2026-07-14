@@ -8,7 +8,7 @@ using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
 using Microsoft.Extensions.Options;
 using Gma.Framework.Cqrs;
-using Gma.Framework.Scoping;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Framework.Runtime.Time;
 using Gma.Framework.Results;
 
@@ -17,7 +17,7 @@ internal sealed class RefreshMemberSessionCommandHandler(
     ITokenService tokenService,
     IRefreshTokenHashingService refreshTokenHashingService,
     IOptions<AuthApplicationOptions> options,
-    IScopeContext scopeContext,
+    IAuthScopeContext scopeContext,
     ISystemClock clock)
     : ICommandHandler<RefreshMemberSessionCommand, AuthTokensResponse>
 {
