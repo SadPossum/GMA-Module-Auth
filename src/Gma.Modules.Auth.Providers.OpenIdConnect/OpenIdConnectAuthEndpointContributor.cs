@@ -94,7 +94,7 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
             }
 
             return this.CreateChallenge(
-                payload.Provider,
+                payload.ProviderKey,
                 payload.ReturnUrl,
                 payload.ScopeId,
                 payload.Intent,

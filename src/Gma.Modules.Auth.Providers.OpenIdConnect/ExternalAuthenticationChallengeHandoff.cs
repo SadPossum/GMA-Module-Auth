@@ -35,7 +35,7 @@ internal sealed class ExternalAuthenticationChallengeHandoff
         Guid? targetSessionId)
     {
         ArgumentNullException.ThrowIfNull(httpContext);
-        string nonce = Guid.NewGuid().ToString("N");
+        string nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
         DateTimeOffset issuedAtUtc = this.timeProvider.GetUtcNow();
         var payload = new ChallengePayload(
             nonce,
@@ -83,7 +83,7 @@ internal sealed class ExternalAuthenticationChallengeHandoff
                 !string.Equals(candidate.Nonce, nonce, StringComparison.Ordinal) ||
                 candidate.IssuedAtUtc > now.AddMinutes(1) ||
                 candidate.ExpiresAtUtc <= now ||
-                !OpenIdConnectProviderRegistry.IsValidProviderKey(candidate.Provider) ||
+                !OpenIdConnectProviderRegistry.IsValidProviderKey(candidate.ProviderKey) ||
                 string.IsNullOrWhiteSpace(candidate.ReturnUrl))
             {
                 return false;
@@ -113,7 +113,7 @@ internal sealed class ExternalAuthenticationChallengeHandoff
 
     internal sealed record ChallengePayload(
         string Nonce,
-        string Provider,
+        string ProviderKey,
         string ReturnUrl,
         string? ScopeId,
         ExternalAuthenticationIntent Intent,

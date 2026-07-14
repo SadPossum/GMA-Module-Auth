@@ -240,7 +240,7 @@ public sealed class AuthOpenIdConnectProviderTests
 
         Assert.True(handoff.TryConsume(consumeContext, nonce, out var payload));
         Assert.NotNull(payload);
-        Assert.Equal("google", payload.Provider);
+        Assert.Equal("google", payload.ProviderKey);
         Assert.Equal("tenant-a", payload.ScopeId);
         Assert.Equal(memberId, payload.TargetMemberId);
         Assert.Equal(sessionId, payload.TargetSessionId);
@@ -309,4 +309,5 @@ public sealed class AuthOpenIdConnectProviderTests
 
         public void Advance(TimeSpan duration) => this.utcNow = this.utcNow.Add(duration);
     }
+
 }
