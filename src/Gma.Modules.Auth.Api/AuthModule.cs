@@ -190,6 +190,47 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         methods.Produces<AuthenticationMethodsResponse>(StatusCodes.Status200OK);
         RequireScopeWhenNeeded(methods, requireScope);
 
+        RouteHandlerBuilder sessions = group.MapGet("/sessions", async (
+            ClaimsPrincipal user,
+            IAuthScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) ||
+                GetMemberId(user) is not { } memberId ||
+                GetSessionId(user) is not { } sessionId)
+            {
+                return Results.Unauthorized();
+            }
+
+            return (await dispatcher.QueryAsync(
+                new ListAuthenticationSessionsQuery(memberId, sessionId),
+                cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes);
+        })
+            .RequireAuthorization();
+        sessions.Produces<AuthenticationSessionsResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(sessions, requireScope);
+
+        RouteHandlerBuilder signOutSession = group.MapPost("/sessions/{sessionId:guid}/sign-out", async (
+            Guid sessionId,
+            ClaimsPrincipal user,
+            IAuthScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) || GetMemberId(user) is not { } memberId)
+            {
+                return Results.Unauthorized();
+            }
+
+            Result<Unit> result = await dispatcher.SendAsync(
+                new SignOutSessionCommand(memberId, sessionId),
+                cancellationToken).ConfigureAwait(false);
+            return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
+        })
+            .RequireAuthorization();
+        RequireScopeWhenNeeded(signOutSession, requireScope);
+
         RouteHandlerBuilder setPassword = group.MapPut("/password", async (
             SetPasswordRequest request,
             ClaimsPrincipal user,

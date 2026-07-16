@@ -226,6 +226,22 @@ public sealed class MemberAggregateTests
     }
 
     [Fact]
+    public void Sign_out_session_only_revokes_the_selected_session()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberSessionId selectedSessionId = new(Guid.NewGuid());
+        MemberSessionId otherSessionId = new(Guid.NewGuid());
+        member.StartSession(selectedSessionId, "refresh-hash-1", Now.AddDays(1), Now);
+        member.StartSession(otherSessionId, "refresh-hash-2", Now.AddDays(1), Now);
+
+        Result result = member.SignOutSession(selectedSessionId, Now.AddMinutes(1));
+
+        Assert.True(result.IsSuccess);
+        Assert.False(member.Sessions.Single(session => session.Id == selectedSessionId).IsActive);
+        Assert.True(member.Sessions.Single(session => session.Id == otherSessionId).IsActive);
+    }
+
+    [Fact]
     public void Disable_requires_reason()
     {
         var member = CreateMember("member@example.com").Value;

@@ -330,6 +330,23 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         return Result.Success();
     }
 
+    public Result SignOutSession(MemberSessionId sessionId, DateTimeOffset nowUtc)
+    {
+        MemberSession? session = this.sessions.FirstOrDefault(item => item.Id == sessionId);
+        if (session is null)
+        {
+            return Result.Failure(AuthDomainErrors.SessionNotFound);
+        }
+
+        Result result = session.SignOut(nowUtc);
+        if (result.IsSuccess)
+        {
+            this.Touch();
+        }
+
+        return result;
+    }
+
     public Result Disable(string reason, Guid disabledEventId, DateTimeOffset nowUtc)
     {
         Result statusResult = this.EnsureCanDisable();
