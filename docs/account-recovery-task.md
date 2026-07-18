@@ -1,6 +1,6 @@
 # Account Recovery Task
 
-Status: in progress
+Status: completed
 Date: 2026-07-19
 
 ## Goal
@@ -94,3 +94,11 @@ MFA, passkeys, recovery codes for MFA, authentication assurance, and step-up pol
 ## Completion Criterion
 
 The slice is complete when an eligible member can request and complete a one-time password recovery in either Auth profile without account enumeration or cross-scope access, every prior session and recovery challenge is invalidated atomically, optional email delivery composes through GMA Extensions, both provider migrations are clean, and the repositories plus Skeleton pass their focused proof.
+
+## Completion Evidence
+
+- Auth commit `a1771ab` builds with zero warnings and passes 177 tests, including expiry, replacement, compromised-password blocking, scope isolation, replay rejection, session revocation, model shape, and fail-closed optimistic concurrency.
+- PostgreSQL and SQL Server report no pending Auth model changes, and both produce idempotent migration scripts containing the recovery schema.
+- GMA Extensions commit `abed85e` builds with zero warnings and passes all 19 extension tests; recovery delivery is mandatory, email-only, and resolves the exact verified event address.
+- GMA Skeleton commit `a766b39` composes Auth, Notifications, the extension, and the email adapter; its generated selection matrix, zero-warning build, all provider migration checks, 261 architecture guards, and all 1,644 selected non-Docker tests pass.
+- Auth and Extensions package audits report no known vulnerable direct or transitive packages, and boundary scans find no BunkFy-specific source references.
