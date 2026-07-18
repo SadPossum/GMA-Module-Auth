@@ -5,6 +5,7 @@ using Gma.Framework.Infrastructure;
 using Gma.Modules.Auth.Api;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Providers.OpenIdConnect;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
@@ -38,6 +39,8 @@ public sealed class AuthEndpointContractTests
             .OfType<string>()];
 
         Assert.Contains("/api/auth/password/remove", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/password-recovery", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/password-recovery/confirm", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/sessions", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/sessions/{sessionId:guid}/sign-out", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/self-registration", routes, StringComparer.Ordinal);
@@ -46,5 +49,14 @@ public sealed class AuthEndpointContractTests
         Assert.Contains("/api/auth/external/{provider}/sign-in/challenge", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external/{provider}/link/challenge", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external/challenge/{nonce}", routes, StringComparer.Ordinal);
+
+        RouteEndpoint[] recoveryEndpoints = [.. ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(dataSource => dataSource.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.RoutePattern.RawText is
+                "/api/auth/password-recovery" or "/api/auth/password-recovery/confirm")];
+        Assert.Equal(2, recoveryEndpoints.Length);
+        Assert.All(recoveryEndpoints, endpoint =>
+            Assert.Empty(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>()));
     }
 }

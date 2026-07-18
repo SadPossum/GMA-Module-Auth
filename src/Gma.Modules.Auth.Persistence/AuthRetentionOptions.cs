@@ -6,6 +6,7 @@ public sealed class AuthRetentionOptions
 
     public bool Enabled { get; set; }
     public int ExpiredExchangeHistoryHours { get; set; } = 24;
+    public int PasswordRecoveryHistoryHours { get; set; } = 24;
     public int SessionHistoryDays { get; set; } = 365;
     public int BatchSize { get; set; } = 500;
     public int MaxBatchesPerCategoryPerCycle { get; set; } = 4;

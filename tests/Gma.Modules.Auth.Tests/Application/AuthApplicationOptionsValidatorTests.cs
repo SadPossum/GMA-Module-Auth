@@ -41,4 +41,23 @@ public sealed class AuthApplicationOptionsValidatorTests
         Assert.True(result.Failed);
         Assert.Contains("SelfRegistration", result.FailureMessage, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData(0, 60)]
+    [InlineData(1_441, 60)]
+    [InlineData(30, 0)]
+    [InlineData(30, 3_601)]
+    public void Validate_rejects_invalid_password_recovery_settings(int lifetimeMinutes, int cooldownSeconds)
+    {
+        ValidateOptionsResult result = this.validator.Validate(
+            name: null,
+            new AuthApplicationOptions
+            {
+                PasswordRecoveryLifetimeMinutes = lifetimeMinutes,
+                PasswordRecoveryRequestCooldownSeconds = cooldownSeconds,
+            });
+
+        Assert.True(result.Failed);
+        Assert.Contains("PasswordRecovery", result.FailureMessage, StringComparison.Ordinal);
+    }
 }

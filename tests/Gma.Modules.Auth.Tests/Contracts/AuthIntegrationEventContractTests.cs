@@ -1,6 +1,7 @@
 namespace Gma.Modules.Auth.Tests;
 
 using System.Text.Json;
+using Gma.Framework.Messaging;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
@@ -34,6 +35,9 @@ public sealed class AuthIntegrationEventContractTests
         Assert.Equal(
             "acme-orders.auth.member-authentication-method-changed.v1",
             AuthIntegrationSubjects.CreateMemberAuthenticationMethodChanged("acme-orders"));
+        Assert.Equal(
+            "acme-orders.auth.member-password-recovery-requested.v1",
+            AuthIntegrationSubjects.CreateMemberPasswordRecoveryRequested("acme-orders"));
     }
 
     [Fact]
@@ -159,5 +163,28 @@ public sealed class AuthIntegrationEventContractTests
             MemberId,
             "external:google",
             AuthenticationMethodChange.Unknown));
+    }
+
+    [Fact]
+    public void Password_recovery_requested_event_keeps_the_challenge_and_exact_destination()
+    {
+        Guid challengeId = Guid.NewGuid();
+        MemberPasswordRecoveryRequestedIntegrationEvent integrationEvent = new(
+            EventId,
+            " tenant-a ",
+            OccurredAtUtc,
+            challengeId,
+            MemberId,
+            " owner@example.com ",
+            " recovery-code ",
+            OccurredAtUtc.AddMinutes(30));
+
+        Assert.Equal("tenant-a", integrationEvent.ScopeId);
+        Assert.Equal(challengeId, integrationEvent.ChallengeId);
+        Assert.Equal("owner@example.com", integrationEvent.Email);
+        Assert.Equal("recovery-code", integrationEvent.RecoveryCode);
+        Assert.Contains(
+            AuthModuleMetadata.Descriptor.GetPublishedEvents(),
+            published => published.EventType == MemberPasswordRecoveryRequestedIntegrationEvent.EventType);
     }
 }

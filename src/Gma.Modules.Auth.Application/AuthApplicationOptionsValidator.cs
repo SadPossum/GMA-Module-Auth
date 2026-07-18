@@ -54,6 +54,18 @@ internal sealed class AuthApplicationOptionsValidator : IValidateOptions<AuthApp
                 $"{AuthApplicationOptions.SectionName}:EmailVerificationRequestCooldownSeconds must be between 1 and 3600.");
         }
 
+        if (options.PasswordRecoveryLifetimeMinutes is < 5 or > 1_440)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{AuthApplicationOptions.SectionName}:PasswordRecoveryLifetimeMinutes must be between 5 and 1440.");
+        }
+
+        if (options.PasswordRecoveryRequestCooldownSeconds is < 1 or > 3_600)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{AuthApplicationOptions.SectionName}:PasswordRecoveryRequestCooldownSeconds must be between 1 and 3600.");
+        }
+
         return ValidateOptionsResult.Success;
     }
 }

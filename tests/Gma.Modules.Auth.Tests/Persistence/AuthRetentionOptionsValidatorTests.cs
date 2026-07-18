@@ -36,6 +36,7 @@ public sealed class AuthRetentionOptionsValidatorTests
         {
             Enabled = true,
             ExpiredExchangeHistoryHours = 0,
+            PasswordRecoveryHistoryHours = 0,
             SessionHistoryDays = 0,
             BatchSize = 10_001,
             MaxBatchesPerCategoryPerCycle = 0,
@@ -45,6 +46,6 @@ public sealed class AuthRetentionOptionsValidatorTests
         ValidateOptionsResult result = this.validator.Validate(null, options);
 
         Assert.True(result.Failed);
-        Assert.Equal(5, result.Failures.Count());
+        Assert.Equal(6, result.Failures.Count());
     }
 }

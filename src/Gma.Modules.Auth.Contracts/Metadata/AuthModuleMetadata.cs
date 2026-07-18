@@ -28,6 +28,7 @@ public static class AuthModuleMetadata
         .WithPublishedEvent<MemberSessionsRevokedIntegrationEvent>()
         .WithPublishedEvent<MemberAuthenticatedIntegrationEvent>()
         .WithPublishedEvent<MemberAuthenticationMethodChangedIntegrationEvent>()
+        .WithPublishedEvent<MemberPasswordRecoveryRequestedIntegrationEvent>()
         .WithPublishedEvent<MemberEmailVerificationRequestedIntegrationEvent>()
         .WithPublishedEvent<MemberEmailVerifiedIntegrationEvent>()
         .Build();

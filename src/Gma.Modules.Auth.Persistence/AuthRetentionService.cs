@@ -3,6 +3,7 @@ namespace Gma.Modules.Auth.Persistence;
 using Gma.Framework.Runtime.Maintenance;
 using Gma.Framework.Runtime.Time;
 using Gma.Modules.Auth.Application.Ports;
+using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
@@ -57,6 +58,7 @@ internal sealed class AuthRetentionService(
         DateTimeOffset nowUtc = clock.UtcNow;
         DateTimeOffset exchangeCutoffUtc = nowUtc.AddHours(-settings.ExpiredExchangeHistoryHours);
         DateTimeOffset sessionCutoffUtc = nowUtc.AddDays(-settings.SessionHistoryDays);
+        DateTimeOffset recoveryCutoffUtc = nowUtc.AddHours(-settings.PasswordRecoveryHistoryHours);
         IExternalAuthenticationExchangeStore exchangeStore = scope.ServiceProvider
             .GetRequiredService<IExternalAuthenticationExchangeStore>();
         AuthDbContext dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
@@ -77,13 +79,24 @@ internal sealed class AuthRetentionService(
                     token),
                 cancellationToken)
             .ConfigureAwait(false);
+        int recoveryCount = await BoundedBatchProcessor.ExecuteAsync(
+                settings.BatchSize,
+                settings.MaxBatchesPerCategoryPerCycle,
+                (batchSize, token) => DeletePasswordRecoveryChallengesBatchAsync(
+                    dbContext,
+                    recoveryCutoffUtc,
+                    batchSize,
+                    token),
+                cancellationToken)
+            .ConfigureAwait(false);
 
-        if (exchangeCount > 0 || sessionCount > 0)
+        if (exchangeCount > 0 || sessionCount > 0 || recoveryCount > 0)
         {
             logger.LogInformation(
-                "Auth retention removed {ExchangeCount} external authentication exchanges and {SessionCount} sessions.",
+                "Auth retention removed {ExchangeCount} external authentication exchanges, {SessionCount} sessions, and {RecoveryCount} password recovery challenges.",
                 exchangeCount,
-                sessionCount);
+                sessionCount,
+                recoveryCount);
         }
     }
 
@@ -127,6 +140,36 @@ internal sealed class AuthRetentionService(
         return await dbContext.MemberSessions
             .IgnoreQueryFilters()
             .Where(session => sessionIds.Contains(session.Id))
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<int> DeletePasswordRecoveryChallengesBatchAsync(
+        AuthDbContext dbContext,
+        DateTimeOffset cutoffUtc,
+        int batchSize,
+        CancellationToken cancellationToken)
+    {
+        PasswordRecoveryChallengeId[] challengeIds = await dbContext.PasswordRecoveryChallenges
+            .IgnoreQueryFilters()
+            .Where(challenge =>
+                challenge.ExpiresAtUtc <= cutoffUtc ||
+                challenge.ConsumedAtUtc <= cutoffUtc ||
+                challenge.RevokedAtUtc <= cutoffUtc)
+            .OrderBy(challenge => challenge.ExpiresAtUtc)
+            .Select(challenge => challenge.Id)
+            .Take(batchSize)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (challengeIds.Length == 0)
+        {
+            return 0;
+        }
+
+        return await dbContext.PasswordRecoveryChallenges
+            .IgnoreQueryFilters()
+            .Where(challenge => challengeIds.Contains(challenge.Id))
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
     }

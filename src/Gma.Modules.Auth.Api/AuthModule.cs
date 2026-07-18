@@ -306,6 +306,32 @@ public sealed class AuthModule(AuthProfile profile) : IModule
             .RequireAuthorization();
         RequireScopeWhenNeeded(unlinkIdentity, requireScope);
 
+        RouteHandlerBuilder requestPasswordRecovery = group.MapPost("/password-recovery", async (
+            PasswordRecoveryRequest request,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            Result<Unit> result = await dispatcher.SendAsync(
+                new RequestPasswordRecoveryCommand(request.Email),
+                cancellationToken).ConfigureAwait(false);
+            return result.IsSuccess ? Results.Accepted() : result.ToHttpResult(PublicErrorStatusCodes);
+        });
+        requestPasswordRecovery.Produces(StatusCodes.Status202Accepted);
+        RequireScopeWhenNeeded(requestPasswordRecovery, requireScope);
+
+        RouteHandlerBuilder confirmPasswordRecovery = group.MapPost("/password-recovery/confirm", async (
+            ConfirmPasswordRecoveryRequest request,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            Result<Unit> result = await dispatcher.SendAsync(
+                new ConfirmPasswordRecoveryCommand(request.Code, request.NewPassword),
+                cancellationToken).ConfigureAwait(false);
+            return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
+        });
+        confirmPasswordRecovery.Produces(StatusCodes.Status204NoContent);
+        RequireScopeWhenNeeded(confirmPasswordRecovery, requireScope);
+
         RouteHandlerBuilder requestEmailVerification = group.MapPost("/email-verification", async (
             RequestEmailVerificationRequest request,
             ClaimsPrincipal user,
@@ -583,6 +609,7 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         new(AuthApplicationErrors.EmailAlreadyVerified.Code, StatusCodes.Status409Conflict),
         new(AuthApplicationErrors.EmailVerificationInvalid.Code, StatusCodes.Status400BadRequest),
         new(AuthApplicationErrors.EmailVerificationRequestTooSoon.Code, StatusCodes.Status429TooManyRequests),
+        new(AuthApplicationErrors.PasswordRecoveryInvalid.Code, StatusCodes.Status400BadRequest),
         new(AuthApplicationErrors.UsernameAlreadyExists.Code, StatusCodes.Status409Conflict),
         new(AuthApplicationErrors.ExternalAccountLinkRequired.Code, StatusCodes.Status409Conflict),
         new(AuthApplicationErrors.ExternalIdentityAlreadyLinked.Code, StatusCodes.Status409Conflict));

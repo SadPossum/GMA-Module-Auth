@@ -12,4 +12,6 @@ public sealed class AuthApplicationOptions
     public int ExternalLinkSessionFreshnessMinutes { get; set; } = 10;
     public int EmailVerificationLifetimeMinutes { get; set; } = 1_440;
     public int EmailVerificationRequestCooldownSeconds { get; set; } = 60;
+    public int PasswordRecoveryLifetimeMinutes { get; set; } = 30;
+    public int PasswordRecoveryRequestCooldownSeconds { get; set; } = 60;
 }

@@ -1,6 +1,6 @@
 # Auth Module
 
-Implementation planning: [Global Identity With Ambient Tenancy](global-identity-with-tenancy-task.md).
+Implementation planning: [Global Identity With Ambient Tenancy](global-identity-with-tenancy-task.md) and [Account Recovery](account-recovery-task.md).
 
 The Auth module owns account credentials, external identity links, email ownership state, sessions, JWTs, and security events. Product profile data, provider-specific UI, email transport, notification history, KYC/KYB, and authorization policy remain outside Auth.
 
@@ -36,6 +36,7 @@ Auth can be composed in two scope modes. `AuthProfile.ScopeAware()` follows the 
 - Provider access/refresh tokens are not stored. The browser callback receives only a short-lived, hashed, single-use GMA exchange code.
 - Passwords and verification codes are stored only as hashes. Refresh-token hashing supports active and previous peppers for rotation.
 - Refresh-token replay revokes active sessions. Admin password reset also revokes active sessions.
+- Password recovery is enumeration-safe, accepts only active password members with a verified email, stores only a rotating HMAC code hash, and revokes every session after confirmation.
 - Sign-ins and authentication-method changes publish security events with bounded client context; secrets and provider tokens are excluded.
 - Scope context and the access-token scope claim must agree on protected scope-aware endpoints.
 - Scope-aware OIDC challenges carry the normalized scope only inside protected authentication state and restore it before the callback transaction; provider redirects do not depend on tenant headers surviving the round trip.
@@ -55,6 +56,8 @@ Base path: `/api/auth`.
 | `GET` | `/methods` | List password, email verification, and linked-provider state. |
 | `PUT` | `/password` | Add or change a password after fresh authentication. |
 | `POST` | `/password/remove` | Remove a password when another method remains. |
+| `POST` | `/password-recovery` | Request an enumeration-safe password recovery email. |
+| `POST` | `/password-recovery/confirm` | Consume a one-time recovery code, replace the password, and revoke all sessions. |
 | `POST` | `/external-identities/{id}/unlink` | Unlink a provider without account lockout. |
 | `POST` | `/email-verification` | Request a bounded, cooldown-protected verification challenge. |
 | `POST` | `/email-verification/confirm` | Confirm a one-time verification code. |
@@ -171,9 +174,19 @@ builder.Services.AddSingleton<IEmailSender, ProductEmailSender>();
 
 The shared `Gma.Framework.Email` project contains transport-neutral message contracts only. Vendor credentials and SDKs belong in a product/provider adapter. If the extension or Notifications email adapter is absent, Auth still records verification state and publishes events, but no email is sent.
 
+## Password recovery
+
+Account recovery is an Auth-owned capability because changing a credential and revoking sessions must remain one Auth transaction. Its challenge is a separate scoped aggregate and table; recovery state is not added to `Member`.
+
+`POST /password-recovery` accepts an email address and returns `202 Accepted` for every structurally valid request. Auth publishes a delivery event only when the active scope contains an active password member with that exact active verified email. Unknown, disabled, unverified, and external-only accounts receive the same public response. A durable account cooldown suppresses repeated challenge creation; hosts must additionally apply sensitive endpoint and IP rate limits.
+
+`POST /password-recovery/confirm` accepts the high-entropy one-time code and a new password. The code is looked up only through candidate HMAC hashes in the active Auth scope. Successful confirmation atomically consumes the challenge, invalidates other active challenges, applies the normal password policy, changes the password, revokes all sessions, and publishes the existing security events. It does not issue tokens or sign the member in.
+
+`Gma.Extensions.Auth.Notifications` optionally maps the requested event to mandatory email-only delivery at the exact verified address carried by Auth. The event includes a challenge id for product-specific link templates and audit correlation, but the generic confirmation contract needs only the code. Recovery secrets are never projected to web notifications. Hosts must encrypt and tightly retain every Auth, messaging, Notifications, and email-delivery record that temporarily carries the code.
+
 ## Persistence and retention
 
-Auth owns the `auth` schema and `auth.__ef_migrations_history`. SQL Server and PostgreSQL migrations include nullable password hashes, external identities, verification state, authentication methods on sessions, one-time exchange records, uniqueness constraints, and cleanup indexes.
+Auth owns the `auth` schema and `auth.__ef_migrations_history`. SQL Server and PostgreSQL migrations include nullable password hashes, external identities, verification state, authentication methods on sessions, one-time exchange and recovery records, uniqueness constraints, and cleanup indexes.
 
 Retention is opt-in and bounded through the shared `BoundedBatchProcessor`. It deletes old expired exchanges and sessions in configured batches across scopes. Active-session projections treat refresh-expired sessions as inactive even before cleanup.
 
@@ -184,9 +197,12 @@ Retention is opt-in and bounded through the shared `BoundedBatchProcessor`. It d
     "ExternalLinkSessionFreshnessMinutes": 10,
     "EmailVerificationLifetimeMinutes": 1440,
     "EmailVerificationRequestCooldownSeconds": 60,
+    "PasswordRecoveryLifetimeMinutes": 30,
+    "PasswordRecoveryRequestCooldownSeconds": 60,
     "Retention": {
       "Enabled": false,
       "ExpiredExchangeHistoryHours": 24,
+      "PasswordRecoveryHistoryHours": 24,
       "SessionHistoryDays": 365,
       "BatchSize": 500,
       "MaxBatchesPerCategoryPerCycle": 4,
@@ -208,6 +224,7 @@ Auth publishes versioned, scope-aware events under `{application-namespace}.auth
 - `member-sessions-revoked.v1`;
 - `member-authenticated.v1`;
 - `member-authentication-method-changed.v1`;
+- `member-password-recovery-requested.v1`;
 - `member-email-verification-requested.v1`;
 - `member-email-verified.v1`.
 
@@ -222,4 +239,4 @@ Consumers bind explicitly to Auth as producer. Event ids are reused as notificat
 - Replace the small built-in password blocklist with a current breach corpus/service for production products.
 - Alert on failed Auth outbox/inbox processing and Notifications exhausted/unroutable delivery jobs.
 - Keep provider callbacks and exchange/verification endpoints on the sensitive rate-limit policy.
-- MFA, passkeys, account recovery, profile data, and KYC/KYB should be separate adapters/modules built on these identity and event seams, not embedded in the `Member` aggregate prematurely.
+- MFA, passkeys, authentication assurance/step-up, profile data, and KYC/KYB should be separate capabilities or modules built on these identity and event seams, not embedded in the `Member` aggregate prematurely.

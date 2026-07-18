@@ -61,6 +61,8 @@ public static class DependencyInjection
         builder.Services.TryAddScoped<IAdminMemberReadRepository, AdminMemberReadRepository>();
         builder.Services.TryAddScoped<IAuthMemberContactReader, AuthMemberContactReader>();
         builder.Services.TryAddScoped<IExternalAuthenticationExchangeStore, ExternalAuthenticationExchangeStore>();
+        builder.Services.TryAddScoped<IPasswordRecoveryRecipientReader, PasswordRecoveryRecipientReader>();
+        builder.Services.TryAddScoped<IPasswordRecoveryChallengeRepository, PasswordRecoveryChallengeRepository>();
         builder.Services.TryAddEnumerable([
             ServiceDescriptor.Scoped<IUnitOfWork, AuthUnitOfWork>(),
             ServiceDescriptor.Scoped<IOutboxWriter, AuthOutboxWriter>(),

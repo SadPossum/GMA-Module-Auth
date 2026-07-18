@@ -8,6 +8,9 @@ public static class AuthDomainErrors
     public static readonly Error UsernameIdRequired = new("Auth.UsernameIdRequired", "A username id is required.");
     public static readonly Error SessionIdRequired = new("Auth.SessionIdRequired", "A session id is required.");
     public static readonly Error ExternalIdentityIdRequired = new("Auth.ExternalIdentityIdRequired", "An external identity id is required.");
+    public static readonly Error PasswordRecoveryChallengeIdRequired = new(
+        "Auth.PasswordRecoveryChallengeIdRequired",
+        "A password recovery challenge id is required.");
     public static readonly Error DomainEventIdRequired = new("Gma.Modules.Auth.DomainEventIdRequired", "A domain event id is required.");
     public static readonly Error TenantRequired = new("Auth.TenantRequired", "Scope id is required.");
     public static readonly Error TenantInvalid = new("Auth.TenantInvalid", "Scope id is not valid.");
@@ -26,6 +29,12 @@ public static class AuthDomainErrors
     public static readonly Error EmailAlreadyVerified = new("Auth.EmailAlreadyVerified", "Email is already verified.");
     public static readonly Error EmailVerificationTokenNotValid = new("Auth.EmailVerificationTokenNotValid", "Email verification token is not valid.");
     public static readonly Error EmailVerificationTokenExpired = new("Auth.EmailVerificationTokenExpired", "Email verification token has expired.");
+    public static readonly Error PasswordRecoveryChallengeNotValid = new(
+        "Auth.PasswordRecoveryChallengeNotValid",
+        "Password recovery challenge is not valid.");
+    public static readonly Error PasswordRecoveryChallengeInvalid = new(
+        "Auth.PasswordRecoveryChallengeInvalid",
+        "Password recovery challenge is invalid, expired, or already used.");
     public static readonly Error CredentialsNotValid = new("Auth.CredentialsNotValid", "Username or password is incorrect.");
     public static readonly Error UsernameNotValid = new("Auth.UsernameNotValid", "Username is not valid.");
     public static readonly Error UsernameAlreadyExists = new("Auth.UsernameAlreadyExists", "Username is already registered.");

@@ -15,6 +15,7 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, IAuth
     public DbSet<MemberUsername> MemberUsernames => this.Set<MemberUsername>();
     public DbSet<MemberSession> MemberSessions => this.Set<MemberSession>();
     public DbSet<MemberExternalIdentity> MemberExternalIdentities => this.Set<MemberExternalIdentity>();
+    public DbSet<PasswordRecoveryChallenge> PasswordRecoveryChallenges => this.Set<PasswordRecoveryChallenge>();
     internal DbSet<ExternalAuthenticationExchangeRecord> ExternalAuthenticationExchanges =>
         this.Set<ExternalAuthenticationExchangeRecord>();
     public DbSet<OutboxMessage> OutboxMessages => this.Set<OutboxMessage>();

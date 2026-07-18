@@ -188,6 +188,63 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.ToTable("members", "auth");
                 });
 
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.PasswordRecoveryChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ConsumedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("RequestedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsumedAtUtc");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("MemberId");
+
+                    b.HasIndex("RevokedAtUtc");
+
+                    b.HasIndex("ScopeId", "TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("ScopeId", "MemberId", "RequestedAtUtc");
+
+                    b.ToTable("password_recovery_challenges", "auth");
+                });
+
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberExternalIdentity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -420,6 +477,15 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                         .IsUnique();
 
                     b.ToTable("external_authentication_exchanges", "auth");
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.PasswordRecoveryChallenge", b =>
+                {
+                    b.HasOne("Gma.Modules.Auth.Domain.Aggregates.Member", null)
+                        .WithMany()
+                        .HasForeignKey("MemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberExternalIdentity", b =>

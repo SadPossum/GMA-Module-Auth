@@ -9,6 +9,7 @@ public static class AuthIntegrationSubjects
     public static string MemberEnabled => CreateMemberEnabled();
     public static string MemberSessionsRevoked => CreateMemberSessionsRevoked();
     public static string MemberAuthenticated => CreateMemberAuthenticated();
+    public static string MemberPasswordRecoveryRequested => CreateMemberPasswordRecoveryRequested();
     public static string MemberEmailVerificationRequested => CreateMemberEmailVerificationRequested();
     public static string MemberEmailVerified => CreateMemberEmailVerified();
     public static string MemberAuthenticationMethodChanged => CreateMemberAuthenticationMethodChanged();
@@ -27,6 +28,9 @@ public static class AuthIntegrationSubjects
 
     public static string CreateMemberAuthenticated(string subjectPrefix = IntegrationEventNaming.DefaultSubjectPrefix) =>
         IntegrationEventNaming.CreateSubject(subjectPrefix, AuthModuleMetadata.Name, MemberAuthenticatedIntegrationEvent.EventType, MemberAuthenticatedIntegrationEvent.EventVersion);
+
+    public static string CreateMemberPasswordRecoveryRequested(string subjectPrefix = IntegrationEventNaming.DefaultSubjectPrefix) =>
+        IntegrationEventNaming.CreateSubject(subjectPrefix, AuthModuleMetadata.Name, MemberPasswordRecoveryRequestedIntegrationEvent.EventType, MemberPasswordRecoveryRequestedIntegrationEvent.EventVersion);
 
     public static string CreateMemberEmailVerificationRequested(string subjectPrefix = IntegrationEventNaming.DefaultSubjectPrefix) =>
         IntegrationEventNaming.CreateSubject(subjectPrefix, AuthModuleMetadata.Name, MemberEmailVerificationRequestedIntegrationEvent.EventType, MemberEmailVerificationRequestedIntegrationEvent.EventVersion);

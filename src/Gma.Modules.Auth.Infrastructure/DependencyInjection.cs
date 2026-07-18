@@ -40,6 +40,7 @@ public static class DependencyInjection
             ServiceDescriptor.Singleton<IValidateOptions<RefreshTokenHashingOptions>, RefreshTokenHashingOptionsValidator>());
         services.TryAddScoped<IPasswordHashingService, PasswordHashingService>();
         services.TryAddScoped<IRefreshTokenHashingService, RefreshTokenHashingService>();
+        services.TryAddScoped<IPasswordRecoveryTokenService, PasswordRecoveryTokenService>();
         services.TryAddScoped<ITokenService, JwtTokenService>();
 
         return services;

@@ -45,6 +45,9 @@ public static class AuthApplicationErrors
     public static readonly Error EmailVerificationRequestTooSoon = new(
         "Auth.EmailVerificationRequestTooSoon",
         "Wait before requesting another email verification message.");
+    public static readonly Error PasswordRecoveryInvalid = new(
+        "Auth.PasswordRecoveryInvalid",
+        "Password recovery challenge is invalid, expired, or already used.");
     public static readonly Error CredentialsNotValid = AuthDomainErrors.CredentialsNotValid;
     public static readonly Error UsernameAlreadyExists = AuthDomainErrors.UsernameAlreadyExists;
     public static readonly Error MemberNotFound = AuthDomainErrors.MemberNotFound;
