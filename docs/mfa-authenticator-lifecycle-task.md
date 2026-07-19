@@ -1,6 +1,6 @@
 # TOTP Authenticator Lifecycle And Recovery Task
 
-Status: implementation in progress
+Status: completed
 
 ## Purpose
 
@@ -222,3 +222,7 @@ This slice does not add:
 - The optional adapter can be replaced without changing Auth domain/application behavior.
 - Framework remains unchanged and dependency-neutral.
 - Auth, both database providers, Skeleton, and BunkFy verification lanes pass from published dependency revisions.
+
+## Completion Record
+
+The optional TOTP adapter, Auth-owned lifecycle and recovery model, PostgreSQL and SQL Server migrations, public/browser flows, administrative reset surfaces, retention, replay and concurrency controls, canonical Skeleton composition, and BunkFy consumer alignment are implemented. Auth and Skeleton CI pass on their published revisions; BunkFy passes its warning-free full build, migration drift matrix, non-Docker suites, 32 required Docker integration scenarios, generated-contract drift check, and frontend verification.
