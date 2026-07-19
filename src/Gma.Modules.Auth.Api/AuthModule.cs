@@ -66,14 +66,17 @@ public sealed class AuthModule(AuthProfile profile) : IModule
 
         RouteHandlerBuilder register = group.MapPost("/register", async (
             RegisterMemberApiRequest request,
+            HttpContext httpContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
-            (await dispatcher.SendAsync(
+            ToSecretBearingHttpResult(
+                await dispatcher.SendAsync(
                 new RegisterMemberCommand(
                     request.Username,
                     UsernameTypeInput.FromJsonElement(request.UsernameType).Value,
                     request.Password),
-                cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes));
+                cancellationToken).ConfigureAwait(false),
+                httpContext));
         RequireScopeWhenNeeded(register, requireScope);
 
         RouteHandlerBuilder login = group.MapPost("/login", async (
@@ -81,29 +84,35 @@ public sealed class AuthModule(AuthProfile profile) : IModule
             HttpContext httpContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
-            ToPrimaryAuthenticationHttpResult(await dispatcher.SendAsync(
-                new LoginMemberCommand(
-                    request.Username,
-                    request.Password,
-                    GetClientIpAddress(httpContext),
-                    GetUserAgent(httpContext)),
-                cancellationToken).ConfigureAwait(false)));
+            ToPrimaryAuthenticationHttpResult(
+                await dispatcher.SendAsync(
+                    new LoginMemberCommand(
+                        request.Username,
+                        request.Password,
+                        GetClientIpAddress(httpContext),
+                        GetUserAgent(httpContext)),
+                    cancellationToken).ConfigureAwait(false),
+                httpContext));
         login.Produces<AuthTokensResponse>(StatusCodes.Status200OK);
         login.Produces<MultiFactorChallengeResponse>(StatusCodes.Status202Accepted);
         RequireScopeWhenNeeded(login, requireScope);
 
         RouteHandlerBuilder refresh = group.MapPost("/refresh", async (
             RefreshTokenRequest request,
+            HttpContext httpContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
-            (await dispatcher.SendAsync(
-                new RefreshMemberSessionCommand(request.AccessToken, request.RefreshToken),
-                cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes));
+            ToSecretBearingHttpResult(
+                await dispatcher.SendAsync(
+                    new RefreshMemberSessionCommand(request.AccessToken, request.RefreshToken),
+                    cancellationToken).ConfigureAwait(false),
+                httpContext));
         RequireScopeWhenNeeded(refresh, requireScope);
 
         RouteHandlerBuilder passwordStepUp = group.MapPost("/step-up/password", async (
             PasswordStepUpRequest request,
             ClaimsPrincipal user,
+            HttpContext httpContext,
             IAuthScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
@@ -115,13 +124,15 @@ public sealed class AuthModule(AuthProfile profile) : IModule
                 return Results.Unauthorized();
             }
 
-            return (await dispatcher.SendAsync(
-                new StepUpWithPasswordCommand(
-                    memberId,
-                    sessionId,
-                    request.Password,
-                    request.RefreshToken),
-                cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes);
+            return ToSecretBearingHttpResult(
+                await dispatcher.SendAsync(
+                    new StepUpWithPasswordCommand(
+                        memberId,
+                        sessionId,
+                        request.Password,
+                        request.RefreshToken),
+                    cancellationToken).ConfigureAwait(false),
+                httpContext);
         })
             .RequireAuthorization();
         passwordStepUp.Produces<AuthTokensResponse>(StatusCodes.Status200OK);
@@ -930,16 +941,29 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         return Results.Ok(new BrowserAuthResponse(result.Value.AccessToken));
     }
 
-    private static IResult ToPrimaryAuthenticationHttpResult(Result<PrimaryAuthenticationResult> result)
+    private static IResult ToPrimaryAuthenticationHttpResult(
+        Result<PrimaryAuthenticationResult> result,
+        HttpContext httpContext)
     {
         if (result.IsFailure)
         {
             return result.ToHttpResult(PublicErrorStatusCodes);
         }
 
+        SetNoStoreHeaders(httpContext);
         return result.Value.RequiresMultiFactor
             ? Results.Accepted(value: result.Value.MultiFactorChallenge)
             : Results.Ok(result.Value.Tokens);
+    }
+
+    private static IResult ToSecretBearingHttpResult<T>(Result<T> result, HttpContext httpContext)
+    {
+        if (result.IsSuccess)
+        {
+            SetNoStoreHeaders(httpContext);
+        }
+
+        return result.ToHttpResult(PublicErrorStatusCodes);
     }
 
     private static IResult ToBrowserPrimaryAuthenticationResult(
