@@ -1,5 +1,8 @@
 namespace Gma.Modules.Auth.Persistence;
 
+using Gma.Framework.Cqrs.UnitOfWork;
+using Gma.Framework.Messaging;
+using Gma.Framework.Persistence.EntityFrameworkCore;
 using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Application.Scoping;
 using Gma.Modules.Auth.Contracts;
@@ -11,9 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using Gma.Framework.Messaging;
-using Gma.Framework.Cqrs.UnitOfWork;
-using Gma.Framework.Persistence.EntityFrameworkCore;
 
 public static class DependencyInjection
 {
@@ -63,6 +63,9 @@ public static class DependencyInjection
         builder.Services.TryAddScoped<IExternalAuthenticationExchangeStore, ExternalAuthenticationExchangeStore>();
         builder.Services.TryAddScoped<IPasswordRecoveryRecipientReader, PasswordRecoveryRecipientReader>();
         builder.Services.TryAddScoped<IPasswordRecoveryChallengeRepository, PasswordRecoveryChallengeRepository>();
+        builder.Services.TryAddScoped<IMemberTotpAuthenticatorRepository, MemberTotpAuthenticatorRepository>();
+        builder.Services.TryAddScoped<IMemberAuthenticationChallengeRepository, MemberAuthenticationChallengeRepository>();
+        builder.Services.TryAddScoped<IMemberMultiFactorFailureAttemptRepository, MemberMultiFactorFailureAttemptRepository>();
         builder.Services.TryAddEnumerable([
             ServiceDescriptor.Scoped<IUnitOfWork, AuthUnitOfWork>(),
             ServiceDescriptor.Scoped<IOutboxWriter, AuthOutboxWriter>(),

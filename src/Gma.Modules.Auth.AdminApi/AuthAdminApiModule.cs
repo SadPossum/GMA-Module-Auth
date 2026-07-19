@@ -1,6 +1,14 @@
 namespace Gma.Modules.Auth.AdminApi;
 
 using System.Text.Json;
+using Gma.Framework.Administration;
+using Gma.Framework.Administration.Api;
+using Gma.Framework.Api.Observability;
+using Gma.Framework.Api.Results;
+using Gma.Framework.Cqrs;
+using Gma.Framework.ModuleComposition;
+using Gma.Framework.Pagination;
+using Gma.Framework.Results;
 using Gma.Modules.Auth.Admin.Contracts;
 using Gma.Modules.Auth.Application;
 using Gma.Modules.Auth.Application.Commands;
@@ -16,14 +24,6 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using Gma.Framework.Administration;
-using Gma.Framework.Administration.Api;
-using Gma.Framework.Api.Results;
-using Gma.Framework.Api.Observability;
-using Gma.Framework.Cqrs;
-using Gma.Framework.ModuleComposition;
-using Gma.Framework.Pagination;
-using Gma.Framework.Results;
 
 public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
 {
@@ -152,6 +152,31 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
                 errorStatusCodes: AdminErrorStatusCodes).ConfigureAwait(false);
         });
 
+        members.MapPost("/{memberId:guid}/reset-multi-factor", async (
+            Guid memberId,
+            ResetAdminMemberMultiFactorRequest request,
+            HttpContext httpContext,
+            AdminApiExecutor executor,
+            IAdminActorContext actorContext,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+            await executor.ExecuteAsync(
+                httpContext,
+                AdminOperation.Create(
+                    AuthAdminOperationNames.MembersResetMultiFactor,
+                    AuthAdminPermissions.MembersResetMultiFactor),
+                requireTenant,
+                token => request.Confirmed
+                    ? dispatcher.SendAsync(
+                        new ResetMemberMultiFactorAuthenticationCommand(
+                            memberId,
+                            actorContext.Actor?.Id ?? string.Empty,
+                            request.Reason),
+                        token)
+                    : Task.FromResult(Result.Failure<Unit>(AdminErrors.ConfirmationRequired)),
+                cancellationToken,
+                errorStatusCodes: AdminErrorStatusCodes).ConfigureAwait(false));
+
         members.MapPost("/{memberId:guid}/revoke-sessions", async (
             Guid memberId,
             RevokeAdminMemberSessionsRequest request,
@@ -269,6 +294,7 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
     public sealed record DisableAdminMemberRequest(string Reason, bool Confirmed);
     public sealed record ResetAdminMemberPasswordRequest(string? NewPassword, bool GeneratePassword, bool Confirmed);
     public sealed record ResetAdminMemberPasswordResponse(string? GeneratedPassword);
+    public sealed record ResetAdminMemberMultiFactorRequest(string Reason, bool Confirmed);
     public sealed record RevokeAdminMemberSessionsRequest(bool Confirmed);
 
     private static readonly ApiErrorStatusCodeMap AdminErrorStatusCodes = ApiErrorStatusCodeMap.Create(
@@ -276,7 +302,8 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
         new(AuthApplicationErrors.UsernameAlreadyExists.Code, StatusCodes.Status409Conflict),
         new(AuthApplicationErrors.MemberStatusUnknown.Code, StatusCodes.Status409Conflict),
         new(AuthApplicationErrors.MemberAlreadyDisabled.Code, StatusCodes.Status409Conflict),
-        new(AuthApplicationErrors.MemberAlreadyActive.Code, StatusCodes.Status409Conflict));
+        new(AuthApplicationErrors.MemberAlreadyActive.Code, StatusCodes.Status409Conflict),
+        new(AuthApplicationErrors.TotpAuthenticatorNotActive.Code, StatusCodes.Status409Conflict));
 
     private static class AdminApiErrors
     {

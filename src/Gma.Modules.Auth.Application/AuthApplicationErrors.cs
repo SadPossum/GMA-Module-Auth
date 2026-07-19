@@ -1,7 +1,7 @@
 namespace Gma.Modules.Auth.Application;
 
-using Gma.Modules.Auth.Domain.Errors;
 using Gma.Framework.Results;
+using Gma.Modules.Auth.Domain.Errors;
 
 public static class AuthApplicationErrors
 {
@@ -48,6 +48,13 @@ public static class AuthApplicationErrors
     public static readonly Error PasswordRecoveryInvalid = new(
         "Auth.PasswordRecoveryInvalid",
         "Password recovery challenge is invalid, expired, or already used.");
+    public static readonly Error MultiFactorProviderUnavailable = new(
+        "Auth.MultiFactorProviderUnavailable",
+        "The configured multi-factor authentication provider is unavailable.");
+    public static readonly Error MultiFactorChallengeInvalid = AuthDomainErrors.AuthenticationChallengeInvalid;
+    public static readonly Error TotpAuthenticatorNotActive = AuthDomainErrors.TotpAuthenticatorNotActive;
+    public static readonly Error TotpAuthenticatorAlreadyActive = AuthDomainErrors.TotpAuthenticatorAlreadyActive;
+    public static readonly Error TotpEnrollmentInvalid = AuthDomainErrors.TotpEnrollmentInvalid;
     public static readonly Error CredentialsNotValid = AuthDomainErrors.CredentialsNotValid;
     public static readonly Error UsernameAlreadyExists = AuthDomainErrors.UsernameAlreadyExists;
     public static readonly Error MemberNotFound = AuthDomainErrors.MemberNotFound;

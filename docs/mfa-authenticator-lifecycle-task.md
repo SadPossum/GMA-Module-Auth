@@ -1,6 +1,6 @@
 # TOTP Authenticator Lifecycle And Recovery Task
 
-Status: implementation planned
+Status: implementation in progress
 
 ## Purpose
 
@@ -117,7 +117,7 @@ Self-service disablement requires a fresh successful TOTP or recovery-code proof
 
 Password recovery changes only the password and continues to revoke sessions; it must not silently disable TOTP. A member who loses both the authenticator and all recovery codes needs an explicit administrative recovery path.
 
-Add a separate `auth.members.reset-mfa` administration permission and confirmed API/CLI operation. Administrative reset requires a bounded reason, disables the authenticator, invalidates recovery codes and challenges, revokes all sessions, and publishes security events. It never reveals or replaces a secret on the member's behalf. Product identity-verification policy before granting this operation remains outside Auth.
+Add a separate `auth.members.reset-multi-factor` administration permission and confirmed API/CLI operation. Administrative reset requires a bounded reason, disables the authenticator, invalidates recovery codes and challenges, revokes all sessions, and publishes security events. It never reveals or replaces a secret on the member's behalf. Product identity-verification policy before granting this operation remains outside Auth.
 
 ## API Surface
 
@@ -130,7 +130,7 @@ Bearer routes use refresh proof in the request. Browser routes use the existing 
 | `POST` | `/api/auth/mfa/totp/activate` | Activate, rotate the session, and return tokens plus recovery codes once. |
 | `POST` | `/api/auth/mfa/challenges/complete` | Complete a password or external primary challenge with TOTP or recovery code. |
 | `POST` | `/api/auth/mfa/recovery-codes/regenerate` | Replace all recovery codes after fresh factor proof. |
-| `DELETE` | `/api/auth/mfa/totp` | Disable after fresh factor proof and revoke sessions. |
+| `POST` | `/api/auth/mfa/totp/disable` | Disable after fresh factor proof and revoke sessions. |
 
 Equivalent browser routes live under `/api/auth/browser/mfa`. Public responses use one generic invalid-factor/challenge error so callers cannot distinguish expired challenges, exhausted attempts, unknown members, stale codes, consumed codes, or TOTP replay.
 
@@ -144,7 +144,7 @@ Application defines narrow ports:
 - `IAuthenticatorSecretProtector` protects and unprotects TOTP secret bytes.
 - `IMultiFactorTokenService` generates and hashes high-entropy primary-challenge and recovery-code material with active/previous key support.
 
-`Gma.Modules.Auth.Authenticators.Totp` provides the default implementation using Otp.NET for RFC 6238 and ASP.NET Core Data Protection for secret protection. Registrations use `TryAdd` so a host can substitute a KMS/HSM-backed protector or another validated TOTP implementation.
+`Gma.Modules.Auth.Authenticators.Totp` provides the default implementation using Otp.NET for RFC 6238 and ASP.NET Core Data Protection for secret protection. The adapter replaces Auth's unavailable fail-closed defaults; a host can register a KMS/HSM-backed protector or another validated implementation after the adapter.
 
 The adapter uses:
 
@@ -162,6 +162,7 @@ Auth adds provider-specific PostgreSQL and SQL Server migrations for:
 - `member_totp_authenticators`;
 - `member_totp_recovery_codes`;
 - `member_authentication_challenges`;
+- `member_multi_factor_failure_attempts`;
 - unique scope/member ownership;
 - challenge-token and recovery-code hash lookup indexes;
 - active/expiry cleanup indexes;
@@ -169,7 +170,7 @@ Auth adds provider-specific PostgreSQL and SQL Server migrations for:
 
 No migration enables TOTP for an existing account or infers stronger evidence for an existing session. Existing accounts and sessions retain current behavior until a member activates an authenticator.
 
-Retention deletes expired/consumed challenges, expired pending enrollments, and old disabled authenticator history in bounded batches. Active authenticator and unused recovery-code state is never removed by age alone.
+Retention deletes expired/consumed challenges, expired pending enrollments, old disabled authenticator history, and old management-factor failure records in bounded batches. Active authenticator and unused recovery-code state is never removed by age alone.
 
 ## Security Invariants
 

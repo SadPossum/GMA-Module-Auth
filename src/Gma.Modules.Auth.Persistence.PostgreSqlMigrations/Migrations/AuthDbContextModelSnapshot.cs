@@ -188,6 +188,179 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.ToTable("members", "auth");
                 });
 
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.MemberAuthenticationChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ConsumedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("FailedAttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("MaximumAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("PrimaryAuthenticatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PrimaryAuthenticationContextReference")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("PrimaryAuthenticationMethod")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("primaryAuthenticationMethodReferences")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("primary_authentication_method_references");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsumedAtUtc");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("MemberId");
+
+                    b.HasIndex("RevokedAtUtc");
+
+                    b.HasIndex("ScopeId", "TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("ScopeId", "MemberId", "CreatedAtUtc");
+
+                    b.ToTable("member_authentication_challenges", "auth");
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.MemberMultiFactorFailureAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("FailedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FailedAtUtc");
+
+                    b.HasIndex("MemberId");
+
+                    b.HasIndex("ScopeId", "MemberId", "Purpose", "FailedAtUtc");
+
+                    b.ToTable("member_multi_factor_failure_attempts", "auth");
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.MemberTotpAuthenticator", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ActivatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("DisabledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("EnrollmentExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("EnrollmentStartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("LastAcceptedTimeStep")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProtectedSecret")
+                        .HasMaxLength(4096)
+                        .IsUnicode(false)
+                        .HasColumnType("character varying(4096)");
+
+                    b.Property<DateTimeOffset?>("RecoveryCodesRegeneratedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActivatedAtUtc");
+
+                    b.HasIndex("DisabledAtUtc");
+
+                    b.HasIndex("EnrollmentExpiresAtUtc");
+
+                    b.HasIndex("MemberId");
+
+                    b.HasIndex("ScopeId", "MemberId")
+                        .IsUnique();
+
+                    b.ToTable("member_totp_authenticators", "auth");
+                });
+
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.PasswordRecoveryChallenge", b =>
                 {
                     b.Property<Guid>("Id")
@@ -370,6 +543,50 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.ToTable("member_sessions", "auth");
                 });
 
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberTotpRecoveryCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AuthenticatorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ConsumedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("GeneratedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Hash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthenticatorId");
+
+                    b.HasIndex("RevokedAtUtc");
+
+                    b.HasIndex("ScopeId", "Hash")
+                        .IsUnique();
+
+                    b.HasIndex("ScopeId", "MemberId", "ConsumedAtUtc");
+
+                    b.ToTable("member_totp_recovery_codes", "auth");
+                });
+
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberUsername", b =>
                 {
                     b.Property<Guid>("Id")
@@ -497,6 +714,33 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.ToTable("external_authentication_exchanges", "auth");
                 });
 
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.MemberAuthenticationChallenge", b =>
+                {
+                    b.HasOne("Gma.Modules.Auth.Domain.Aggregates.Member", null)
+                        .WithMany()
+                        .HasForeignKey("MemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.MemberMultiFactorFailureAttempt", b =>
+                {
+                    b.HasOne("Gma.Modules.Auth.Domain.Aggregates.Member", null)
+                        .WithMany()
+                        .HasForeignKey("MemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.MemberTotpAuthenticator", b =>
+                {
+                    b.HasOne("Gma.Modules.Auth.Domain.Aggregates.Member", null)
+                        .WithMany()
+                        .HasForeignKey("MemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.PasswordRecoveryChallenge", b =>
                 {
                     b.HasOne("Gma.Modules.Auth.Domain.Aggregates.Member", null)
@@ -524,6 +768,15 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberTotpRecoveryCode", b =>
+                {
+                    b.HasOne("Gma.Modules.Auth.Domain.Aggregates.MemberTotpAuthenticator", null)
+                        .WithMany("RecoveryCodes")
+                        .HasForeignKey("AuthenticatorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberUsername", b =>
                 {
                     b.HasOne("Gma.Modules.Auth.Domain.Aggregates.Member", null)
@@ -540,6 +793,11 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.Navigation("Sessions");
 
                     b.Navigation("Usernames");
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.MemberTotpAuthenticator", b =>
+                {
+                    b.Navigation("RecoveryCodes");
                 });
 #pragma warning restore 612, 618
         }

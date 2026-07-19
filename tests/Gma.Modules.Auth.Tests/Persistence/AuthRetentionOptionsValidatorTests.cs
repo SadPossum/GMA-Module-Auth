@@ -38,6 +38,10 @@ public sealed class AuthRetentionOptionsValidatorTests
             ExpiredExchangeHistoryHours = 0,
             PasswordRecoveryHistoryHours = 0,
             SessionHistoryDays = 0,
+            AuthenticationChallengeHistoryHours = 0,
+            ExpiredTotpEnrollmentHistoryHours = 0,
+            DisabledTotpAuthenticatorHistoryDays = 0,
+            MultiFactorFailureHistoryHours = 0,
             BatchSize = 10_001,
             MaxBatchesPerCategoryPerCycle = 0,
             IntervalMinutes = 0,
@@ -46,6 +50,6 @@ public sealed class AuthRetentionOptionsValidatorTests
         ValidateOptionsResult result = this.validator.Validate(null, options);
 
         Assert.True(result.Failed);
-        Assert.Equal(6, result.Failures.Count());
+        Assert.Equal(10, result.Failures.Count());
     }
 }

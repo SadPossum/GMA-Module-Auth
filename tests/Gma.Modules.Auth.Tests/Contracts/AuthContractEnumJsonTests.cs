@@ -142,4 +142,26 @@ public sealed class AuthContractEnumJsonTests
         Assert.Equal($"\"{expected}\"", json);
         Assert.Equal(change, JsonSerializer.Deserialize<AuthenticationMethodChange>(json, JsonOptions));
     }
+
+    [Theory]
+    [InlineData(MultiFactorCodeType.Totp, "totp")]
+    [InlineData(MultiFactorCodeType.RecoveryCode, "recovery-code")]
+    public void Multi_factor_code_type_uses_stable_string_names(
+        MultiFactorCodeType codeType,
+        string expected)
+    {
+        string json = JsonSerializer.Serialize(codeType, JsonOptions);
+
+        Assert.Equal($"\"{expected}\"", json);
+        Assert.Equal(codeType, JsonSerializer.Deserialize<MultiFactorCodeType>(json, JsonOptions));
+    }
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("\"unknown\"")]
+    [InlineData("\"sms\"")]
+    public void Multi_factor_code_type_rejects_numeric_or_unknown_values(string json)
+    {
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<MultiFactorCodeType>(json, JsonOptions));
+    }
 }

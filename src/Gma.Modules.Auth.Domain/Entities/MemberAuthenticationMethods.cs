@@ -3,6 +3,7 @@ namespace Gma.Modules.Auth.Domain.Entities;
 public static class MemberAuthenticationMethods
 {
     public const string Password = "password";
+    public const string Totp = "totp";
     public const string ExternalPrefix = "external:";
     public const int MaxLength = 256;
 
@@ -22,7 +23,9 @@ public static class MemberAuthenticationMethods
 
         string candidate = value.Trim().ToLowerInvariant();
         if (candidate.Length > MaxLength ||
-            (candidate != Password && !candidate.StartsWith(ExternalPrefix, StringComparison.Ordinal)))
+            (candidate != Password &&
+             candidate != Totp &&
+             !candidate.StartsWith(ExternalPrefix, StringComparison.Ordinal)))
         {
             return false;
         }

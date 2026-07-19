@@ -1,7 +1,7 @@
 namespace Gma.Modules.Auth.Tests;
 
-using Gma.Framework.Results;
 using Gma.Framework.Cqrs;
+using Gma.Framework.Results;
 using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
 using Gma.Framework.Scoping;
@@ -161,6 +161,56 @@ public sealed class ExternalAuthenticationFlowTests
     }
 
     [Fact]
+    public async Task Existing_external_identity_with_active_totp_receives_a_challenge_and_no_session()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        MemberRepository repository = new(dbContext);
+        Member existing = Member.CreateExternal(
+            new MemberId(Guid.NewGuid()),
+            "tenant-a",
+            "member@example.com",
+            new MemberUsernameId(Guid.NewGuid()),
+            new MemberExternalIdentityId(Guid.NewGuid()),
+            "google",
+            "https://accounts.example.test",
+            "provider-subject",
+            Guid.NewGuid(),
+            Now).Value;
+        MemberTotpAuthenticator authenticator = MemberTotpAuthenticator.BeginEnrollment(
+            new MemberTotpAuthenticatorId(Guid.NewGuid()),
+            existing.Id,
+            existing.ScopeId,
+            "protected-secret",
+            Now.AddMinutes(10),
+            Now).Value;
+        Assert.True(authenticator.Activate(
+            42,
+            [new TotpRecoveryCodeRegistration(new MemberTotpRecoveryCodeId(Guid.NewGuid()), "recovery-hash")],
+            Now).IsSuccess);
+        await repository.AddAsync(existing, CancellationToken.None);
+        dbContext.MemberTotpAuthenticators.Add(authenticator);
+        await dbContext.SaveChangesAsync();
+        var store = new InMemoryExchangeStore();
+        store.Add(CreateExchange("member@example.com", emailVerified: true));
+
+        Result<ExternalAuthenticationResponse> result = await CreateExchangeHandler(
+                store,
+                repository,
+                multiFactorService: CreateMultiFactorService(dbContext))
+            .HandleAsync(
+                new ExchangeExternalAuthenticationCommand("one-time-code", null, null),
+                CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ExternalAuthenticationStatus.MultiFactorRequired, result.Value.Status);
+        Assert.NotNull(result.Value.MultiFactorChallenge);
+        Assert.Null(result.Value.AccessToken);
+        Assert.Null(result.Value.RefreshToken);
+        Assert.Empty(existing.Sessions);
+        Assert.Single(dbContext.MemberAuthenticationChallenges.Local);
+    }
+
+    [Fact]
     public async Task Existing_email_requires_explicit_authenticated_link_instead_of_auto_merge()
     {
         await using AuthDbContext dbContext = CreateDbContext();
@@ -283,14 +333,38 @@ public sealed class ExternalAuthenticationFlowTests
     private static ExchangeExternalAuthenticationCommandHandler CreateExchangeHandler(
         IExternalAuthenticationExchangeStore store,
         IMemberRepository repository,
-        AuthApplicationOptions? options = null) =>
+        AuthApplicationOptions? options = null,
+        MultiFactorAuthenticationService? multiFactorService = null) =>
         new(
             store,
             repository,
+            multiFactorService ?? CreateMultiFactorService(),
             new FakeTokenService("refresh-token"),
             new FakeHashingService(),
             Options.Create(options ?? new AuthApplicationOptions()),
             new TestScopeContext(),
+            new FakeClock(),
+            new SequentialIdGenerator());
+
+    private static MultiFactorAuthenticationService CreateMultiFactorService() =>
+        new(
+            new EmptyTotpAuthenticatorRepository(),
+            new EmptyAuthenticationChallengeRepository(),
+            new UnavailableTimeBasedOneTimePasswordProvider(),
+            new UnavailableAuthenticatorSecretProtector(),
+            new FakeMultiFactorTokenService(),
+            Options.Create(new AuthApplicationOptions()),
+            new FakeClock(),
+            new SequentialIdGenerator());
+
+    private static MultiFactorAuthenticationService CreateMultiFactorService(AuthDbContext dbContext) =>
+        new(
+            new MemberTotpAuthenticatorRepository(dbContext),
+            new MemberAuthenticationChallengeRepository(dbContext),
+            new UnavailableTimeBasedOneTimePasswordProvider(),
+            new UnavailableAuthenticatorSecretProtector(),
+            new FakeMultiFactorTokenService(),
+            Options.Create(new AuthApplicationOptions()),
             new FakeClock(),
             new SequentialIdGenerator());
 
@@ -392,6 +466,45 @@ public sealed class ExternalAuthenticationFlowTests
 
             return Task.FromResult(keys.Length);
         }
+    }
+
+    private sealed class EmptyTotpAuthenticatorRepository : IMemberTotpAuthenticatorRepository
+    {
+        public Task<MemberTotpAuthenticator?> GetByMemberAsync(
+            MemberId memberId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<MemberTotpAuthenticator?>(null);
+
+        public Task AddAsync(MemberTotpAuthenticator authenticator, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class EmptyAuthenticationChallengeRepository : IMemberAuthenticationChallengeRepository
+    {
+        public Task<MemberAuthenticationChallenge?> GetByTokenHashesAsync(
+            IReadOnlyCollection<string> tokenHashes,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<MemberAuthenticationChallenge?>(null);
+
+        public Task<IReadOnlyList<MemberAuthenticationChallenge>> GetActiveByMemberAsync(
+            MemberId memberId,
+            DateTimeOffset nowUtc,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<MemberAuthenticationChallenge>>([]);
+
+        public Task AddAsync(MemberAuthenticationChallenge challenge, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class FakeMultiFactorTokenService : IMultiFactorTokenService
+    {
+        public MultiFactorTokenMaterial GenerateChallengeToken() => new("challenge", "challenge-hash");
+
+        public IReadOnlyList<string> GetCandidateChallengeTokenHashes(string token) => ["challenge-hash"];
+
+        public IReadOnlyList<RecoveryCodeMaterial> GenerateRecoveryCodes(int count) => [];
+
+        public IReadOnlyList<string> GetCandidateRecoveryCodeHashes(string code) => [];
     }
 
     private sealed class FakeClock : ISystemClock

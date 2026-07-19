@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Otp.NET" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Gma.Modules.Auth.Application\Gma.Modules.Auth.Application.csproj" />
+  </ItemGroup>
+</Project>

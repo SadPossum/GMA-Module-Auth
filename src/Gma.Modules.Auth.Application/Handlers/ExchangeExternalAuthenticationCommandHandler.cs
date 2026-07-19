@@ -7,6 +7,7 @@ using Gma.Framework.Runtime.Time;
 using Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Application.ExternalAuthentication;
 using Gma.Modules.Auth.Application.Ports;
+using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
@@ -16,11 +17,11 @@ using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Microsoft.Extensions.Options;
-using Gma.Modules.Auth.Application.Security;
 
 internal sealed class ExchangeExternalAuthenticationCommandHandler(
     IExternalAuthenticationExchangeStore exchangeStore,
     IMemberRepository memberRepository,
+    MultiFactorAuthenticationService multiFactorAuthentication,
     ITokenService tokenService,
     IRefreshTokenHashingService tokenHashingService,
     IOptions<AuthApplicationOptions> options,
@@ -96,14 +97,40 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
             return Result.Failure<ExternalAuthenticationResponse>(authenticated.Error);
         }
 
+        DateTimeOffset nowUtc = this.Clock.UtcNow;
+        string primaryAuthenticationMethod = MemberAuthenticationMethods.External(exchange.ProviderCode);
+        SessionAuthenticationEvidence primaryEvidence = SessionAuthenticationEvidence.External(nowUtc);
+        Result<MultiFactorChallengeRequirement> challenge = await multiFactorAuthentication
+            .CreateChallengeIfRequiredAsync(
+                member,
+                primaryAuthenticationMethod,
+                primaryEvidence,
+                AuthenticationClientContext.NormalizeIpAddress(command.IpAddress),
+                AuthenticationClientContext.NormalizeUserAgent(command.UserAgent),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (challenge.IsFailure)
+        {
+            return Result.Failure<ExternalAuthenticationResponse>(challenge.Error);
+        }
+
+        if (challenge.Value.IsRequired)
+        {
+            return Result.Success(new ExternalAuthenticationResponse(
+                ExternalAuthenticationStatus.MultiFactorRequired,
+                exchange.ProviderCode,
+                ExternalIdentityId: identity.Id.Value,
+                MultiFactorChallenge: challenge.Value.Challenge));
+        }
+
         var tokens = this.CreateSessionTokens(TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
         Result<MemberSession> session = member.StartSession(
             tokens.SessionId,
             tokens.RefreshTokenHash,
             tokens.ExpiresAtUtc,
             this.Clock.UtcNow,
-            MemberAuthenticationMethods.External(exchange.ProviderCode),
-            SessionAuthenticationEvidence.External(this.Clock.UtcNow));
+            primaryAuthenticationMethod,
+            primaryEvidence);
         if (session.IsFailure)
         {
             return Result.Failure<ExternalAuthenticationResponse>(session.Error);

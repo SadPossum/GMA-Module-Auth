@@ -1,12 +1,12 @@
 namespace Gma.Modules.Auth.Infrastructure;
 
+using Gma.Framework.Runtime;
 using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using Gma.Framework.Runtime;
 
 public static class DependencyInjection
 {
@@ -42,6 +42,7 @@ public static class DependencyInjection
         services.TryAddScoped<IRefreshTokenHashingService, RefreshTokenHashingService>();
         services.TryAddScoped<IPasswordRecoveryTokenService, PasswordRecoveryTokenService>();
         services.TryAddScoped<ITokenService, JwtTokenService>();
+        services.TryAddScoped<IMultiFactorTokenService, MultiFactorTokenService>();
 
         return services;
     }

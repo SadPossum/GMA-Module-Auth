@@ -60,4 +60,26 @@ public sealed class AuthApplicationOptionsValidatorTests
         Assert.True(result.Failed);
         Assert.Contains("PasswordRecovery", result.FailureMessage, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData(0, 15)]
+    [InlineData(21, 15)]
+    [InlineData(5, 0)]
+    [InlineData(5, 1_441)]
+    public void Validate_rejects_invalid_multi_factor_management_limits(int attempts, int windowMinutes)
+    {
+        ValidateOptionsResult result = this.validator.Validate(
+            name: null,
+            new AuthApplicationOptions
+            {
+                MultiFactor = new AuthMultiFactorOptions
+                {
+                    ManagementMaximumAttempts = attempts,
+                    ManagementAttemptWindowMinutes = windowMinutes,
+                },
+            });
+
+        Assert.True(result.Failed);
+        Assert.Contains("MultiFactor", result.FailureMessage, StringComparison.Ordinal);
+    }
 }

@@ -1,15 +1,15 @@
 namespace Gma.Modules.Auth.Application;
 
+using Gma.Framework.Application.Composition;
+using Gma.Modules.Auth.Application.ExternalAuthentication;
+using Gma.Modules.Auth.Application.Ports;
+using Gma.Modules.Auth.Application.Scoping;
+using Gma.Modules.Auth.Application.Security;
+using Gma.Modules.Auth.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using Gma.Framework.Application.Composition;
-using Gma.Modules.Auth.Application.Security;
-using Gma.Modules.Auth.Application.ExternalAuthentication;
-using Gma.Modules.Auth.Application.Ports;
-using Gma.Modules.Auth.Application.Scoping;
-using Gma.Modules.Auth.Contracts;
 
 public static class DependencyInjection
 {
@@ -42,6 +42,9 @@ public static class DependencyInjection
         services.TryAddSingleton<IPasswordBlocklist, CommonPasswordBlocklist>();
         services.TryAddSingleton<IAuthenticationAttemptLimiter, InMemoryAuthenticationAttemptLimiter>();
         services.TryAddScoped<IExternalAuthenticationHandoffService, ExternalAuthenticationHandoffService>();
+        services.TryAddSingleton<ITimeBasedOneTimePasswordProvider, UnavailableTimeBasedOneTimePasswordProvider>();
+        services.TryAddSingleton<IAuthenticatorSecretProtector, UnavailableAuthenticatorSecretProtector>();
+        services.TryAddScoped<MultiFactorAuthenticationService>();
 
         return services;
     }

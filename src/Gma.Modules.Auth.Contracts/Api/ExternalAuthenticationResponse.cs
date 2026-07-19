@@ -5,4 +5,5 @@ public sealed record ExternalAuthenticationResponse(
     string ProviderCode,
     string? AccessToken = null,
     string? RefreshToken = null,
-    Guid? ExternalIdentityId = null);
+    Guid? ExternalIdentityId = null,
+    MultiFactorChallengeResponse? MultiFactorChallenge = null);

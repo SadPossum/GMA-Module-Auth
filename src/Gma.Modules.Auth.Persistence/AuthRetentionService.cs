@@ -59,6 +59,10 @@ internal sealed class AuthRetentionService(
         DateTimeOffset exchangeCutoffUtc = nowUtc.AddHours(-settings.ExpiredExchangeHistoryHours);
         DateTimeOffset sessionCutoffUtc = nowUtc.AddDays(-settings.SessionHistoryDays);
         DateTimeOffset recoveryCutoffUtc = nowUtc.AddHours(-settings.PasswordRecoveryHistoryHours);
+        DateTimeOffset authenticationChallengeCutoffUtc = nowUtc.AddHours(-settings.AuthenticationChallengeHistoryHours);
+        DateTimeOffset expiredEnrollmentCutoffUtc = nowUtc.AddHours(-settings.ExpiredTotpEnrollmentHistoryHours);
+        DateTimeOffset disabledAuthenticatorCutoffUtc = nowUtc.AddDays(-settings.DisabledTotpAuthenticatorHistoryDays);
+        DateTimeOffset multiFactorFailureCutoffUtc = nowUtc.AddHours(-settings.MultiFactorFailureHistoryHours);
         IExternalAuthenticationExchangeStore exchangeStore = scope.ServiceProvider
             .GetRequiredService<IExternalAuthenticationExchangeStore>();
         AuthDbContext dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
@@ -89,14 +93,49 @@ internal sealed class AuthRetentionService(
                     token),
                 cancellationToken)
             .ConfigureAwait(false);
+        int authenticationChallengeCount = await BoundedBatchProcessor.ExecuteAsync(
+                settings.BatchSize,
+                settings.MaxBatchesPerCategoryPerCycle,
+                (batchSize, token) => DeleteAuthenticationChallengesBatchAsync(
+                    dbContext,
+                    authenticationChallengeCutoffUtc,
+                    batchSize,
+                    token),
+                cancellationToken)
+            .ConfigureAwait(false);
+        int authenticatorCount = await BoundedBatchProcessor.ExecuteAsync(
+                settings.BatchSize,
+                settings.MaxBatchesPerCategoryPerCycle,
+                (batchSize, token) => DeleteTotpAuthenticatorsBatchAsync(
+                    dbContext,
+                    expiredEnrollmentCutoffUtc,
+                    disabledAuthenticatorCutoffUtc,
+                    batchSize,
+                    token),
+                cancellationToken)
+            .ConfigureAwait(false);
+        int multiFactorFailureCount = await BoundedBatchProcessor.ExecuteAsync(
+                settings.BatchSize,
+                settings.MaxBatchesPerCategoryPerCycle,
+                (batchSize, token) => DeleteMultiFactorFailuresBatchAsync(
+                    dbContext,
+                    multiFactorFailureCutoffUtc,
+                    batchSize,
+                    token),
+                cancellationToken)
+            .ConfigureAwait(false);
 
-        if (exchangeCount > 0 || sessionCount > 0 || recoveryCount > 0)
+        if (exchangeCount > 0 || sessionCount > 0 || recoveryCount > 0 ||
+            authenticationChallengeCount > 0 || authenticatorCount > 0 || multiFactorFailureCount > 0)
         {
             logger.LogInformation(
-                "Auth retention removed {ExchangeCount} external authentication exchanges, {SessionCount} sessions, and {RecoveryCount} password recovery challenges.",
+                "Auth retention removed {ExchangeCount} external authentication exchanges, {SessionCount} sessions, {RecoveryCount} password recovery challenges, {AuthenticationChallengeCount} authentication challenges, {AuthenticatorCount} TOTP authenticators, and {MultiFactorFailureCount} multi-factor failures.",
                 exchangeCount,
                 sessionCount,
-                recoveryCount);
+                recoveryCount,
+                authenticationChallengeCount,
+                authenticatorCount,
+                multiFactorFailureCount);
         }
     }
 
@@ -170,6 +209,96 @@ internal sealed class AuthRetentionService(
         return await dbContext.PasswordRecoveryChallenges
             .IgnoreQueryFilters()
             .Where(challenge => challengeIds.Contains(challenge.Id))
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<int> DeleteAuthenticationChallengesBatchAsync(
+        AuthDbContext dbContext,
+        DateTimeOffset cutoffUtc,
+        int batchSize,
+        CancellationToken cancellationToken)
+    {
+        MemberAuthenticationChallengeId[] challengeIds = await dbContext.MemberAuthenticationChallenges
+            .IgnoreQueryFilters()
+            .Where(challenge =>
+                challenge.ExpiresAtUtc <= cutoffUtc ||
+                challenge.ConsumedAtUtc <= cutoffUtc ||
+                challenge.RevokedAtUtc <= cutoffUtc)
+            .OrderBy(challenge => challenge.ExpiresAtUtc)
+            .Select(challenge => challenge.Id)
+            .Take(batchSize)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (challengeIds.Length == 0)
+        {
+            return 0;
+        }
+
+        return await dbContext.MemberAuthenticationChallenges
+            .IgnoreQueryFilters()
+            .Where(challenge => challengeIds.Contains(challenge.Id))
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<int> DeleteTotpAuthenticatorsBatchAsync(
+        AuthDbContext dbContext,
+        DateTimeOffset expiredEnrollmentCutoffUtc,
+        DateTimeOffset disabledAuthenticatorCutoffUtc,
+        int batchSize,
+        CancellationToken cancellationToken)
+    {
+        MemberTotpAuthenticatorId[] authenticatorIds = await dbContext.MemberTotpAuthenticators
+            .IgnoreQueryFilters()
+            .Where(authenticator =>
+                (authenticator.ActivatedAtUtc == null &&
+                 authenticator.DisabledAtUtc == null &&
+                 authenticator.EnrollmentExpiresAtUtc <= expiredEnrollmentCutoffUtc) ||
+                (authenticator.DisabledAtUtc != null &&
+                 authenticator.DisabledAtUtc <= disabledAuthenticatorCutoffUtc))
+            .OrderBy(authenticator => authenticator.EnrollmentExpiresAtUtc)
+            .Select(authenticator => authenticator.Id)
+            .Take(batchSize)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (authenticatorIds.Length == 0)
+        {
+            return 0;
+        }
+
+        return await dbContext.MemberTotpAuthenticators
+            .IgnoreQueryFilters()
+            .Where(authenticator => authenticatorIds.Contains(authenticator.Id))
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<int> DeleteMultiFactorFailuresBatchAsync(
+        AuthDbContext dbContext,
+        DateTimeOffset cutoffUtc,
+        int batchSize,
+        CancellationToken cancellationToken)
+    {
+        MemberMultiFactorFailureAttemptId[] attemptIds = await dbContext.MemberMultiFactorFailureAttempts
+            .IgnoreQueryFilters()
+            .Where(attempt => attempt.FailedAtUtc <= cutoffUtc)
+            .OrderBy(attempt => attempt.FailedAtUtc)
+            .Select(attempt => attempt.Id)
+            .Take(batchSize)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (attemptIds.Length == 0)
+        {
+            return 0;
+        }
+
+        return await dbContext.MemberMultiFactorFailureAttempts
+            .IgnoreQueryFilters()
+            .Where(attempt => attemptIds.Contains(attempt.Id))
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
     }

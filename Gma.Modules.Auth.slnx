@@ -42,6 +42,7 @@
     <Project Path="src/Gma.Modules.Auth.Domain/Gma.Modules.Auth.Domain.csproj" />
   </Folder>
   <Folder Name="/src/Infrastructure/">
+    <Project Path="src/Gma.Modules.Auth.Authenticators.Totp/Gma.Modules.Auth.Authenticators.Totp.csproj" />
     <Project Path="src/Gma.Modules.Auth.Infrastructure.JwtBearer/Gma.Modules.Auth.Infrastructure.JwtBearer.csproj" />
     <Project Path="src/Gma.Modules.Auth.Infrastructure/Gma.Modules.Auth.Infrastructure.csproj" />
     <Project Path="src/Gma.Modules.Auth.Providers.OpenIdConnect/Gma.Modules.Auth.Providers.OpenIdConnect.csproj" />

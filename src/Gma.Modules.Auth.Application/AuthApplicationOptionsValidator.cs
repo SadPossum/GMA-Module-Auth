@@ -12,6 +12,24 @@ internal sealed class AuthApplicationOptionsValidator : IValidateOptions<AuthApp
                 $"{AuthApplicationOptions.SectionName}:SelfRegistration must be configured.");
         }
 
+        if (options.MultiFactor is null)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{AuthApplicationOptions.SectionName}:MultiFactor must be configured.");
+        }
+
+        if (options.MultiFactor.EnrollmentLifetimeMinutes is < 1 or > 60 ||
+            options.MultiFactor.ChallengeLifetimeMinutes is < 1 or > 30 ||
+            options.MultiFactor.ChallengeMaximumAttempts is < 1 or > 20 ||
+            options.MultiFactor.RecoveryCodeCount is < 1 or > Domain.Aggregates.MemberTotpAuthenticator.RecoveryCodeLimit ||
+            options.MultiFactor.SensitiveSessionFreshnessMinutes is < 1 or > 60 ||
+            options.MultiFactor.ManagementMaximumAttempts is < 1 or > 20 ||
+            options.MultiFactor.ManagementAttemptWindowMinutes is < 1 or > 1_440)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{AuthApplicationOptions.SectionName}:MultiFactor settings are outside their supported ranges.");
+        }
+
         if (options.RefreshTokenLifetimeDays is < 1 or > 3_650)
         {
             return ValidateOptionsResult.Fail(

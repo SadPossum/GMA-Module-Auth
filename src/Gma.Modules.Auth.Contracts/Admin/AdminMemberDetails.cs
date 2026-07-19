@@ -12,4 +12,7 @@ public sealed record AdminMemberDetails(
     int TotalSessionCount,
     bool HasPassword = true,
     bool HasVerifiedEmail = false,
-    IReadOnlyList<string>? ExternalProviders = null);
+    IReadOnlyList<string>? ExternalProviders = null,
+    bool HasActiveTotpAuthenticator = false,
+    int UnusedTotpRecoveryCodeCount = 0,
+    DateTimeOffset? TotpActivatedAtUtc = null);

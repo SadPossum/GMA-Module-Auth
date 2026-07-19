@@ -1,5 +1,9 @@
 namespace Gma.Modules.Auth.Tests.Contracts;
 
+using Gma.Framework.ModuleComposition;
+using Gma.Framework.Permissions;
+using Gma.Framework.Scoping;
+using Gma.Framework.Scoping.Infrastructure;
 using Gma.Modules.Auth.Api;
 using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Contracts;
@@ -8,9 +12,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using Gma.Framework.ModuleComposition;
-using Gma.Framework.Scoping;
-using Gma.Framework.Scoping.Infrastructure;
 using Xunit;
 
 [Trait("Category", "Unit")]
@@ -126,6 +127,16 @@ public sealed class AuthProfileTests
 
         Assert.Contains(profile.Provides, feature => feature.Id == ScopeCompositionFeatures.Context);
         Assert.DoesNotContain(profile.Provides, feature => feature.Id.Value.Contains("header", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Administrative_multi_factor_reset_has_a_dedicated_scoped_permission()
+    {
+        ModulePermissionDescriptor permission = Assert.Single(
+            AuthModuleMetadata.Descriptor.GetPermissions(),
+            item => string.Equals(item.Code, AuthAdminPermissionCodes.MembersResetMultiFactor, StringComparison.Ordinal));
+
+        Assert.Equal(PermissionScopeRequirement.Scoped, permission.ScopeRequirement);
     }
 
     private static ModuleProfileDescriptor CreateScopeContextProfile() => new(

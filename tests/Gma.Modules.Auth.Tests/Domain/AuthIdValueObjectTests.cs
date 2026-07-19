@@ -1,9 +1,12 @@
 namespace Gma.Modules.Auth.Tests;
 
+using Gma.Framework.Domain;
 using Gma.Framework.Naming;
+using Gma.Framework.Results;
+using Gma.Modules.Auth.Domain.Aggregates;
+using Gma.Modules.Auth.Domain.Errors;
 using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Domain.ValueObjects;
-using Gma.Framework.Domain;
 using Xunit;
 
 [Trait("Category", "Unit")]
@@ -37,11 +40,44 @@ public sealed class AuthIdValueObjectTests
     }
 
     [Fact]
+    public void Mfa_ids_require_non_empty_values()
+    {
+        Guid value = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+
+        Assert.Equal(value, new MemberTotpAuthenticatorId(value).Value);
+        Assert.Equal(value, new MemberTotpRecoveryCodeId(value).Value);
+        Assert.Equal(value, new MemberAuthenticationChallengeId(value).Value);
+        Assert.Equal(value, new MemberMultiFactorFailureAttemptId(value).Value);
+        Assert.Throws<ArgumentException>(() => new MemberTotpAuthenticatorId(Guid.Empty));
+        Assert.Throws<ArgumentException>(() => new MemberTotpRecoveryCodeId(Guid.Empty));
+        Assert.Throws<ArgumentException>(() => new MemberAuthenticationChallengeId(Guid.Empty));
+        Assert.Throws<ArgumentException>(() => new MemberMultiFactorFailureAttemptId(Guid.Empty));
+    }
+
+    [Fact]
     public void Default_struct_values_remain_empty_for_aggregate_defensive_checks()
     {
         Assert.Equal(Guid.Empty, default(MemberId).Value);
         Assert.Equal(Guid.Empty, default(MemberUsernameId).Value);
         Assert.Equal(Guid.Empty, default(MemberSessionId).Value);
+        Assert.Equal(Guid.Empty, default(MemberTotpAuthenticatorId).Value);
+        Assert.Equal(Guid.Empty, default(MemberTotpRecoveryCodeId).Value);
+        Assert.Equal(Guid.Empty, default(MemberAuthenticationChallengeId).Value);
+        Assert.Equal(Guid.Empty, default(MemberMultiFactorFailureAttemptId).Value);
+    }
+
+    [Fact]
+    public void Multi_factor_failure_attempt_rejects_a_default_id()
+    {
+        Result<MemberMultiFactorFailureAttempt> result = MemberMultiFactorFailureAttempt.Create(
+            default,
+            new MemberId(Guid.NewGuid()),
+            "tenant-a",
+            MemberMultiFactorFailureAttempt.ManagementPurpose,
+            DateTimeOffset.UtcNow);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthDomainErrors.MultiFactorFailureAttemptIdRequired, result.Error);
     }
 
     [Fact]

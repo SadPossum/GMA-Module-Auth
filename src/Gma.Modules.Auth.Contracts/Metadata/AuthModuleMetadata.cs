@@ -1,9 +1,9 @@
 namespace Gma.Modules.Auth.Contracts;
 
-using Gma.Framework.Permissions;
 using Gma.Framework.Messaging;
 using Gma.Framework.ModuleComposition;
 using Gma.Framework.Modules;
+using Gma.Framework.Permissions;
 
 public static class AuthModuleMetadata
 {
@@ -20,6 +20,7 @@ public static class AuthModuleMetadata
             new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersDisable, "Disable Auth members.", scopeRequirement: PermissionScopeRequirement.Scoped),
             new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersEnable, "Enable Auth members.", scopeRequirement: PermissionScopeRequirement.Scoped),
             new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersResetPassword, "Reset Auth member passwords.", scopeRequirement: PermissionScopeRequirement.Scoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersResetMultiFactor, "Reset Auth member multi-factor authentication.", scopeRequirement: PermissionScopeRequirement.Scoped),
             new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersRevokeSessions, "Revoke Auth member sessions.", scopeRequirement: PermissionScopeRequirement.Scoped),
         ])
         .WithPublishedEvent<MemberRegisteredIntegrationEvent>()
@@ -28,6 +29,7 @@ public static class AuthModuleMetadata
         .WithPublishedEvent<MemberSessionsRevokedIntegrationEvent>()
         .WithPublishedEvent<MemberAuthenticatedIntegrationEvent>()
         .WithPublishedEvent<MemberAuthenticationMethodChangedIntegrationEvent>()
+        .WithPublishedEvent<MemberMultiFactorAuthenticationResetIntegrationEvent>()
         .WithPublishedEvent<MemberPasswordRecoveryRequestedIntegrationEvent>()
         .WithPublishedEvent<MemberEmailVerificationRequestedIntegrationEvent>()
         .WithPublishedEvent<MemberEmailVerifiedIntegrationEvent>()

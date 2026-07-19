@@ -1,6 +1,12 @@
 namespace Gma.Modules.Auth.AdminCli;
 
 using System.CommandLine;
+using Gma.Framework.Administration;
+using Gma.Framework.Administration.Cli;
+using Gma.Framework.Cqrs;
+using Gma.Framework.ModuleComposition;
+using Gma.Framework.Pagination;
+using Gma.Framework.Results;
 using Gma.Modules.Auth.Admin.Contracts;
 using Gma.Modules.Auth.Application;
 using Gma.Modules.Auth.Application.Commands;
@@ -11,12 +17,6 @@ using Gma.Modules.Auth.Infrastructure;
 using Gma.Modules.Auth.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Gma.Framework.ModuleComposition;
-using Gma.Framework.Administration;
-using Gma.Framework.Administration.Cli;
-using Gma.Framework.Cqrs;
-using Gma.Framework.Pagination;
-using Gma.Framework.Results;
 
 public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
 {
@@ -49,6 +49,7 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
             CreateDisableCommand(commands.Services, globalOptions, requireTenant),
             CreateEnableCommand(commands.Services, globalOptions, requireTenant),
             CreateResetPasswordCommand(commands.Services, globalOptions, requireTenant),
+            CreateResetMultiFactorCommand(commands.Services, globalOptions, requireTenant),
             CreateRevokeSessionsCommand(commands.Services, globalOptions, requireTenant)
         };
         Command auth = new(AuthModuleMetadata.Name, "Auth administration operations.")
@@ -153,6 +154,8 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
                                 ("Username", item => item.ActiveUsername ?? string.Empty),
                                 ("Status", item => MemberStatusNames.ToWireName(item.Status)),
                                 ("ActiveSessions", item => item.ActiveSessionCount.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                                ("Totp", item => item.HasActiveTotpAuthenticator ? "active" : "not-configured"),
+                                ("RecoveryCodes", item => item.UnusedTotpRecoveryCodeCount.ToString(System.Globalization.CultureInfo.InvariantCulture)),
                                 ("RegisteredAtUtc", item => item.RegisteredAtUtc.ToString("O", System.Globalization.CultureInfo.InvariantCulture))
                             ]);
                     }
@@ -430,6 +433,65 @@ public sealed class AuthAdminCliModule(AuthProfile profile) : IAdminCliModule
                     if (result.IsSuccess)
                     {
                         AdminCliOutput.WriteMessage($"Revoked {result.Value.RevokedSessionCount} active session(s).");
+                    }
+
+                    return result;
+                },
+                cancellationToken);
+        });
+
+        return command;
+    }
+
+    private static Command CreateResetMultiFactorCommand(
+        IServiceProvider services,
+        AdminCliGlobalOptions globalOptions,
+        bool requireTenant)
+    {
+        Option<Guid> memberIdOption = CreateMemberIdOption();
+        Option<string> reasonOption = new("--reason")
+        {
+            Description = "Security reason for resetting multi-factor authentication.",
+            Required = true
+        };
+        Option<bool> yesOption = CreateYesOption();
+        Command command = new("reset-multi-factor", "Reset a member's TOTP authenticator and revoke active sessions.")
+        {
+            memberIdOption,
+            reasonOption,
+            yesOption
+        };
+        command.SetAction((parseResult, cancellationToken) =>
+        {
+            AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();
+            string? scopeId = parseResult.GetValue(globalOptions.TenantOption);
+
+            return executor.ExecuteAsync(
+                parseResult,
+                AdminOperation.Create(
+                    AuthAdminOperationNames.MembersResetMultiFactor,
+                    AuthAdminPermissions.MembersResetMultiFactor),
+                scopeId,
+                requireTenant,
+                async (provider, token) =>
+                {
+                    if (!parseResult.GetValue(yesOption))
+                    {
+                        return Result.Failure<Unit>(AdminErrors.ConfirmationRequired);
+                    }
+
+                    IAdminActorContext actorContext = provider.GetRequiredService<IAdminActorContext>();
+                    IRequestDispatcher dispatcher = provider.GetRequiredService<IRequestDispatcher>();
+                    Result<Unit> result = await dispatcher.SendAsync(
+                        new ResetMemberMultiFactorAuthenticationCommand(
+                            parseResult.GetRequiredValue(memberIdOption),
+                            actorContext.Actor?.Id ?? string.Empty,
+                            parseResult.GetRequiredValue(reasonOption)),
+                        token).ConfigureAwait(false);
+
+                    if (result.IsSuccess)
+                    {
+                        AdminCliOutput.WriteMessage("Multi-factor authentication reset; active sessions revoked.");
                     }
 
                     return result;

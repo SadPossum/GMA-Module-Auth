@@ -16,6 +16,7 @@ Gma.Modules.Auth.Persistence
 Gma.Modules.Auth.Persistence.SqlServerMigrations
 Gma.Modules.Auth.Persistence.PostgreSqlMigrations
 Gma.Modules.Auth.Api
+Gma.Modules.Auth.Authenticators.Totp
 Gma.Modules.Auth.Providers.OpenIdConnect
 Gma.Modules.Auth.Admin.Contracts
 Gma.Modules.Auth.AdminCli
@@ -37,6 +38,8 @@ Auth can be composed in two scope modes. `AuthProfile.ScopeAware()` follows the 
 - Passwords and verification codes are stored only as hashes. Refresh-token hashing supports active and previous peppers for rotation.
 - Refresh-token replay revokes active sessions. Admin password reset also revokes active sessions.
 - Password recovery is enumeration-safe, accepts only active password members with a verified email, stores only a rotating HMAC code hash, and revokes every session after confirmation.
+- An active local TOTP authenticator is enforced after every password and external primary sign-in. Auth issues no session or token until the one-time primary challenge succeeds.
+- TOTP secrets are protected at rest, accepted time steps cannot replay, recovery codes are stored only as keyed hashes, and invalid challenge or management attempts are retained durably for bounded rate limiting.
 - Sign-ins and authentication-method changes publish security events with bounded client context; secrets and provider tokens are excluded.
 - Scope context and the access-token scope claim must agree on protected scope-aware endpoints.
 - Scope-aware OIDC challenges carry the normalized scope only inside protected authentication state and restore it before the callback transaction; provider redirects do not depend on tenant headers surviving the round trip.
@@ -68,6 +71,12 @@ Base path: `/api/auth`.
 | `POST` | `/external/{provider}/link/challenge` | Create an authenticated browser-safe link challenge handoff. |
 | `GET` | `/external/{provider}/sign-in` | Begin an enabled OpenID Connect sign-in for non-browser clients that can send scope headers. |
 | `GET` | `/external/{provider}/link` | Begin a provider link for non-browser clients that can send scope and bearer headers. |
+| `GET` | `/mfa` | Read provider availability, enrollment state, activation time, and unused recovery-code count. |
+| `POST` | `/mfa/totp/enrollment` | Begin or replace an expired pending TOTP enrollment from a fresh session. |
+| `POST` | `/mfa/totp/activate` | Verify enrollment, rotate the session, and return recovery codes once. |
+| `POST` | `/mfa/challenges/complete` | Complete a password or external primary challenge with TOTP or a recovery code. |
+| `POST` | `/mfa/recovery-codes/regenerate` | Replace recovery codes after factor and refresh proof. |
+| `POST` | `/mfa/totp/disable` | Disable TOTP after factor and refresh proof, then revoke all sessions. |
 
 The browser variants under `/api/auth/browser` keep refresh material in HttpOnly cookies. Scope-aware hosts also require `X-Tenant-Id`; protected endpoints require a bearer access token.
 
@@ -163,6 +172,21 @@ Bearer clients call `POST /api/auth/step-up/password` with the password and refr
 
 Products decide which operations require accepted contexts and/or recent authentication. The dependency-neutral `Gma.Framework.Security` package owns the requirement and claim vocabulary; the optional `Gma.Framework.Security.AspNetCore` adapter emits RFC 9470 `insufficient_user_authentication` challenges. Auth does not rank methods or claim that a method name alone satisfies a NIST assurance level.
 
+## TOTP authenticator adapter
+
+TOTP lifecycle and enforcement belong to Auth, while the RFC 6238 implementation is an explicit optional adapter:
+
+```csharp
+builder.AddAuthModule(AuthProfile.ScopeAware());
+builder.AddAuthTotpAuthenticator();
+```
+
+The adapter uses Otp.NET with a random 160-bit secret, SHA-1, six digits, a 30-second period, and the current or immediately previous time step. Auth persists the matched step and rejects replay. Password plus TOTP/recovery uses `urn:gma:acr:mfa`; external plus a local factor uses the conservative `urn:gma:acr:two-step` context because Auth does not invent upstream provider factor evidence.
+
+`AddAuthTotpAuthenticator` replaces Auth's fail-closed unavailable ports. A host that uses KMS/HSM secret custody or another validated TOTP implementation registers its replacement ports after the adapter. The default protector uses ASP.NET Core Data Protection. Production hosts must give it a stable application name and a persisted, encrypted, replica-shared key ring. Losing that key ring makes existing TOTP secrets unusable; an ephemeral key ring is not a production configuration.
+
+Enrollment and recovery-code responses are one-time secret-bearing responses and use `Cache-Control: no-store`. Browser routes keep refresh tokens in the existing HttpOnly cookie transport. Administrative recovery is a confirmed `reset-multi-factor` operation with a dedicated scoped permission, bounded reason, Auth security event, challenge invalidation, and all-session revocation.
+
 ## Email verification and notifications
 
 Auth generates a high-entropy verification code, stores only its rotating HMAC hash, and publishes `MemberEmailVerificationRequestedIntegrationEvent`. The raw code exists only in the transactional message path needed for delivery and expires according to `EmailVerificationLifetimeMinutes`. Requests have an account-level cooldown and the public paths are expected to remain edge-rate-limited.
@@ -215,6 +239,10 @@ Retention is opt-in and bounded through the shared `BoundedBatchProcessor`. It d
       "ExpiredExchangeHistoryHours": 24,
       "PasswordRecoveryHistoryHours": 24,
       "SessionHistoryDays": 365,
+      "AuthenticationChallengeHistoryHours": 24,
+      "ExpiredTotpEnrollmentHistoryHours": 24,
+      "DisabledTotpAuthenticatorHistoryDays": 365,
+      "MultiFactorFailureHistoryHours": 24,
       "BatchSize": 500,
       "MaxBatchesPerCategoryPerCycle": 4,
       "IntervalMinutes": 60
@@ -238,6 +266,7 @@ Auth publishes versioned, scope-aware events under `{application-namespace}.auth
 - `member-password-recovery-requested.v1`;
 - `member-email-verification-requested.v1`;
 - `member-email-verified.v1`.
+- `member-multi-factor-authentication-reset.v1`.
 
 Consumers bind explicitly to Auth as producer. Event ids are reused as notification ids, giving inbox processing and notification projection natural idempotency.
 
@@ -245,9 +274,10 @@ Consumers bind explicitly to Auth as producer. Event ids are reused as notificat
 
 - Use secret providers for JWT signing keys, refresh-token peppers, and OIDC client secrets.
 - Persist and share the ASP.NET Core Data Protection key ring across replicas, with a stable application name, so OIDC state and correlation cookies survive restarts and callback load balancing.
+- Encrypt and persist that same key ring before enabling the default TOTP protector; test key restoration and rotation as part of deployment recovery drills.
 - Auth has no secret default. A single-key deployment can inject `Auth__RefreshTokens__Pepper`; use the keyed pepper ring for rotation.
 - Replace the in-process `IAuthenticationAttemptLimiter` in multi-replica deployments with a distributed implementation while retaining edge/IP rate limits.
 - Replace the small built-in password blocklist with a current breach corpus/service for production products.
 - Alert on failed Auth outbox/inbox processing and Notifications exhausted/unroutable delivery jobs.
 - Keep provider callbacks and exchange/verification endpoints on the sensitive rate-limit policy.
-- MFA and passkeys should extend the authentication-evidence and step-up foundation through explicit adapters or extensions. Profile data and KYC/KYB remain separate product capabilities and do not belong in the `Member` aggregate.
+- Passkeys and additional authenticator types should extend the authentication-evidence foundation through explicit adapters and Auth-owned lifecycle state. Profile data and KYC/KYB remain separate product capabilities and do not belong in the `Member` aggregate.

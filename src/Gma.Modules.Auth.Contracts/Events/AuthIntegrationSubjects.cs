@@ -13,6 +13,7 @@ public static class AuthIntegrationSubjects
     public static string MemberEmailVerificationRequested => CreateMemberEmailVerificationRequested();
     public static string MemberEmailVerified => CreateMemberEmailVerified();
     public static string MemberAuthenticationMethodChanged => CreateMemberAuthenticationMethodChanged();
+    public static string MemberMultiFactorAuthenticationReset => CreateMemberMultiFactorAuthenticationReset();
 
     public static string CreateMemberRegistered(string subjectPrefix = IntegrationEventNaming.DefaultSubjectPrefix) =>
         IntegrationEventNaming.CreateSubject(subjectPrefix, AuthModuleMetadata.Name, MemberRegisteredIntegrationEvent.EventType, MemberRegisteredIntegrationEvent.EventVersion);
@@ -40,4 +41,7 @@ public static class AuthIntegrationSubjects
 
     public static string CreateMemberAuthenticationMethodChanged(string subjectPrefix = IntegrationEventNaming.DefaultSubjectPrefix) =>
         IntegrationEventNaming.CreateSubject(subjectPrefix, AuthModuleMetadata.Name, MemberAuthenticationMethodChangedIntegrationEvent.EventType, MemberAuthenticationMethodChangedIntegrationEvent.EventVersion);
+
+    public static string CreateMemberMultiFactorAuthenticationReset(string subjectPrefix = IntegrationEventNaming.DefaultSubjectPrefix) =>
+        IntegrationEventNaming.CreateSubject(subjectPrefix, AuthModuleMetadata.Name, MemberMultiFactorAuthenticationResetIntegrationEvent.EventType, MemberMultiFactorAuthenticationResetIntegrationEvent.EventVersion);
 }

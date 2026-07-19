@@ -20,6 +20,7 @@ public sealed class AuthIntegrationEventContractTests
     {
         Assert.Equal(MemberUsername.ValueMaxLength, AuthContractLimits.UsernameMaxLength);
         Assert.Equal(Member.DisabledReasonMaxLength, AuthContractLimits.DisableReasonMaxLength);
+        Assert.Equal(MemberTotpAuthenticator.AdministrativeResetReasonMaxLength, AuthContractLimits.MultiFactorResetReasonMaxLength);
     }
 
     [Fact]
@@ -38,6 +39,9 @@ public sealed class AuthIntegrationEventContractTests
         Assert.Equal(
             "acme-orders.auth.member-password-recovery-requested.v1",
             AuthIntegrationSubjects.CreateMemberPasswordRecoveryRequested("acme-orders"));
+        Assert.Equal(
+            "acme-orders.auth.member-multi-factor-authentication-reset.v1",
+            AuthIntegrationSubjects.CreateMemberMultiFactorAuthenticationReset("acme-orders"));
     }
 
     [Fact]
@@ -186,5 +190,24 @@ public sealed class AuthIntegrationEventContractTests
         Assert.Contains(
             AuthModuleMetadata.Descriptor.GetPublishedEvents(),
             published => published.EventType == MemberPasswordRecoveryRequestedIntegrationEvent.EventType);
+    }
+
+    [Fact]
+    public void Multi_factor_reset_event_keeps_bounded_audit_context()
+    {
+        MemberMultiFactorAuthenticationResetIntegrationEvent integrationEvent = new(
+            EventId,
+            " tenant-a ",
+            OccurredAtUtc,
+            MemberId,
+            " support-admin ",
+            " verified account recovery ");
+
+        Assert.Equal("tenant-a", integrationEvent.ScopeId);
+        Assert.Equal("support-admin", integrationEvent.ActorId);
+        Assert.Equal("verified account recovery", integrationEvent.Reason);
+        Assert.Contains(
+            AuthModuleMetadata.Descriptor.GetPublishedEvents(),
+            published => published.EventType == MemberMultiFactorAuthenticationResetIntegrationEvent.EventType);
     }
 }

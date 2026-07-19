@@ -1,14 +1,14 @@
 namespace Gma.Modules.Auth.Persistence.Repositories;
 
+using Gma.Framework.Pagination;
+using Gma.Framework.Runtime.Time;
 using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
-using Gma.Framework.Pagination;
-using ContractMemberStatus = Gma.Modules.Auth.Contracts.MemberStatus;
-using DomainMemberStatus = Gma.Modules.Auth.Domain.Enums.MemberStatus;
-using Gma.Framework.Runtime.Time;
+using ContractMemberStatus = Contracts.MemberStatus;
+using DomainMemberStatus = Domain.Enums.MemberStatus;
 
 internal sealed class AdminMemberReadRepository(AuthDbContext dbContext, ISystemClock clock) : IAdminMemberReadRepository
 {
@@ -54,6 +54,14 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext, ISystem
             .SingleOrDefaultAsync(item => item.Id == new MemberId(memberId), cancellationToken)
             .ConfigureAwait(false);
 
+        MemberTotpAuthenticator? authenticator = member is null
+            ? null
+            : await dbContext.MemberTotpAuthenticators
+                .AsNoTracking()
+                .Include(item => item.RecoveryCodes)
+                .SingleOrDefaultAsync(item => item.MemberId == member.Id, cancellationToken)
+                .ConfigureAwait(false);
+
         return member is null
             ? null
             : new AdminMemberDetails(
@@ -72,7 +80,10 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext, ISystem
                     .Select(identity => identity.ProviderCode)
                     .Distinct(StringComparer.Ordinal)
                     .Order(StringComparer.Ordinal)
-                    .ToArray());
+                    .ToArray(),
+                authenticator?.IsActive == true,
+                authenticator?.UnusedRecoveryCodeCount ?? 0,
+                authenticator?.ActivatedAtUtc);
     }
 
     private static string? GetActiveUsername(Member member) =>

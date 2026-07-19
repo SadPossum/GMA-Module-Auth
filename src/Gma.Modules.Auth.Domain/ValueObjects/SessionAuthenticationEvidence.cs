@@ -31,10 +31,46 @@ public sealed record SessionAuthenticationEvidence
         new(AuthenticationContextReferences.Password, [AuthenticationMethodReferences.Password], authenticatedAtUtc);
 
     public static SessionAuthenticationEvidence External(DateTimeOffset authenticatedAtUtc) =>
-        new(AuthenticationContextReferences.External, [], authenticatedAtUtc);
+        new(
+            AuthenticationContextReferences.External,
+            [AuthenticationMethodReferences.External],
+            authenticatedAtUtc);
+
+    public static SessionAuthenticationEvidence CompleteWithTotp(
+        SessionAuthenticationEvidence primaryEvidence,
+        DateTimeOffset authenticatedAtUtc) =>
+        CompleteSecondStep(primaryEvidence, AuthenticationMethodReferences.OneTimePassword, authenticatedAtUtc);
+
+    public static SessionAuthenticationEvidence CompleteWithRecoveryCode(
+        SessionAuthenticationEvidence primaryEvidence,
+        DateTimeOffset authenticatedAtUtc) =>
+        CompleteSecondStep(primaryEvidence, AuthenticationMethodReferences.RecoveryCode, authenticatedAtUtc);
 
     public static SessionAuthenticationEvidence Legacy(DateTimeOffset authenticatedAtUtc) =>
         new(AuthenticationContextReferences.Legacy, [], authenticatedAtUtc);
+
+    private static SessionAuthenticationEvidence CompleteSecondStep(
+        SessionAuthenticationEvidence primaryEvidence,
+        string secondStepMethod,
+        DateTimeOffset authenticatedAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(primaryEvidence);
+
+        bool passwordPrimary = string.Equals(
+            primaryEvidence.ContextReference,
+            AuthenticationContextReferences.Password,
+            StringComparison.Ordinal);
+        string contextReference = passwordPrimary
+            ? AuthenticationContextReferences.MultiFactor
+            : AuthenticationContextReferences.TwoStep;
+        List<string> methods = [.. primaryEvidence.MethodReferences, secondStepMethod];
+        if (passwordPrimary)
+        {
+            methods.Add(AuthenticationMethodReferences.MultiFactor);
+        }
+
+        return new SessionAuthenticationEvidence(contextReference, methods, authenticatedAtUtc);
+    }
 
     private static ReadOnlyCollection<string> NormalizeMethodReferences(IEnumerable<string> methodReferences)
     {

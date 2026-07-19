@@ -1,12 +1,12 @@
 namespace Gma.Modules.Auth.Persistence;
 
+using Gma.Framework.Messaging.Infrastructure;
+using Gma.Framework.Persistence.EntityFrameworkCore;
+using Gma.Framework.Scoping;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
-using Gma.Framework.Persistence.EntityFrameworkCore;
-using Gma.Framework.Scoping;
-using Gma.Framework.Messaging.Infrastructure;
-using Gma.Modules.Auth.Application.Ports;
 
 public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, IAuthScopeContext scopeContext)
     : ScopeAwareDbContext<AuthDbContext>(options, scopeContext)
@@ -16,6 +16,12 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, IAuth
     public DbSet<MemberSession> MemberSessions => this.Set<MemberSession>();
     public DbSet<MemberExternalIdentity> MemberExternalIdentities => this.Set<MemberExternalIdentity>();
     public DbSet<PasswordRecoveryChallenge> PasswordRecoveryChallenges => this.Set<PasswordRecoveryChallenge>();
+    public DbSet<MemberTotpAuthenticator> MemberTotpAuthenticators => this.Set<MemberTotpAuthenticator>();
+    public DbSet<MemberTotpRecoveryCode> MemberTotpRecoveryCodes => this.Set<MemberTotpRecoveryCode>();
+    public DbSet<MemberAuthenticationChallenge> MemberAuthenticationChallenges =>
+        this.Set<MemberAuthenticationChallenge>();
+    public DbSet<MemberMultiFactorFailureAttempt> MemberMultiFactorFailureAttempts =>
+        this.Set<MemberMultiFactorFailureAttempt>();
     internal DbSet<ExternalAuthenticationExchangeRecord> ExternalAuthenticationExchanges =>
         this.Set<ExternalAuthenticationExchangeRecord>();
     public DbSet<OutboxMessage> OutboxMessages => this.Set<OutboxMessage>();

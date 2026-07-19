@@ -11,6 +11,18 @@ public static class AuthDomainErrors
     public static readonly Error PasswordRecoveryChallengeIdRequired = new(
         "Auth.PasswordRecoveryChallengeIdRequired",
         "A password recovery challenge id is required.");
+    public static readonly Error TotpAuthenticatorIdRequired = new(
+        "Auth.TotpAuthenticatorIdRequired",
+        "A TOTP authenticator id is required.");
+    public static readonly Error TotpRecoveryCodeIdRequired = new(
+        "Auth.TotpRecoveryCodeIdRequired",
+        "A TOTP recovery code id is required.");
+    public static readonly Error AuthenticationChallengeIdRequired = new(
+        "Auth.AuthenticationChallengeIdRequired",
+        "An authentication challenge id is required.");
+    public static readonly Error MultiFactorFailureAttemptIdRequired = new(
+        "Auth.MultiFactorFailureAttemptIdRequired",
+        "A multi-factor failure attempt id is required.");
     public static readonly Error DomainEventIdRequired = new("Gma.Modules.Auth.DomainEventIdRequired", "A domain event id is required.");
     public static readonly Error TenantRequired = new("Auth.TenantRequired", "Scope id is required.");
     public static readonly Error TenantInvalid = new("Auth.TenantInvalid", "Scope id is not valid.");
@@ -35,6 +47,39 @@ public static class AuthDomainErrors
     public static readonly Error PasswordRecoveryChallengeInvalid = new(
         "Auth.PasswordRecoveryChallengeInvalid",
         "Password recovery challenge is invalid, expired, or already used.");
+    public static readonly Error TotpAuthenticatorNotValid = new(
+        "Auth.TotpAuthenticatorNotValid",
+        "The TOTP authenticator is not valid.");
+    public static readonly Error TotpAuthenticatorAlreadyActive = new(
+        "Auth.TotpAuthenticatorAlreadyActive",
+        "The TOTP authenticator is already active.");
+    public static readonly Error TotpAuthenticatorNotActive = new(
+        "Auth.TotpAuthenticatorNotActive",
+        "An active TOTP authenticator was not found.");
+    public static readonly Error TotpEnrollmentInvalid = new(
+        "Auth.TotpEnrollmentInvalid",
+        "The TOTP enrollment is invalid or expired.");
+    public static readonly Error TotpCodeInvalid = new(
+        "Auth.TotpCodeInvalid",
+        "The authentication code is invalid, expired, or already used.");
+    public static readonly Error TotpRecoveryCodesInvalid = new(
+        "Auth.TotpRecoveryCodesInvalid",
+        "TOTP recovery codes are not valid.");
+    public static readonly Error MultiFactorResetReasonInvalid = new(
+        "Auth.MultiFactorResetReasonInvalid",
+        "A multi-factor authentication reset reason is required and must be 512 characters or fewer.");
+    public static readonly Error MultiFactorResetActorInvalid = new(
+        "Auth.MultiFactorResetActorInvalid",
+        "The multi-factor authentication reset actor is invalid.");
+    public static readonly Error MultiFactorFailureAttemptInvalid = new(
+        "Auth.MultiFactorFailureAttemptInvalid",
+        "The multi-factor failure attempt is invalid.");
+    public static readonly Error AuthenticationChallengeNotValid = new(
+        "Auth.AuthenticationChallengeNotValid",
+        "The authentication challenge is not valid.");
+    public static readonly Error AuthenticationChallengeInvalid = new(
+        "Auth.AuthenticationChallengeInvalid",
+        "The authentication challenge or code is invalid, expired, or already used.");
     public static readonly Error CredentialsNotValid = new("Auth.CredentialsNotValid", "Username or password is incorrect.");
     public static readonly Error UsernameNotValid = new("Auth.UsernameNotValid", "Username is not valid.");
     public static readonly Error UsernameAlreadyExists = new("Auth.UsernameAlreadyExists", "Username is already registered.");

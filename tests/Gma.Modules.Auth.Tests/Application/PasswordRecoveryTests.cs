@@ -173,7 +173,18 @@ public sealed class PasswordRecoveryTests
             "refresh-hash",
             Now.AddDays(1),
             Now).Value;
-        dbContext.Members.Add(member);
+        MemberTotpAuthenticator authenticator = MemberTotpAuthenticator.BeginEnrollment(
+            new MemberTotpAuthenticatorId(Guid.NewGuid()),
+            member.Id,
+            member.ScopeId,
+            "protected-secret",
+            Now.AddMinutes(10),
+            Now).Value;
+        Assert.True(authenticator.Activate(
+            42,
+            [new TotpRecoveryCodeRegistration(new MemberTotpRecoveryCodeId(Guid.NewGuid()), "recovery-hash")],
+            Now).IsSuccess);
+        dbContext.AddRange(member, authenticator);
         await dbContext.SaveChangesAsync();
 
         RequestPasswordRecoveryCommandHandler requestHandler = CreateRequestHandler(dbContext);
@@ -220,6 +231,8 @@ public sealed class PasswordRecoveryTests
         Assert.True(confirmed.IsSuccess);
         Assert.False(session.IsActive);
         Assert.Equal("hash:NewSafePassword123!", member.PasswordHash);
+        Assert.True(authenticator.IsActive);
+        Assert.Equal(1, authenticator.UnusedRecoveryCodeCount);
         Assert.NotNull(challenge.ConsumedAtUtc);
         Assert.NotNull(otherChallenge.RevokedAtUtc);
         Assert.Contains(member.DomainEvents, domainEvent => domainEvent is MemberSessionsRevokedDomainEvent);

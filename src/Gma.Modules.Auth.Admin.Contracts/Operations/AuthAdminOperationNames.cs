@@ -10,5 +10,6 @@ public static class AuthAdminOperationNames
     public const string MembersDisable = AuthModuleMetadata.Name + ".members.disable";
     public const string MembersEnable = AuthModuleMetadata.Name + ".members.enable";
     public const string MembersResetPassword = AuthModuleMetadata.Name + ".members.reset-password";
+    public const string MembersResetMultiFactor = AuthModuleMetadata.Name + ".members.reset-multi-factor";
     public const string MembersRevokeSessions = AuthModuleMetadata.Name + ".members.revoke-sessions";
 }

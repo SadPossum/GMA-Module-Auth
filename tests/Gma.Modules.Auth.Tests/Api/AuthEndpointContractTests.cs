@@ -51,6 +51,16 @@ public sealed class AuthEndpointContractTests
         Assert.Contains("/api/auth/external/{provider}/sign-in/challenge", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external/{provider}/link/challenge", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external/challenge/{nonce}", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/mfa", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/mfa/totp/enrollment", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/mfa/totp/activate", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/mfa/challenges/complete", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/mfa/recovery-codes/regenerate", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/mfa/totp/disable", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/browser/mfa/totp/activate", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/browser/mfa/challenges/complete", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/browser/mfa/recovery-codes/regenerate", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/browser/mfa/totp/disable", routes, StringComparer.Ordinal);
 
         RouteEndpoint[] recoveryEndpoints = [.. ((IEndpointRouteBuilder)app).DataSources
             .SelectMany(dataSource => dataSource.Endpoints)

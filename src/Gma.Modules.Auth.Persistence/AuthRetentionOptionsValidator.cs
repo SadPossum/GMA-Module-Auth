@@ -27,6 +27,26 @@ internal sealed class AuthRetentionOptionsValidator : IValidateOptions<AuthReten
             failures.Add("Auth:Retention:PasswordRecoveryHistoryHours must be between 1 and 8760.");
         }
 
+        if (options.AuthenticationChallengeHistoryHours is < 1 or > 8_760)
+        {
+            failures.Add("Auth:Retention:AuthenticationChallengeHistoryHours must be between 1 and 8760.");
+        }
+
+        if (options.ExpiredTotpEnrollmentHistoryHours is < 1 or > 8_760)
+        {
+            failures.Add("Auth:Retention:ExpiredTotpEnrollmentHistoryHours must be between 1 and 8760.");
+        }
+
+        if (options.DisabledTotpAuthenticatorHistoryDays is < 1 or > 3_650)
+        {
+            failures.Add("Auth:Retention:DisabledTotpAuthenticatorHistoryDays must be between 1 and 3650.");
+        }
+
+        if (options.MultiFactorFailureHistoryHours is < 1 or > 8_760)
+        {
+            failures.Add("Auth:Retention:MultiFactorFailureHistoryHours must be between 1 and 8760.");
+        }
+
         if (options.BatchSize is < 1 or > 10_000)
         {
             failures.Add("Auth:Retention:BatchSize must be between 1 and 10000.");

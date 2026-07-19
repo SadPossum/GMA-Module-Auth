@@ -8,4 +8,5 @@ public enum ExternalAuthenticationStatus
     Unknown = 0,
     Authenticated = 1,
     Linked = 2,
+    MultiFactorRequired = 3,
 }

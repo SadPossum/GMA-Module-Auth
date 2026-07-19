@@ -4,6 +4,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Gma.Modules.Auth.Authenticators.Totp\Gma.Modules.Auth.Authenticators.Totp.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
