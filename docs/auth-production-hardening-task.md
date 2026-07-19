@@ -1,6 +1,6 @@
 # Auth Production Hardening Task
 
-Status: in progress
+Status: complete
 Date: 2026-07-19
 
 ## Goal
@@ -120,7 +120,7 @@ No Framework implementation change is planned. The existing generic assurance, b
 
 ## Implementation Checkpoint
 
-The Auth-owned implementation checkpoint is complete; downstream proof is pending:
+The Auth-owned implementation and downstream proof are complete:
 
 - durable keyed credential-failure history is the default for complete Auth composition, with bounded-retention support and both provider migrations;
 - password proof performs uniform work across login, step-up, password change/removal, and external unlink; durable attempt partitioning also covers MFA management factors;
@@ -129,9 +129,26 @@ The Auth-owned implementation checkpoint is complete; downstream proof is pendin
 - the Auth API pipeline applies non-cacheable response headers to native, browser, contributed, short-circuited, malformed, and missing-route responses;
 - the public API module is split into composition, core, MFA, browser, and shared support partials without route drift;
 - Auth now owns boundary, migration-drift, package-audit, non-Docker, and required PostgreSQL CI lanes;
-- the zero-warning build, 229 focused tests, both migration-drift checks, vulnerability audit, and cross-replica PostgreSQL limiter proof pass locally.
+- the zero-warning build, 231 focused tests, both migration-drift checks, vulnerability audit, and cross-replica PostgreSQL limiter proof pass locally.
 
-The task stays `in progress` until the exact Auth revision is published, Skeleton proves Framework assurance with real Auth tokens, BunkFy aligns to the published revisions, and every required remote lane is green.
+## Completion Record
+
+Completed on 2026-07-19 from these exact published implementation and consumer revisions:
+
+- Framework `c62d4ee384edb65cfb3b55f820331e72e718d802` remained dependency-neutral and unchanged;
+- Auth implementation `e8f82b6ed5df7a33ad64dbc66106ea51128ca078` contains the production hardening and public-enum boundary correction;
+- Skeleton `5e0bc03112a5c1a1c8e696854656277177eafe07` pins that Auth revision and proves password and MFA assurance with real Auth-issued tokens;
+- BunkFy backend `f74aac7336e37607508b68b922fb9e497a908d4b` pins that Auth revision, exposes bounded host defaults, and guards them architecturally;
+- BunkFy root `ab5475859ae7dabb716426f7dcc07ce50e7f0a02` pins the aligned backend and synchronizes the product workspace solution.
+
+Required remote validation passed:
+
+- Auth run `29692050521`: Windows validation and required PostgreSQL integration passed;
+- Skeleton run `29692240889`: Windows and Ubuntu validation passed;
+- BunkFy backend run `29692907605`: Windows and Ubuntu validation passed;
+- BunkFy root run `29693351198`: backend verification, OpenAPI/web contract checks, frontend typecheck, lint, tests, and build passed.
+
+The completion-record commit is documentation-only. Consumers will pin it after publication so strict submodule `dev`-head guards continue to hold without changing the validated implementation revision.
 
 ## Explicitly Deferred
 
