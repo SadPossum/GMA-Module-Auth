@@ -26,6 +26,17 @@ public sealed class AuthOneTimeTokenServiceTests
         Assert.Contains(hashingService.Inputs, input => input.Contains("password-recovery", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(AuthOneTimeTokenPurpose.Unknown)]
+    [InlineData((AuthOneTimeTokenPurpose)999)]
+    public void Unsupported_purposes_are_rejected(AuthOneTimeTokenPurpose purpose)
+    {
+        var service = new AuthOneTimeTokenService(new RecordingHashingService());
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => service.HashToken(purpose, "token"));
+        Assert.Throws<ArgumentOutOfRangeException>(() => service.GetCandidateHashes(purpose, "token"));
+    }
+
     private sealed class RecordingHashingService : IRefreshTokenHashingService
     {
         public List<string> Inputs { get; } = [];

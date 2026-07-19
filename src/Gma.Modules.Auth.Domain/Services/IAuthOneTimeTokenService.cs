@@ -9,6 +9,7 @@ public interface IAuthOneTimeTokenService
 
 public enum AuthOneTimeTokenPurpose
 {
+    Unknown = 0,
     ExternalAuthenticationExchange = 1,
     EmailVerification = 2,
     PasswordRecovery = 3,
