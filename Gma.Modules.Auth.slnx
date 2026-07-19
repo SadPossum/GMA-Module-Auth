@@ -4,6 +4,7 @@
     <File Path="docs/authentication-assurance-task.md" />
     <File Path="docs/README.md" />
     <File Path="docs/global-identity-with-tenancy-task.md" />
+    <File Path="docs/mfa-authenticator-lifecycle-task.md" />
   </Folder>
   <Folder Name="/eng/">
     <File Path="eng/bootstrap-source-roots.ps1" />

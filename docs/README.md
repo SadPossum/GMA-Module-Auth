@@ -1,6 +1,6 @@
 # Auth Module
 
-Implementation planning: [Global Identity With Ambient Tenancy](global-identity-with-tenancy-task.md), [Account Recovery](account-recovery-task.md), and [Authentication Assurance And Step-Up](authentication-assurance-task.md).
+Implementation planning: [Global Identity With Ambient Tenancy](global-identity-with-tenancy-task.md), [Account Recovery](account-recovery-task.md), [Authentication Assurance And Step-Up](authentication-assurance-task.md), and [TOTP Authenticator Lifecycle And Recovery](mfa-authenticator-lifecycle-task.md).
 
 The Auth module owns account credentials, external identity links, email ownership state, sessions, JWTs, and security events. Product profile data, provider-specific UI, email transport, notification history, KYC/KYB, and authorization policy remain outside Auth.
 
