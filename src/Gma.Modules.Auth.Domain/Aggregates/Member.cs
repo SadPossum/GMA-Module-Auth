@@ -200,7 +200,8 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         string refreshTokenHash,
         DateTimeOffset refreshTokenExpiresAtUtc,
         DateTimeOffset nowUtc,
-        string authenticationMethod = MemberAuthenticationMethods.Password)
+        string authenticationMethod = MemberAuthenticationMethods.Password,
+        SessionAuthenticationEvidence? authenticationEvidence = null)
     {
         Result statusResult = this.EnsureCanAuthenticate();
         if (statusResult.IsFailure)
@@ -215,7 +216,8 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
             refreshTokenHash,
             refreshTokenExpiresAtUtc,
             nowUtc,
-            authenticationMethod);
+            authenticationMethod,
+            authenticationEvidence);
 
         if (sessionResult.IsFailure)
         {
@@ -249,6 +251,65 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         DateTimeOffset newRefreshTokenExpiresAtUtc,
         DateTimeOffset nowUtc)
     {
+        Result<MemberSession> result = this.RotateSessionRefreshToken(
+            sessionId,
+            refreshTokenHashes,
+            newRefreshTokenHash,
+            newRefreshTokenExpiresAtUtc,
+            nowUtc);
+        if (result.IsSuccess)
+        {
+            this.Touch();
+        }
+
+        return result;
+    }
+
+    public Result<MemberSession> ReauthenticateSession(
+        MemberSessionId sessionId,
+        IReadOnlyCollection<string> refreshTokenHashes,
+        string newRefreshTokenHash,
+        DateTimeOffset newRefreshTokenExpiresAtUtc,
+        SessionAuthenticationEvidence authenticationEvidence,
+        Guid reauthenticatedEventId,
+        DateTimeOffset nowUtc)
+    {
+        if (reauthenticatedEventId == Guid.Empty)
+        {
+            return Result.Failure<MemberSession>(AuthDomainErrors.DomainEventIdRequired);
+        }
+
+        ArgumentNullException.ThrowIfNull(authenticationEvidence);
+        Result<MemberSession> result = this.RotateSessionRefreshToken(
+            sessionId,
+            refreshTokenHashes,
+            newRefreshTokenHash,
+            newRefreshTokenExpiresAtUtc,
+            nowUtc);
+        if (result.IsFailure)
+        {
+            return result;
+        }
+
+        result.Value.RecordAuthenticationEvidence(authenticationEvidence);
+        this.Touch();
+        this.RaiseDomainEvent(new MemberSessionReauthenticatedDomainEvent(
+            reauthenticatedEventId,
+            nowUtc,
+            this.Id,
+            result.Value.Id,
+            this.ScopeId,
+            authenticationEvidence));
+        return result;
+    }
+
+    private Result<MemberSession> RotateSessionRefreshToken(
+        MemberSessionId sessionId,
+        IReadOnlyCollection<string> refreshTokenHashes,
+        string newRefreshTokenHash,
+        DateTimeOffset newRefreshTokenExpiresAtUtc,
+        DateTimeOffset nowUtc)
+    {
         Result statusResult = this.EnsureCanAuthenticate();
         if (statusResult.IsFailure)
         {
@@ -271,7 +332,6 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
 
         MemberSession? session = this.sessions.FirstOrDefault(item =>
             item.Id == sessionId && refreshTokenHashes.Any(item.HasRefreshTokenHash));
-
         if (session is null)
         {
             return Result.Failure<MemberSession>(AuthDomainErrors.SessionNotFound);
@@ -279,14 +339,9 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
 
         string matchingHash = refreshTokenHashes.First(session.HasRefreshTokenHash);
         Result result = session.Refresh(matchingHash, newRefreshTokenHash, newRefreshTokenExpiresAtUtc, nowUtc);
-
-        if (result.IsFailure)
-        {
-            return Result.Failure<MemberSession>(result.Error);
-        }
-
-        this.Touch();
-        return Result.Success(session);
+        return result.IsSuccess
+            ? Result.Success(session)
+            : Result.Failure<MemberSession>(result.Error);
     }
 
     public Result SignOut(string refreshTokenHash, DateTimeOffset nowUtc)

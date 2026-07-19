@@ -10,6 +10,8 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
 {
     public const int RefreshTokenHashMaxLength = 512;
 
+    private string[] authenticationMethodReferences = [];
+
     private MemberSession() { }
 
     private MemberSession(
@@ -19,7 +21,8 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         string refreshTokenHash,
         DateTimeOffset refreshTokenExpiresAtUtc,
         DateTimeOffset loginDateTimeUtc,
-        string authenticationMethod)
+        string authenticationMethod,
+        SessionAuthenticationEvidence authenticationEvidence)
         : base(id, scopeId)
     {
         this.MemberId = memberId;
@@ -27,6 +30,7 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         this.RefreshTokenExpiresAtUtc = refreshTokenExpiresAtUtc;
         this.LoginDateTimeUtc = loginDateTimeUtc;
         this.AuthenticationMethod = authenticationMethod;
+        this.SetAuthenticationEvidence(authenticationEvidence);
         this.IsActive = true;
     }
 
@@ -36,6 +40,9 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
     public DateTimeOffset RefreshTokenExpiresAtUtc { get; private set; }
     public DateTimeOffset LoginDateTimeUtc { get; private set; }
     public string AuthenticationMethod { get; private set; } = MemberAuthenticationMethods.Password;
+    public string AuthenticationContextReference { get; private set; } = AuthenticationContextReferences.Legacy;
+    public IReadOnlyList<string> AuthenticationMethodReferences => this.authenticationMethodReferences;
+    public DateTimeOffset AuthenticatedAtUtc { get; private set; }
     public DateTimeOffset? SignOutDateTimeUtc { get; private set; }
     public bool IsActive { get; private set; }
 
@@ -46,7 +53,8 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         string refreshTokenHash,
         DateTimeOffset refreshTokenExpiresAtUtc,
         DateTimeOffset loginDateTimeUtc,
-        string authenticationMethod = MemberAuthenticationMethods.Password)
+        string authenticationMethod = MemberAuthenticationMethods.Password,
+        SessionAuthenticationEvidence? authenticationEvidence = null)
     {
         if (id.Value == Guid.Empty)
         {
@@ -73,6 +81,9 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
             return Result.Failure<MemberSession>(AuthDomainErrors.AuthenticationMethodNotValid);
         }
 
+        SessionAuthenticationEvidence evidence = authenticationEvidence ??
+            CreateConservativeEvidence(normalizedAuthenticationMethod, loginDateTimeUtc);
+
         return Result.Success(new MemberSession(
             id,
             memberId,
@@ -80,7 +91,8 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
             refreshTokenHash,
             refreshTokenExpiresAtUtc,
             loginDateTimeUtc,
-            normalizedAuthenticationMethod));
+            normalizedAuthenticationMethod,
+            evidence));
     }
 
     internal Result Refresh(
@@ -138,6 +150,24 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         this.SignOutDateTimeUtc = nowUtc;
         return Result.Success();
     }
+
+    internal void RecordAuthenticationEvidence(SessionAuthenticationEvidence authenticationEvidence) =>
+        this.SetAuthenticationEvidence(authenticationEvidence);
+
+    private void SetAuthenticationEvidence(SessionAuthenticationEvidence authenticationEvidence)
+    {
+        ArgumentNullException.ThrowIfNull(authenticationEvidence);
+        this.AuthenticationContextReference = authenticationEvidence.ContextReference;
+        this.authenticationMethodReferences = [.. authenticationEvidence.MethodReferences];
+        this.AuthenticatedAtUtc = authenticationEvidence.AuthenticatedAtUtc;
+    }
+
+    private static SessionAuthenticationEvidence CreateConservativeEvidence(
+        string authenticationMethod,
+        DateTimeOffset authenticatedAtUtc) =>
+        string.Equals(authenticationMethod, MemberAuthenticationMethods.Password, StringComparison.Ordinal)
+            ? SessionAuthenticationEvidence.Password(authenticatedAtUtc)
+            : SessionAuthenticationEvidence.External(authenticatedAtUtc);
 
     private static string NormalizeRefreshTokenHash(string refreshTokenHash) =>
         refreshTokenHash.Trim();

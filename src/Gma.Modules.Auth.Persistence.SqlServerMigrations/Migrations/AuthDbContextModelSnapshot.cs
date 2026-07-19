@@ -303,6 +303,16 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset>("AuthenticatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AuthenticationContextReference")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasDefaultValue("urn:gma:acr:legacy");
+
                     b.Property<string>("AuthenticationMethod")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -338,6 +348,14 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
 
                     b.Property<DateTimeOffset?>("SignOutDateTimeUtc")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("authenticationMethodReferences")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("authentication_method_references");
 
                     b.HasKey("Id");
 

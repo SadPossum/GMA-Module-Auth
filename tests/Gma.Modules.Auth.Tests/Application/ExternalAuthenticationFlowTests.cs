@@ -442,8 +442,8 @@ public sealed class ExternalAuthenticationFlowTests
 
     private sealed class FakeTokenService(string refreshToken) : ITokenService
     {
-        public string GenerateAccessToken(MemberId memberId, string scopeId, MemberSessionId sessionId) =>
-            $"access:{memberId.Value:D}:{sessionId.Value:D}";
+        public string GenerateAccessToken(AccessTokenClaims claims) =>
+            $"access:{claims.MemberId.Value:D}:{claims.SessionId.Value:D}";
 
         public string GenerateRefreshToken() => refreshToken;
         public MemberId? GetMemberId(string accessToken, bool validateLifetime) => null;

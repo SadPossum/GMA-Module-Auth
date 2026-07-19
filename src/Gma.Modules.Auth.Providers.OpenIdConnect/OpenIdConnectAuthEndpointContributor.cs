@@ -48,7 +48,7 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
             IAuthScopeContext scopeContext) =>
         {
             if (!TokenScopeMatches(profile, user, scopeContext) ||
-                !TryGetClaimGuid(user, ClaimTypes.NameIdentifier, out Guid memberId) ||
+                !TryGetSubjectId(user, out Guid memberId) ||
                 !TryGetClaimGuid(user, ApplicationClaimNames.SessionId, out Guid sessionId))
             {
                 return Results.Unauthorized();
@@ -113,7 +113,7 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
             IAuthScopeContext scopeContext) =>
         {
             if (!TokenScopeMatches(profile, user, scopeContext) ||
-                !TryGetClaimGuid(user, ClaimTypes.NameIdentifier, out Guid memberId) ||
+                !TryGetSubjectId(user, out Guid memberId) ||
                 !TryGetClaimGuid(user, ApplicationClaimNames.SessionId, out Guid sessionId))
             {
                 return Results.Unauthorized();
@@ -226,4 +226,8 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
         string claimType,
         out Guid value) =>
         Guid.TryParse(user.FindFirstValue(claimType), out value);
+
+    private static bool TryGetSubjectId(ClaimsPrincipal user, out Guid value) =>
+        TryGetClaimGuid(user, ApplicationClaimNames.Subject, out value) ||
+        TryGetClaimGuid(user, ClaimTypes.NameIdentifier, out value);
 }

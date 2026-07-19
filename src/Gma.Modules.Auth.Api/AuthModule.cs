@@ -99,6 +99,32 @@ public sealed class AuthModule(AuthProfile profile) : IModule
                 cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes));
         RequireScopeWhenNeeded(refresh, requireScope);
 
+        RouteHandlerBuilder passwordStepUp = group.MapPost("/step-up/password", async (
+            PasswordStepUpRequest request,
+            ClaimsPrincipal user,
+            IAuthScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) ||
+                GetMemberId(user) is not { } memberId ||
+                GetSessionId(user) is not { } sessionId)
+            {
+                return Results.Unauthorized();
+            }
+
+            return (await dispatcher.SendAsync(
+                new StepUpWithPasswordCommand(
+                    memberId,
+                    sessionId,
+                    request.Password,
+                    request.RefreshToken),
+                cancellationToken).ConfigureAwait(false)).ToHttpResult(PublicErrorStatusCodes);
+        })
+            .RequireAuthorization();
+        passwordStepUp.Produces<AuthTokensResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(passwordStepUp, requireScope);
+
         RouteHandlerBuilder externalExchange = group.MapPost("/external/exchange", async (
             ExternalAuthenticationExchangeRequest request,
             ClaimsPrincipal user,
@@ -442,6 +468,32 @@ public sealed class AuthModule(AuthProfile profile) : IModule
         refresh.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
         RequireScopeWhenNeeded(refresh, requireScope);
 
+        RouteHandlerBuilder passwordStepUp = browser.MapPost("/step-up/password", async (
+            BrowserPasswordStepUpRequest request,
+            ClaimsPrincipal user,
+            HttpContext httpContext,
+            IAuthScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            IOptions<AuthApplicationOptions> options,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) ||
+                GetMemberId(user) is not { } memberId ||
+                GetSessionId(user) is not { } sessionId ||
+                !TryGetBrowserCookie(httpContext, BrowserRefreshCookieName, out string? refreshToken))
+            {
+                return Results.Unauthorized();
+            }
+
+            Result<AuthTokensResponse> result = await dispatcher.SendAsync(
+                new StepUpWithPasswordCommand(memberId, sessionId, request.Password, refreshToken),
+                cancellationToken).ConfigureAwait(false);
+            return ToBrowserAuthResult(result, httpContext, options.Value.RefreshTokenLifetimeDays);
+        })
+            .RequireAuthorization();
+        passwordStepUp.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(passwordStepUp, requireScope);
+
         RouteHandlerBuilder signOut = browser.MapPost("/sign-out", async (
             ClaimsPrincipal user,
             HttpContext httpContext,
@@ -619,7 +671,8 @@ public sealed class AuthModule(AuthProfile profile) : IModule
 
     private static Guid? GetMemberId(ClaimsPrincipal user)
     {
-        string? memberId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        string? memberId = user.FindFirstValue(ApplicationClaimNames.Subject) ??
+            user.FindFirstValue(ClaimTypes.NameIdentifier);
 
         return Guid.TryParse(memberId, out Guid parsed)
             ? parsed

@@ -6,6 +6,8 @@ using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Errors;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
+using Gma.Modules.Auth.Domain.Entities;
+using Gma.Modules.Auth.Domain.ValueObjects;
 using Microsoft.Extensions.Options;
 using Gma.Framework.Cqrs;
 using Gma.Framework.Runtime.Identity;
@@ -65,8 +67,13 @@ internal sealed class LoginMemberCommandHandler(
             }
         }
 
-        var tokens = this.CreateTokens(member.Id, member.ScopeId, TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
-        Result startSessionResult = member.StartSession(tokens.SessionId, tokens.RefreshTokenHash, tokens.ExpiresAtUtc, this.Clock.UtcNow);
+        var tokens = this.CreateSessionTokens(TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
+        Result<MemberSession> startSessionResult = member.StartSession(
+            tokens.SessionId,
+            tokens.RefreshTokenHash,
+            tokens.ExpiresAtUtc,
+            this.Clock.UtcNow,
+            authenticationEvidence: SessionAuthenticationEvidence.Password(this.Clock.UtcNow));
 
         if (startSessionResult.IsFailure)
         {
@@ -84,6 +91,7 @@ internal sealed class LoginMemberCommandHandler(
             return Result.Failure<AuthTokensResponse>(authenticated.Error);
         }
 
-        return Result.Success(new AuthTokensResponse(tokens.AccessToken, tokens.RefreshToken));
+        string accessToken = this.CreateAccessToken(member, startSessionResult.Value);
+        return Result.Success(new AuthTokensResponse(accessToken, tokens.RefreshToken));
     }
 }

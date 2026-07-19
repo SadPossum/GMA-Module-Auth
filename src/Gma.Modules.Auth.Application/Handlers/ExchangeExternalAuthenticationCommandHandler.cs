@@ -96,16 +96,14 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
             return Result.Failure<ExternalAuthenticationResponse>(authenticated.Error);
         }
 
-        var tokens = this.CreateTokens(
-            member.Id,
-            member.ScopeId,
-            TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
+        var tokens = this.CreateSessionTokens(TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
         Result<MemberSession> session = member.StartSession(
             tokens.SessionId,
             tokens.RefreshTokenHash,
             tokens.ExpiresAtUtc,
             this.Clock.UtcNow,
-            MemberAuthenticationMethods.External(exchange.ProviderCode));
+            MemberAuthenticationMethods.External(exchange.ProviderCode),
+            SessionAuthenticationEvidence.External(this.Clock.UtcNow));
         if (session.IsFailure)
         {
             return Result.Failure<ExternalAuthenticationResponse>(session.Error);
@@ -122,10 +120,11 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
             return Result.Failure<ExternalAuthenticationResponse>(authenticatedEvent.Error);
         }
 
+        string accessToken = this.CreateAccessToken(member, session.Value);
         return Result.Success(new ExternalAuthenticationResponse(
             ExternalAuthenticationStatus.Authenticated,
             exchange.ProviderCode,
-            tokens.AccessToken,
+            accessToken,
             tokens.RefreshToken,
             identity.Id.Value));
     }

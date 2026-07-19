@@ -1,6 +1,6 @@
 # Auth Module
 
-Implementation planning: [Global Identity With Ambient Tenancy](global-identity-with-tenancy-task.md) and [Account Recovery](account-recovery-task.md).
+Implementation planning: [Global Identity With Ambient Tenancy](global-identity-with-tenancy-task.md), [Account Recovery](account-recovery-task.md), and [Authentication Assurance And Step-Up](authentication-assurance-task.md).
 
 The Auth module owns account credentials, external identity links, email ownership state, sessions, JWTs, and security events. Product profile data, provider-specific UI, email transport, notification history, KYC/KYB, and authorization policy remain outside Auth.
 
@@ -51,6 +51,7 @@ Base path: `/api/auth`.
 | `POST` | `/register` | Create a password account. |
 | `POST` | `/login` | Authenticate with username/password. |
 | `POST` | `/refresh` | Rotate a refresh token. |
+| `POST` | `/step-up/password` | Reauthenticate the current session with its password and rotate the refresh token. |
 | `POST` | `/sign-out` | Revoke one session. |
 | `POST` | `/sign-out-all` | Revoke all sessions. |
 | `GET` | `/methods` | List password, email verification, and linked-provider state. |
@@ -152,6 +153,16 @@ External-only members can add a password from a fresh provider-authenticated ses
 
 `GET /methods` is the self-service source for account-security UI. Admin member details additively expose password presence, verified-email presence, and linked provider names.
 
+## Authentication assurance and step-up
+
+Auth persists the authentication context (`acr`), method references (`amr`), and authentication-event time (`auth_time`) that established each session's current evidence. Password sign-in emits the standard `pwd` method reference. External sign-in uses a conservative external context and does not claim an upstream method that the configured adapter has not validated.
+
+An ordinary refresh rotates refresh material but preserves the authentication event. It cannot make a session stronger or fresher. Password step-up verifies the authenticated member, exact active session, current password, scope, rate limit, and refresh token; then it rotates the refresh token, records a distinct reauthentication event, and issues an access token from the persisted evidence. Reuse of the pre-step-up refresh token triggers the existing all-session replay response.
+
+Bearer clients call `POST /api/auth/step-up/password` with the password and refresh token. Browser clients call `POST /api/auth/browser/step-up/password` with the password while the HttpOnly refresh cookie remains on the browser-auth path. Both return replacement access and refresh material through their existing transport conventions.
+
+Products decide which operations require accepted contexts and/or recent authentication. The dependency-neutral `Gma.Framework.Security` package owns the requirement and claim vocabulary; the optional `Gma.Framework.Security.AspNetCore` adapter emits RFC 9470 `insufficient_user_authentication` challenges. Auth does not rank methods or claim that a method name alone satisfies a NIST assurance level.
+
 ## Email verification and notifications
 
 Auth generates a high-entropy verification code, stores only its rotating HMAC hash, and publishes `MemberEmailVerificationRequestedIntegrationEvent`. The raw code exists only in the transactional message path needed for delivery and expires according to `EmailVerificationLifetimeMinutes`. Requests have an account-level cooldown and the public paths are expected to remain edge-rate-limited.
@@ -186,7 +197,7 @@ Account recovery is an Auth-owned capability because changing a credential and r
 
 ## Persistence and retention
 
-Auth owns the `auth` schema and `auth.__ef_migrations_history`. SQL Server and PostgreSQL migrations include nullable password hashes, external identities, verification state, authentication methods on sessions, one-time exchange and recovery records, uniqueness constraints, and cleanup indexes.
+Auth owns the `auth` schema and `auth.__ef_migrations_history`. SQL Server and PostgreSQL migrations include nullable password hashes, external identities, verification state, authentication methods and assurance evidence on sessions, one-time exchange and recovery records, uniqueness constraints, and cleanup indexes.
 
 Retention is opt-in and bounded through the shared `BoundedBatchProcessor`. It deletes old expired exchanges and sessions in configured batches across scopes. Active-session projections treat refresh-expired sessions as inactive even before cleanup.
 
@@ -239,4 +250,4 @@ Consumers bind explicitly to Auth as producer. Event ids are reused as notificat
 - Replace the small built-in password blocklist with a current breach corpus/service for production products.
 - Alert on failed Auth outbox/inbox processing and Notifications exhausted/unroutable delivery jobs.
 - Keep provider callbacks and exchange/verification endpoints on the sensitive rate-limit policy.
-- MFA, passkeys, authentication assurance/step-up, profile data, and KYC/KYB should be separate capabilities or modules built on these identity and event seams, not embedded in the `Member` aggregate prematurely.
+- MFA and passkeys should extend the authentication-evidence and step-up foundation through explicit adapters or extensions. Profile data and KYC/KYB remain separate product capabilities and do not belong in the `Member` aggregate.

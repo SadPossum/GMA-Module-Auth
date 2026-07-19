@@ -49,15 +49,22 @@ public sealed class AuthIdValueObjectTests
     {
         MemberId memberId = new(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
         MemberSessionId sessionId = new(Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff"));
+        SessionAuthenticationEvidence evidence = SessionAuthenticationEvidence.Password(DateTimeOffset.UtcNow);
 
-        AccessTokenClaims claims = new(memberId, " tenant-a ", sessionId);
+        AccessTokenClaims claims = new(memberId, " tenant-a ", sessionId, evidence);
 
         Assert.Equal(memberId, claims.MemberId);
         Assert.Equal("tenant-a", claims.ScopeId);
         Assert.Equal(sessionId, claims.SessionId);
-        Assert.Throws<ArgumentException>(() => new AccessTokenClaims(default, "tenant-a", sessionId));
-        Assert.Throws<ArgumentException>(() => new AccessTokenClaims(memberId, "tenant-a", default));
-        Assert.Throws<ArgumentException>(() => new AccessTokenClaims(memberId, " ", sessionId));
-        Assert.Throws<ArgumentException>(() => new AccessTokenClaims(memberId, new string('x', ScopeIds.MaxLength + 1), sessionId));
+        Assert.Same(evidence, claims.AuthenticationEvidence);
+        Assert.Throws<ArgumentException>(() => new AccessTokenClaims(default, "tenant-a", sessionId, evidence));
+        Assert.Throws<ArgumentException>(() => new AccessTokenClaims(memberId, "tenant-a", default, evidence));
+        Assert.Throws<ArgumentException>(() => new AccessTokenClaims(memberId, " ", sessionId, evidence));
+        Assert.Throws<ArgumentException>(() => new AccessTokenClaims(
+            memberId,
+            new string('x', ScopeIds.MaxLength + 1),
+            sessionId,
+            evidence));
+        Assert.Throws<ArgumentNullException>(() => new AccessTokenClaims(memberId, "tenant-a", sessionId, null!));
     }
 }

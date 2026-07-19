@@ -43,6 +43,8 @@ public sealed class AuthEndpointContractTests
         Assert.Contains("/api/auth/password-recovery/confirm", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/sessions", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/sessions/{sessionId:guid}/sign-out", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/step-up/password", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/browser/step-up/password", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/self-registration", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external-identities/{externalIdentityId:guid}/unlink", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external/providers", routes, StringComparer.Ordinal);

@@ -27,6 +27,7 @@ public static class DependencyInjection
             .AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
             .Configure<IOptions<JwtSettings>>((options, jwtOptions) =>
             {
+                options.MapInboundClaims = false;
                 options.TokenValidationParameters = JwtTokenValidationParametersFactory.Create(
                     jwtOptions.Value,
                     validateLifetime: true);

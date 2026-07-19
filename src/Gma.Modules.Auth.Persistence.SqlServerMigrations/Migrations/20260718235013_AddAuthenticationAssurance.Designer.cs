@@ -3,81 +3,84 @@ using System;
 using Gma.Modules.Auth.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
+namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
 {
     [DbContext(typeof(AuthDbContext))]
-    partial class AuthDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260718235013_AddAuthenticationAssurance")]
+    partial class AddAuthenticationAssurance
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("auth")
                 .HasAnnotation("ProductVersion", "10.0.8")
-                .HasAnnotation("Relational:MaxIdentifierLength", 63);
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
-            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
             modelBuilder.Entity("Gma.Framework.Messaging.Infrastructure.InboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Handler")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<int>("Attempts")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("EventType")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<DateTimeOffset?>("FailedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("LastError")
                         .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)");
+                        .HasColumnType("nvarchar(2048)");
 
                     b.Property<string>("LockedBy")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<DateTimeOffset>("OccurredAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset?>("ProcessedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset?>("ProcessingStartedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ScopeId")
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
+                        .HasColumnType("nvarchar(128)")
                         .HasColumnName("ScopeId");
 
                     b.Property<int>("Status")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<string>("Subject")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<int>("Version")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.HasKey("Id", "Handler");
 
@@ -92,54 +95,54 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Attempts")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("Error")
-                        .HasColumnType("text");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("EventType")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<string>("LockedBy")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<DateTimeOffset?>("LockedUntilUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset?>("NextAttemptAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset>("OccurredAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("Payload")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTimeOffset?>("ProcessedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ScopeId")
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
+                        .HasColumnType("nvarchar(128)")
                         .HasColumnName("ScopeId");
 
                     b.Property<string>("Subject")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<int>("Version")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -151,34 +154,34 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.Member", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("ConcurrencyStamp")
                         .IsConcurrencyToken()
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset?>("DisabledAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("DisabledReason")
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<string>("PasswordHash")
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<DateTimeOffset>("RegisteredAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<int>("Status")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasDefaultValue(1);
 
                     b.HasKey("Id");
@@ -191,41 +194,41 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.PasswordRecoveryChallenge", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("ConcurrencyStamp")
                         .IsConcurrencyToken()
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset?>("ConsumedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<DateTimeOffset>("ExpiresAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("MemberId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset>("RequestedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset?>("RevokedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("nvarchar(512)");
 
                     b.HasKey("Id");
 
@@ -248,43 +251,43 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberExternalIdentity", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("IdentityKeyHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character(64)")
+                        .HasColumnType("nchar(64)")
                         .IsFixedLength();
 
                     b.Property<string>("Issuer")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<DateTimeOffset?>("LastAuthenticatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset>("LinkedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("MemberId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ProviderCode")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
+                        .HasColumnType("nvarchar(64)")
                         .HasColumnName("Provider");
 
                     b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("Subject")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("nvarchar(512)");
 
                     b.HasKey("Id");
 
@@ -301,59 +304,59 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberSession", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset>("AuthenticatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("AuthenticationContextReference")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
+                        .HasColumnType("nvarchar(256)")
                         .HasDefaultValue("urn:gma:acr:legacy");
 
                     b.Property<string>("AuthenticationMethod")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
+                        .HasColumnType("nvarchar(256)")
                         .HasDefaultValue("password");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .HasColumnType("bit");
 
                     b.Property<DateTimeOffset>("LoginDateTimeUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("MemberId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("PreviousRefreshTokenHash")
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<DateTimeOffset>("RefreshTokenExpiresAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("RefreshTokenHash")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<DateTimeOffset?>("SignOutDateTimeUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("authenticationMethodReferences")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)")
+                        .HasColumnType("nvarchar(2048)")
                         .HasDefaultValue("[]")
                         .HasColumnName("authentication_method_references");
 
@@ -373,44 +376,44 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Entities.MemberUsername", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .HasColumnType("bit");
 
                     b.Property<Guid>("MemberId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("NormalizedValue")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<int>("UsernameType")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<string>("Value")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<DateTimeOffset?>("VerificationExpiresAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset?>("VerificationRequestedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("VerificationTokenHash")
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<DateTimeOffset?>("VerifiedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
 
@@ -428,64 +431,64 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("CodeHash")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<DateTimeOffset?>("ConsumedAtUtc")
                         .IsConcurrencyToken()
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("Email")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<bool>("EmailVerified")
-                        .HasColumnType("boolean");
+                        .HasColumnType("bit");
 
                     b.Property<DateTimeOffset>("ExpiresAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<int>("Intent")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<string>("Issuer")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<string>("ProviderCode")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
+                        .HasColumnType("nvarchar(64)")
                         .HasColumnName("Provider");
 
                     b.Property<string>("ReturnUrl")
                         .IsRequired()
                         .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)");
+                        .HasColumnType("nvarchar(2048)");
 
                     b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("Subject")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<Guid?>("TargetMemberId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("TargetSessionId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 

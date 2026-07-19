@@ -13,9 +13,9 @@ using Gma.Framework.Runtime.Time;
 
 internal sealed class JwtTokenService(IOptions<JwtSettings> options, ISystemClock clock) : ITokenService
 {
-    public string GenerateAccessToken(MemberId memberId, string scopeId, MemberSessionId sessionId)
+    public string GenerateAccessToken(AccessTokenClaims accessTokenClaims)
     {
-        AccessTokenClaims accessTokenClaims = new(memberId, scopeId, sessionId);
+        ArgumentNullException.ThrowIfNull(accessTokenClaims);
         JwtSettings settings = options.Value;
         string activeSigningKey = settings.EffectiveSigningKeys[settings.ActiveSigningKeyId];
         SymmetricSecurityKey securityKey = new(Encoding.UTF8.GetBytes(activeSigningKey))
@@ -24,12 +24,21 @@ internal sealed class JwtTokenService(IOptions<JwtSettings> options, ISystemCloc
         };
         SigningCredentials signingCredentials = new(securityKey, SecurityAlgorithms.HmacSha256);
 
-        Claim[] claims =
+        List<Claim> claims =
         [
-            new Claim(ClaimTypes.NameIdentifier, accessTokenClaims.MemberId.Value.ToString()),
+            new Claim(ApplicationClaimNames.Subject, accessTokenClaims.MemberId.Value.ToString()),
             new Claim(ApplicationClaimNames.ScopeId, accessTokenClaims.ScopeId),
-            new Claim(ApplicationClaimNames.SessionId, accessTokenClaims.SessionId.Value.ToString())
+            new Claim(ApplicationClaimNames.SessionId, accessTokenClaims.SessionId.Value.ToString()),
+            new Claim(
+                ApplicationClaimNames.AuthenticationContextReference,
+                accessTokenClaims.AuthenticationEvidence.ContextReference),
+            new Claim(
+                ApplicationClaimNames.AuthenticationTime,
+                accessTokenClaims.AuthenticationEvidence.AuthenticatedAtUtc.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ClaimValueTypes.Integer64)
         ];
+        claims.AddRange(accessTokenClaims.AuthenticationEvidence.MethodReferences.Select(methodReference =>
+            new Claim(ApplicationClaimNames.AuthenticationMethodReference, methodReference)));
 
         DateTimeOffset nowUtc = clock.UtcNow;
         JwtSecurityToken token = new(
@@ -40,7 +49,7 @@ internal sealed class JwtTokenService(IOptions<JwtSettings> options, ISystemCloc
             expires: nowUtc.AddMinutes(settings.AccessTokenLifetimeMinutes).UtcDateTime,
             signingCredentials: signingCredentials);
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+        return CreateTokenHandler().WriteToken(token);
     }
 
     public string GenerateRefreshToken() =>
@@ -56,19 +65,47 @@ internal sealed class JwtTokenService(IOptions<JwtSettings> options, ISystemCloc
     public AccessTokenClaims? GetAccessTokenClaims(string accessToken, bool validateLifetime)
     {
         TokenValidationParameters parameters = this.CreateValidationParameters(validateLifetime);
-        JwtSecurityTokenHandler handler = new();
+        JwtSecurityTokenHandler handler = CreateTokenHandler();
 
         try
         {
             ClaimsPrincipal principal = handler.ValidateToken(accessToken, parameters, out _);
-            string? memberIdValue = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            string? memberIdValue = principal.FindFirstValue(ApplicationClaimNames.Subject) ??
+                principal.FindFirstValue(ClaimTypes.NameIdentifier);
             string? scopeId = principal.FindFirstValue(ApplicationClaimNames.ScopeId);
             string? sessionIdValue = principal.FindFirstValue(ApplicationClaimNames.SessionId);
+            string? contextReference = principal.FindFirstValue(ApplicationClaimNames.AuthenticationContextReference);
+            string? authenticationTimeValue = principal.FindFirstValue(ApplicationClaimNames.AuthenticationTime);
+            string[] methodReferences =
+            [
+                .. principal.FindAll(ApplicationClaimNames.AuthenticationMethodReference)
+                    .Select(claim => claim.Value)
+            ];
 
-            return Guid.TryParse(memberIdValue, out Guid memberId) &&
-                   Guid.TryParse(sessionIdValue, out Guid sessionId)
-                ? new AccessTokenClaims(new MemberId(memberId), scopeId!, new MemberSessionId(sessionId))
-                : null;
+            if (!Guid.TryParse(memberIdValue, out Guid memberId) ||
+                !Guid.TryParse(sessionIdValue, out Guid sessionId))
+            {
+                return null;
+            }
+
+            SessionAuthenticationEvidence evidence =
+                !string.IsNullOrWhiteSpace(contextReference) &&
+                long.TryParse(
+                    authenticationTimeValue,
+                    System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out long authenticationTimeSeconds)
+                    ? new SessionAuthenticationEvidence(
+                        contextReference,
+                        methodReferences,
+                        DateTimeOffset.FromUnixTimeSeconds(authenticationTimeSeconds))
+                    : SessionAuthenticationEvidence.Legacy(DateTimeOffset.UnixEpoch);
+
+            return new AccessTokenClaims(
+                new MemberId(memberId),
+                scopeId!,
+                new MemberSessionId(sessionId),
+                evidence);
         }
         catch (SecurityTokenException)
         {
@@ -84,4 +121,9 @@ internal sealed class JwtTokenService(IOptions<JwtSettings> options, ISystemCloc
     {
         return JwtTokenValidationParametersFactory.Create(options.Value, validateLifetime);
     }
+
+    private static JwtSecurityTokenHandler CreateTokenHandler() => new()
+    {
+        MapInboundClaims = false
+    };
 }

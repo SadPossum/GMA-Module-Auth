@@ -6,6 +6,8 @@ using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Errors;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
+using Gma.Modules.Auth.Domain.Entities;
+using Gma.Modules.Auth.Domain.ValueObjects;
 using Microsoft.Extensions.Options;
 using Gma.Framework.Cqrs;
 using Gma.Modules.Auth.Application.Ports;
@@ -45,20 +47,30 @@ internal sealed class RefreshMemberSessionCommandHandler(
             return Result.Failure<AuthTokensResponse>(AuthDomainErrors.MemberNotFound);
         }
 
-        string accessToken = tokenService.GenerateAccessToken(member.Id, member.ScopeId, claims.SessionId);
         string refreshToken = tokenService.GenerateRefreshToken();
         IReadOnlyList<string> refreshTokenHashes = refreshTokenHashingService.GetCandidateHashes(command.RefreshToken);
         string newRefreshTokenHash = refreshTokenHashingService.HashRefreshToken(refreshToken);
 
-        Result refreshResult = member.RefreshSession(
+        Result<MemberSession> refreshResult = member.RefreshSession(
             claims.SessionId,
             refreshTokenHashes,
             newRefreshTokenHash,
             clock.UtcNow.AddDays(options.Value.RefreshTokenLifetimeDays),
             clock.UtcNow);
 
-        return refreshResult.IsSuccess
-            ? Result.Success(new AuthTokensResponse(accessToken, refreshToken))
-            : Result.Failure<AuthTokensResponse>(refreshResult.Error);
+        if (refreshResult.IsFailure)
+        {
+            return Result.Failure<AuthTokensResponse>(refreshResult.Error);
+        }
+
+        string accessToken = tokenService.GenerateAccessToken(new AccessTokenClaims(
+            member.Id,
+            member.ScopeId,
+            refreshResult.Value.Id,
+            new SessionAuthenticationEvidence(
+                refreshResult.Value.AuthenticationContextReference,
+                refreshResult.Value.AuthenticationMethodReferences,
+                refreshResult.Value.AuthenticatedAtUtc)));
+        return Result.Success(new AuthTokensResponse(accessToken, refreshToken));
     }
 }

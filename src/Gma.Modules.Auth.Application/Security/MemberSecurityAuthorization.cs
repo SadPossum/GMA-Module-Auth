@@ -21,7 +21,7 @@ internal static class MemberSecurityAuthorization
 
         MemberSessionId id = new(sessionId);
         MemberSession? session = member.Sessions.FirstOrDefault(item => item.Id == id && item.IsActive);
-        return session is not null && session.LoginDateTimeUtc >= nowUtc.Subtract(freshness)
+        return session is not null && session.AuthenticatedAtUtc >= nowUtc.Subtract(freshness)
             ? Result.Success(session)
             : Result.Failure<MemberSession>(AuthApplicationErrors.FreshAuthenticationRequired);
     }
