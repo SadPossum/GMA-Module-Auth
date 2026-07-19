@@ -40,7 +40,8 @@ public static class DependencyInjection
         services.AddAuthScopeContext(profile);
         services.AddApplicationServicesFromAssembly(typeof(DependencyInjection).Assembly);
         services.TryAddSingleton<IPasswordBlocklist, CommonPasswordBlocklist>();
-        services.TryAddSingleton<IAuthenticationAttemptLimiter, InMemoryAuthenticationAttemptLimiter>();
+        services.TryAddSingleton<IAuthenticationAttemptLimiter, ProcessLocalAuthenticationAttemptLimiter>();
+        services.TryAddScoped<PasswordProofService>();
         services.TryAddScoped<IExternalAuthenticationHandoffService, ExternalAuthenticationHandoffService>();
         services.TryAddSingleton<ITimeBasedOneTimePasswordProvider, UnavailableTimeBasedOneTimePasswordProvider>();
         services.TryAddSingleton<IAuthenticatorSecretProtector, UnavailableAuthenticatorSecretProtector>();

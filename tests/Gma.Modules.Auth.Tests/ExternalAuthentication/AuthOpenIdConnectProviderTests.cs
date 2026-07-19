@@ -1,9 +1,9 @@
 namespace Gma.Modules.Auth.Tests;
 
-using Gma.Modules.Auth.Providers.OpenIdConnect;
-using Gma.Modules.Auth.Application.Ports;
-using Gma.Framework.Scoping;
 using Gma.Framework.Naming;
+using Gma.Framework.Scoping;
+using Gma.Modules.Auth.Application.Ports;
+using Gma.Modules.Auth.Providers.OpenIdConnect;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.DataProtection;
@@ -26,7 +26,7 @@ public sealed class AuthOpenIdConnectProviderTests
 
         using IHost host = builder.Build();
         Assert.Empty(host.Services.GetRequiredService<OpenIdConnectProviderRegistry>().ProviderCodes);
-        Assert.Single(host.Services.GetServices<Gma.Modules.Auth.Api.IAuthEndpointContributor>());
+        Assert.Single(host.Services.GetServices<Auth.Api.IAuthEndpointContributor>());
     }
 
     [Fact]
@@ -166,7 +166,30 @@ public sealed class AuthOpenIdConnectProviderTests
 
         using IHost host = builder.Build();
         Assert.NotNull(host.Services.GetService<OpenIdConnectProviderRegistry>());
-        Assert.Single(builder.Services, descriptor => descriptor.ServiceType == typeof(Gma.Modules.Auth.Api.IAuthEndpointContributor));
+        Assert.Single(builder.Services, descriptor => descriptor.ServiceType == typeof(Auth.Api.IAuthEndpointContributor));
+    }
+
+    [Fact]
+    public async Task Remote_callback_failures_are_non_cacheable()
+    {
+        OpenIdConnectEvents events = OpenIdConnectEventsFactory.Create(new AuthOpenIdConnectProviderOptions());
+        var httpContext = new DefaultHttpContext();
+        AuthenticationProperties properties = new();
+        properties.Items[OpenIdConnectHandoffProperties.ReturnUrl] = "/auth/complete";
+        var context = new RemoteFailureContext(
+            httpContext,
+            new AuthenticationScheme("test", "test", typeof(OpenIdConnectHandler)),
+            new OpenIdConnectOptions(),
+            new InvalidOperationException("test failure"))
+        {
+            Properties = properties,
+        };
+
+        await events.OnRemoteFailure(context);
+
+        Assert.Equal("no-store", httpContext.Response.Headers.CacheControl);
+        Assert.Equal("no-cache", httpContext.Response.Headers.Pragma);
+        Assert.True(context.Result?.Handled);
     }
 
     [Fact]
@@ -242,7 +265,7 @@ public sealed class AuthOpenIdConnectProviderTests
             "GOOGLE",
             "https://app.example.com/auth/complete",
             "tenant-a",
-            Gma.Modules.Auth.Application.ExternalAuthentication.ExternalAuthenticationIntent.Link,
+            Application.ExternalAuthentication.ExternalAuthenticationIntent.Link,
             memberId,
             sessionId);
 
@@ -283,7 +306,7 @@ public sealed class AuthOpenIdConnectProviderTests
             "google",
             "/auth/complete",
             "tenant-a",
-            Gma.Modules.Auth.Application.ExternalAuthentication.ExternalAuthenticationIntent.SignIn,
+            Application.ExternalAuthentication.ExternalAuthenticationIntent.SignIn,
             targetMemberId: null,
             targetSessionId: null);
         string setCookie = Assert.Single(issueContext.Response.Headers.SetCookie)!;

@@ -36,13 +36,17 @@ Auth can be composed in two scope modes. `AuthProfile.ScopeAware()` follows the 
 - A member can link multiple providers. Removing a password or external identity cannot leave the member with no authentication method.
 - Provider access/refresh tokens are not stored. The browser callback receives only a short-lived, hashed, single-use GMA exchange code.
 - Passwords and verification codes are stored only as hashes. Refresh-token hashing supports active and previous peppers for rotation.
+- Password proof uses a durable, scope/purpose/target-partitioned attempt limiter when the complete Auth module is composed. Attempt targets are stored only as keyed hashes; raw usernames and candidate passwords are never persisted.
+- External exchange, email-verification, password-recovery, MFA challenge, and MFA recovery secrets use distinct keyed-hash domains. Legacy unscoped hashes remain readable during pepper rotation so in-flight challenges survive deployment.
 - Refresh-token replay revokes active sessions. Admin password reset also revokes active sessions.
+- Primary authentication enforces a configurable active-session ceiling and retires the oldest unexpired sessions above it. Aggregate reads and self-service discovery exclude expired session history before retention runs.
 - Password recovery is enumeration-safe, accepts only active password members with a verified email, stores only a rotating HMAC code hash, and revokes every session after confirmation.
 - An active local TOTP authenticator is enforced after every password and external primary sign-in. Auth issues no session or token until the one-time primary challenge succeeds.
 - TOTP secrets are protected at rest, accepted time steps cannot replay, recovery codes are stored only as keyed hashes, and invalid challenge or management attempts are retained durably for bounded rate limiting.
 - Sign-ins and authentication-method changes publish security events with bounded client context; secrets and provider tokens are excluded.
 - Scope context and the access-token scope claim must agree on protected scope-aware endpoints.
 - Scope-aware OIDC challenges carry the normalized scope only inside protected authentication state and restore it before the callback transaction; provider redirects do not depend on tenant headers surviving the round trip.
+- Every `/api/auth` response inherits `Cache-Control: no-store` and `Pragma: no-cache`, including optional provider-contributed routes.
 
 ## User API
 
@@ -221,13 +225,16 @@ Account recovery is an Auth-owned capability because changing a credential and r
 
 ## Persistence and retention
 
-Auth owns the `auth` schema and `auth.__ef_migrations_history`. SQL Server and PostgreSQL migrations include nullable password hashes, external identities, verification state, authentication methods and assurance evidence on sessions, one-time exchange and recovery records, uniqueness constraints, and cleanup indexes.
+Auth owns the `auth` schema and `auth.__ef_migrations_history`. SQL Server and PostgreSQL migrations include nullable password hashes, external identities, verification state, authentication methods and assurance evidence on sessions, one-time exchange and recovery records, credential-failure history, uniqueness constraints, and cleanup indexes.
 
-Retention is opt-in and bounded through the shared `BoundedBatchProcessor`. It deletes old expired exchanges and sessions in configured batches across scopes. Active-session projections treat refresh-expired sessions as inactive even before cleanup.
+Retention is opt-in and bounded through the shared `BoundedBatchProcessor`. It deletes old expired exchanges, sessions, challenges, and credential-failure history in configured batches across scopes. Active-session projections treat refresh-expired sessions as inactive even before cleanup.
 
 ```json
 {
   "Auth": {
+    "MaximumActiveSessionsPerMember": 20,
+    "FailedLoginLimit": 5,
+    "FailedLoginWindowMinutes": 15,
     "ExternalExchangeLifetimeMinutes": 5,
     "ExternalLinkSessionFreshnessMinutes": 10,
     "EmailVerificationLifetimeMinutes": 1440,
@@ -243,6 +250,7 @@ Retention is opt-in and bounded through the shared `BoundedBatchProcessor`. It d
       "ExpiredTotpEnrollmentHistoryHours": 24,
       "DisabledTotpAuthenticatorHistoryDays": 365,
       "MultiFactorFailureHistoryHours": 24,
+      "AuthenticationFailureHistoryHours": 24,
       "BatchSize": 500,
       "MaxBatchesPerCategoryPerCycle": 4,
       "IntervalMinutes": 60
@@ -276,7 +284,7 @@ Consumers bind explicitly to Auth as producer. Event ids are reused as notificat
 - Persist and share the ASP.NET Core Data Protection key ring across replicas, with a stable application name, so OIDC state and correlation cookies survive restarts and callback load balancing.
 - Encrypt and persist that same key ring before enabling the default TOTP protector; test key restoration and rotation as part of deployment recovery drills.
 - Auth has no secret default. A single-key deployment can inject `Auth__RefreshTokens__Pepper`; use the keyed pepper ring for rotation.
-- Replace the in-process `IAuthenticationAttemptLimiter` in multi-replica deployments with a distributed implementation while retaining edge/IP rate limits.
+- Complete Auth composition replaces the application-only process-local limiter with Auth persistence, so replicas share credential-failure history through the selected database. A host may still replace `IAuthenticationAttemptLimiter` explicitly, and edge/IP rate limits remain a separate deployment control.
 - Replace the small built-in password blocklist with a current breach corpus/service for production products.
 - Alert on failed Auth outbox/inbox processing and Notifications exhausted/unroutable delivery jobs.
 - Keep provider callbacks and exchange/verification endpoints on the sensitive rate-limit policy.

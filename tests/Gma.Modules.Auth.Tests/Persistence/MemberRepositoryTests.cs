@@ -1,15 +1,16 @@
 namespace Gma.Modules.Auth.Tests;
 
-using Gma.Modules.Auth.Domain.Aggregates;
+using Gma.Framework.Persistence.EntityFrameworkCore;
+using Gma.Framework.Runtime.Time;
+using Gma.Framework.Scoping;
 using Gma.Modules.Auth.Application.Ports;
+using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Enums;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Modules.Auth.Persistence;
 using Gma.Modules.Auth.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
-using Gma.Framework.Scoping;
-using Gma.Framework.Persistence.EntityFrameworkCore;
 using Xunit;
 
 [Trait("Category", "Unit")]
@@ -64,6 +65,37 @@ public sealed class MemberRepositoryTests
             global.SaveChangesAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Authentication_reads_hydrate_only_active_unexpired_sessions()
+    {
+        string databaseName = $"auth-session-filter-{Guid.NewGuid():N}";
+        InMemoryDatabaseRoot databaseRoot = new();
+        DbContextOptions<AuthDbContext> options = new DbContextOptionsBuilder<AuthDbContext>()
+            .UseInMemoryDatabase(databaseName, databaseRoot)
+            .Options;
+        Member member = CreateMember("member@example.com");
+        MemberSessionId expiredId = new(Guid.NewGuid());
+        MemberSessionId signedOutId = new(Guid.NewGuid());
+        MemberSessionId activeId = new(Guid.NewGuid());
+        member.StartSession(expiredId, "expired-hash", Now.AddMinutes(-1), Now.AddDays(-1));
+        member.StartSession(signedOutId, "signed-out-hash", Now.AddDays(1), Now.AddHours(-1));
+        member.StartSession(activeId, "active-hash", Now.AddDays(1), Now);
+        member.SignOutSession(signedOutId, Now);
+
+        await using (AuthDbContext seed = new(options, new TestTenantContext()))
+        {
+            seed.Members.Add(member);
+            await seed.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using AuthDbContext read = new(options, new TestTenantContext());
+        MemberRepository repository = new(read, new FixedClock());
+
+        Member hydrated = Assert.IsType<Member>(await repository.GetByIdAsync(member.Id, CancellationToken.None));
+
+        Assert.Equal(activeId, Assert.Single(hydrated.Sessions).Id);
+    }
+
     private static AuthDbContext CreateDbContext()
     {
         DbContextOptions<AuthDbContext> options = new DbContextOptionsBuilder<AuthDbContext>()
@@ -91,5 +123,10 @@ public sealed class MemberRepositoryTests
         public bool TryRestoreScope(string? scopeId) =>
             !enabled ||
             string.Equals(this.ScopeId, scopeId, StringComparison.Ordinal);
+    }
+
+    private sealed class FixedClock : ISystemClock
+    {
+        public DateTimeOffset UtcNow => Now;
     }
 }

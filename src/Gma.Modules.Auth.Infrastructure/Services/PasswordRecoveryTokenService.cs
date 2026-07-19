@@ -3,13 +3,14 @@ namespace Gma.Modules.Auth.Infrastructure.Services;
 using Gma.Modules.Auth.Domain.Services;
 
 internal sealed class PasswordRecoveryTokenService(
-    ITokenService tokenService,
-    IRefreshTokenHashingService hashingService)
+    IAuthOneTimeTokenService tokenService)
     : IPasswordRecoveryTokenService
 {
-    public string GenerateCode() => tokenService.GenerateRefreshToken();
+    public string GenerateCode() => tokenService.GenerateToken();
 
-    public string HashCode(string code) => hashingService.HashRefreshToken(code);
+    public string HashCode(string code) =>
+        tokenService.HashToken(AuthOneTimeTokenPurpose.PasswordRecovery, code);
 
-    public IReadOnlyList<string> GetCandidateHashes(string code) => hashingService.GetCandidateHashes(code);
+    public IReadOnlyList<string> GetCandidateHashes(string code) =>
+        tokenService.GetCandidateHashes(AuthOneTimeTokenPurpose.PasswordRecovery, code);
 }

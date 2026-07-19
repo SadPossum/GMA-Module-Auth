@@ -641,6 +641,39 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     b.ToTable("member_usernames", "auth");
                 });
 
+            modelBuilder.Entity("Gma.Modules.Auth.Persistence.AuthenticationAttemptRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("FailedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("TargetHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FailedAtUtc");
+
+                    b.HasIndex("ScopeId", "Purpose", "TargetHash", "FailedAtUtc");
+
+                    b.ToTable("authentication_failure_attempts", "auth");
+                });
+
             modelBuilder.Entity("Gma.Modules.Auth.Persistence.ExternalAuthenticationExchangeRecord", b =>
                 {
                     b.Property<Guid>("Id")

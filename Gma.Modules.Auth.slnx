@@ -2,12 +2,15 @@
   <Folder Name="/docs/">
     <File Path="docs/account-recovery-task.md" />
     <File Path="docs/authentication-assurance-task.md" />
+    <File Path="docs/auth-production-hardening-task.md" />
     <File Path="docs/README.md" />
     <File Path="docs/global-identity-with-tenancy-task.md" />
     <File Path="docs/mfa-authenticator-lifecycle-task.md" />
   </Folder>
   <Folder Name="/eng/">
     <File Path="eng/bootstrap-source-roots.ps1" />
+    <File Path="eng/check-boundaries.ps1" />
+    <File Path="eng/check-migrations.ps1" />
   </Folder>
   <Folder Name="/.github/workflows/">
     <File Path=".github/workflows/validate.yml" />
@@ -53,6 +56,7 @@
     <Project Path="src/Gma.Modules.Auth.Persistence/Gma.Modules.Auth.Persistence.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Gma.Modules.Auth.IntegrationTests/Gma.Modules.Auth.IntegrationTests.csproj" />
     <Project Path="tests/Gma.Modules.Auth.Tests/Gma.Modules.Auth.Tests.csproj" />
   </Folder>
 </Solution>

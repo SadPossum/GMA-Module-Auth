@@ -118,6 +118,21 @@ No Framework implementation change is planned. The existing generic assurance, b
 - Framework remains dependency-neutral and unchanged unless the audit proves a genuinely generic missing primitive;
 - Skeleton provides the canonical assurance composition proof and BunkFy passes backend/web contract verification from published revisions.
 
+## Implementation Checkpoint
+
+The Auth-owned implementation checkpoint is complete; downstream proof is pending:
+
+- durable keyed credential-failure history is the default for complete Auth composition, with bounded-retention support and both provider migrations;
+- password proof performs uniform work across login, step-up, password change/removal, and external unlink; durable attempt partitioning also covers MFA management factors;
+- active session hydration and discovery are bounded, and primary authentication enforces `MaximumActiveSessionsPerMember`;
+- one-time token hashes are purpose-separated with legacy candidate compatibility;
+- the Auth API pipeline applies non-cacheable response headers to native, browser, contributed, short-circuited, malformed, and missing-route responses;
+- the public API module is split into composition, core, MFA, browser, and shared support partials without route drift;
+- Auth now owns boundary, migration-drift, package-audit, non-Docker, and required PostgreSQL CI lanes;
+- the zero-warning build, 229 focused tests, both migration-drift checks, vulnerability audit, and cross-replica PostgreSQL limiter proof pass locally.
+
+The task stays `in progress` until the exact Auth revision is published, Skeleton proves Framework assurance with real Auth tokens, BunkFy aligns to the published revisions, and every required remote lane is green.
+
 ## Explicitly Deferred
 
 - passkeys/WebAuthn, trusted devices, SMS/email OTP, and multiple simultaneous TOTP authenticators;

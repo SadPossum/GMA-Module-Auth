@@ -1,14 +1,14 @@
 namespace Gma.Modules.Auth.Tests;
 
+using Gma.Framework.Domain;
 using Gma.Framework.Naming;
+using Gma.Framework.Results;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
 using Gma.Modules.Auth.Domain.Enums;
 using Gma.Modules.Auth.Domain.Errors;
 using Gma.Modules.Auth.Domain.Events;
 using Gma.Modules.Auth.Domain.ValueObjects;
-using Gma.Framework.Domain;
-using Gma.Framework.Results;
 using Xunit;
 
 [Trait("Category", "Unit")]
@@ -190,6 +190,42 @@ public sealed class MemberAggregateTests
 
         Assert.True(result.IsFailure);
         Assert.Equal(AuthDomainErrors.SessionIdRequired, result.Error);
+    }
+
+    [Fact]
+    public void Start_session_retires_only_the_oldest_unexpired_session_above_the_limit()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberSession expired = member.StartSession(
+            new MemberSessionId(Guid.Parse("00000000-0000-0000-0000-000000000100")),
+            "expired-hash",
+            Now.AddMinutes(-1),
+            Now.AddHours(-2),
+            maximumActiveSessions: int.MaxValue).Value;
+        MemberSession oldest = member.StartSession(
+            new MemberSessionId(Guid.Parse("00000000-0000-0000-0000-000000000020")),
+            "oldest-hash",
+            Now.AddDays(1),
+            Now,
+            maximumActiveSessions: 2).Value;
+        MemberSession newer = member.StartSession(
+            new MemberSessionId(Guid.Parse("00000000-0000-0000-0000-000000000030")),
+            "newer-hash",
+            Now.AddDays(1),
+            Now,
+            maximumActiveSessions: 2).Value;
+
+        MemberSession newest = member.StartSession(
+            new MemberSessionId(Guid.Parse("00000000-0000-0000-0000-000000000010")),
+            "newest-hash",
+            Now.AddDays(1),
+            Now,
+            maximumActiveSessions: 2).Value;
+
+        Assert.True(expired.IsActive);
+        Assert.False(oldest.IsActive);
+        Assert.True(newer.IsActive);
+        Assert.True(newest.IsActive);
     }
 
     [Fact]
@@ -552,7 +588,7 @@ public sealed class MemberAggregateTests
         Assert.Equal(MemberAuthenticationMethodChange.Added, domainEvent.Change);
     }
 
-    private static Gma.Framework.Results.Result<Member> CreateMember(
+    private static Result<Member> CreateMember(
         string username,
         string scopeId = "tenant-a",
         string passwordHash = "hash",

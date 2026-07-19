@@ -1,21 +1,21 @@
 namespace Gma.Modules.Auth.Application.Handlers;
 
+using Gma.Framework.Cqrs;
+using Gma.Framework.Results;
+using Gma.Framework.Runtime.Identity;
+using Gma.Framework.Runtime.Time;
 using Gma.Modules.Auth.Application.Commands;
+using Gma.Modules.Auth.Application.Ports;
+using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Aggregates;
+using Gma.Modules.Auth.Domain.Entities;
 using Gma.Modules.Auth.Domain.Enums;
 using Gma.Modules.Auth.Domain.Errors;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
-using Gma.Modules.Auth.Domain.Entities;
 using Gma.Modules.Auth.Domain.ValueObjects;
-using Gma.Modules.Auth.Application.Security;
-using Gma.Modules.Auth.Application.Ports;
 using Microsoft.Extensions.Options;
-using Gma.Framework.Cqrs;
-using Gma.Framework.Runtime.Identity;
-using Gma.Framework.Runtime.Time;
-using Gma.Framework.Results;
 
 internal sealed class RegisterMemberCommandHandler(
     IMemberRepository memberRepository,
@@ -83,7 +83,8 @@ internal sealed class RegisterMemberCommandHandler(
             tokens.RefreshTokenHash,
             tokens.ExpiresAtUtc,
             this.Clock.UtcNow,
-            authenticationEvidence: SessionAuthenticationEvidence.Password(this.Clock.UtcNow));
+            authenticationEvidence: SessionAuthenticationEvidence.Password(this.Clock.UtcNow),
+            maximumActiveSessions: options.Value.MaximumActiveSessionsPerMember);
 
         if (startSessionResult.IsFailure)
         {

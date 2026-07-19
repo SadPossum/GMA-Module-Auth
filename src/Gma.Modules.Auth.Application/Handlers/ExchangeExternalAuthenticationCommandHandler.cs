@@ -24,6 +24,7 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
     MultiFactorAuthenticationService multiFactorAuthentication,
     ITokenService tokenService,
     IRefreshTokenHashingService tokenHashingService,
+    IAuthOneTimeTokenService oneTimeTokenService,
     IOptions<AuthApplicationOptions> options,
     IAuthScopeContext scopeContext,
     ISystemClock clock,
@@ -54,7 +55,9 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
         string code,
         CancellationToken cancellationToken)
     {
-        foreach (string candidateHash in this.TokenHashingService.GetCandidateHashes(code.Trim()))
+        foreach (string candidateHash in oneTimeTokenService.GetCandidateHashes(
+                     AuthOneTimeTokenPurpose.ExternalAuthenticationExchange,
+                     code.Trim()))
         {
             ExternalAuthenticationExchange? exchange = await exchangeStore
                 .ConsumeAsync(candidateHash, this.Clock.UtcNow, cancellationToken)
@@ -130,7 +133,8 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
             tokens.ExpiresAtUtc,
             this.Clock.UtcNow,
             primaryAuthenticationMethod,
-            primaryEvidence);
+            primaryEvidence,
+            options.Value.MaximumActiveSessionsPerMember);
         if (session.IsFailure)
         {
             return Result.Failure<ExternalAuthenticationResponse>(session.Error);

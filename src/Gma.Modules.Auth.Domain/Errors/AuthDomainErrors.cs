@@ -86,6 +86,9 @@ public static class AuthDomainErrors
     public static readonly Error MemberNotFound = new("Auth.MemberNotFound", "Member was not found.");
     public static readonly Error SessionNotFound = new("Auth.SessionNotFound", "Session was not found.");
     public static readonly Error SessionInactive = new("Auth.SessionInactive", "Session is not active.");
+    public static readonly Error SessionLimitInvalid = new(
+        "Auth.SessionLimitInvalid",
+        "Maximum active session count is invalid.");
     public static readonly Error RefreshTokenInvalid = new("Auth.RefreshTokenInvalid", "Refresh token is invalid.");
     public static readonly Error RefreshTokenHashNotValid = new("Auth.RefreshTokenHashNotValid", "Refresh token hash is not valid.");
     public static readonly Error RefreshTokenExpired = new("Auth.RefreshTokenExpired", "Refresh token has expired.");

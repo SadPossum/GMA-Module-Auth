@@ -19,7 +19,7 @@ using Microsoft.Extensions.Options;
 internal sealed class StepUpWithPasswordCommandHandler(
     IMemberRepository memberRepository,
     IPasswordHashingService passwordHashingService,
-    IAuthenticationAttemptLimiter attemptLimiter,
+    PasswordProofService passwordProofService,
     ITokenService tokenService,
     IRefreshTokenHashingService refreshTokenHashingService,
     IOptions<AuthApplicationOptions> options,
@@ -42,28 +42,19 @@ internal sealed class StepUpWithPasswordCommandHandler(
             return Result.Failure<AuthTokensResponse>(AuthDomainErrors.CredentialsNotValid);
         }
 
-        string limiterKey = $"member:{command.MemberId:D}:password-step-up";
-        if (!attemptLimiter.IsAllowed(member.ScopeId, limiterKey, this.Clock.UtcNow))
-        {
-            return Result.Failure<AuthTokensResponse>(AuthDomainErrors.CredentialsNotValid);
-        }
-
-        if (member.PasswordHash is null)
-        {
-            attemptLimiter.RecordFailure(member.ScopeId, limiterKey, this.Clock.UtcNow);
-            return Result.Failure<AuthTokensResponse>(AuthDomainErrors.CredentialsNotValid);
-        }
-
-        PasswordVerificationOutcome passwordVerification = passwordHashingService.VerifyPassword(
+        PasswordVerificationOutcome passwordVerification = await passwordProofService.VerifyAsync(
+            member.ScopeId,
+            AuthenticationAttemptPurposes.PasswordStepUp,
+            command.MemberId.ToString("D", System.Globalization.CultureInfo.InvariantCulture),
             member.PasswordHash,
-            command.Password);
+            command.Password,
+            this.Clock.UtcNow,
+            cancellationToken).ConfigureAwait(false);
         if (passwordVerification == PasswordVerificationOutcome.Unknown)
         {
-            attemptLimiter.RecordFailure(member.ScopeId, limiterKey, this.Clock.UtcNow);
             return Result.Failure<AuthTokensResponse>(AuthDomainErrors.CredentialsNotValid);
         }
 
-        attemptLimiter.RecordSuccess(member.ScopeId, limiterKey);
         string refreshToken = this.GenerateRefreshToken();
         string newRefreshTokenHash = this.TokenHashingService.HashRefreshToken(refreshToken);
         IReadOnlyList<string> candidateHashes = this.TokenHashingService.GetCandidateHashes(command.RefreshToken);

@@ -19,7 +19,7 @@ using Microsoft.Extensions.Options;
 internal sealed class LoginMemberCommandHandler(
     IMemberRepository memberRepository,
     IPasswordHashingService passwordHashingService,
-    IAuthenticationAttemptLimiter attemptLimiter,
+    PasswordProofService passwordProofService,
     MultiFactorAuthenticationService multiFactorAuthentication,
     ITokenService tokenService,
     IRefreshTokenHashingService refreshTokenHashingService,
@@ -35,29 +35,29 @@ internal sealed class LoginMemberCommandHandler(
         CancellationToken cancellationToken)
     {
         string scopeId = scopeContext.ScopeId ?? string.Empty;
-        if (!attemptLimiter.IsAllowed(scopeId, command.Username, this.Clock.UtcNow))
-        {
-            return Result.Failure<PrimaryAuthenticationResult>(AuthDomainErrors.CredentialsNotValid);
-        }
+        string attemptTarget = MemberUsername.Normalize(command.Username);
 
         Member? member = await memberRepository.GetByUsernameAsync(command.Username, cancellationToken).ConfigureAwait(false);
-
-        if (member is null || !member.HasActiveUsername(command.Username) || member.PasswordHash is null)
-        {
-            attemptLimiter.RecordFailure(scopeId, command.Username, this.Clock.UtcNow);
-            return Result.Failure<PrimaryAuthenticationResult>(AuthDomainErrors.CredentialsNotValid);
-        }
-
-        PasswordVerificationOutcome passwordVerification = passwordHashingService.VerifyPassword(
-            member.PasswordHash,
-            command.Password);
+        string? passwordHash = member is not null && member.HasActiveUsername(command.Username)
+            ? member.PasswordHash
+            : null;
+        PasswordVerificationOutcome passwordVerification = await passwordProofService.VerifyAsync(
+            scopeId,
+            AuthenticationAttemptPurposes.PasswordLogin,
+            attemptTarget,
+            passwordHash,
+            command.Password,
+            this.Clock.UtcNow,
+            cancellationToken).ConfigureAwait(false);
         if (passwordVerification == PasswordVerificationOutcome.Unknown)
         {
-            attemptLimiter.RecordFailure(scopeId, command.Username, this.Clock.UtcNow);
             return Result.Failure<PrimaryAuthenticationResult>(AuthDomainErrors.CredentialsNotValid);
         }
 
-        attemptLimiter.RecordSuccess(scopeId, command.Username);
+        if (member is null)
+        {
+            return Result.Failure<PrimaryAuthenticationResult>(AuthDomainErrors.CredentialsNotValid);
+        }
 
         if (passwordVerification == PasswordVerificationOutcome.SuccessRehashNeeded)
         {
@@ -95,7 +95,8 @@ internal sealed class LoginMemberCommandHandler(
             tokens.RefreshTokenHash,
             tokens.ExpiresAtUtc,
             this.Clock.UtcNow,
-            authenticationEvidence: primaryEvidence);
+            authenticationEvidence: primaryEvidence,
+            maximumActiveSessions: options.Value.MaximumActiveSessionsPerMember);
 
         if (startSessionResult.IsFailure)
         {

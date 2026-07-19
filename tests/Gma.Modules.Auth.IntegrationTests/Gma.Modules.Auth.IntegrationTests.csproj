@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(GmaModuleAuthRoot)Gma.Modules.Auth.Application\Gma.Modules.Auth.Application.csproj" />
+    <ProjectReference Include="$(GmaModuleAuthRoot)Gma.Modules.Auth.Contracts\Gma.Modules.Auth.Contracts.csproj" />
+    <ProjectReference Include="$(GmaModuleAuthRoot)Gma.Modules.Auth.Domain\Gma.Modules.Auth.Domain.csproj" />
+    <ProjectReference Include="$(GmaModuleAuthRoot)Gma.Modules.Auth.Persistence\Gma.Modules.Auth.Persistence.csproj" />
+    <ProjectReference Include="$(GmaModuleAuthRoot)Gma.Modules.Auth.Persistence.PostgreSqlMigrations\Gma.Modules.Auth.Persistence.PostgreSqlMigrations.csproj" />
+  </ItemGroup>
+</Project>

@@ -19,15 +19,24 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext, ISystem
         IQueryable<Member> query = dbContext.Members
             .AsNoTracking()
             .Include(member => member.Usernames)
-            .Include(member => member.Sessions)
-            .AsSplitQuery()
             .OrderBy(member => member.RegisteredAtUtc);
 
-        int totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
+        int totalCount = await dbContext.Members.CountAsync(cancellationToken).ConfigureAwait(false);
         Member[] members = await query
             .Skip(pageRequest.SkipCount)
             .Take(pageRequest.PageSize)
             .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+        MemberId[] memberIds = [.. members.Select(member => member.Id)];
+        DateTimeOffset nowUtc = clock.UtcNow;
+        Dictionary<MemberId, int> activeSessionCounts = await dbContext.MemberSessions
+            .AsNoTracking()
+            .Where(session =>
+                memberIds.Contains(session.MemberId) &&
+                session.IsActive &&
+                session.RefreshTokenExpiresAtUtc > nowUtc)
+            .GroupBy(session => session.MemberId)
+            .ToDictionaryAsync(group => group.Key, group => group.Count(), cancellationToken)
             .ConfigureAwait(false);
 
         AdminMemberListItem[] items = members
@@ -37,7 +46,7 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext, ISystem
                 ToContractStatus(member.Status),
                 GetActiveUsername(member),
                 member.RegisteredAtUtc,
-                CountActiveSessions(member, clock.UtcNow)))
+                activeSessionCounts.GetValueOrDefault(member.Id)))
             .ToArray();
 
         return new AdminMemberListResponse(items, pageRequest.Page, pageRequest.PageSize, totalCount);
@@ -48,11 +57,23 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext, ISystem
         Member? member = await dbContext.Members
             .AsNoTracking()
             .Include(item => item.Usernames)
-            .Include(item => item.Sessions)
             .Include(item => item.ExternalIdentities)
             .AsSplitQuery()
             .SingleOrDefaultAsync(item => item.Id == new MemberId(memberId), cancellationToken)
             .ConfigureAwait(false);
+
+        DateTimeOffset nowUtc = clock.UtcNow;
+        MemberSessionCounts? sessionCounts = member is null
+            ? null
+            : await dbContext.MemberSessions
+                .AsNoTracking()
+                .Where(session => session.MemberId == member.Id)
+                .GroupBy(_ => 1)
+                .Select(group => new MemberSessionCounts(
+                    group.Count(session => session.IsActive && session.RefreshTokenExpiresAtUtc > nowUtc),
+                    group.Count()))
+                .SingleOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
 
         MemberTotpAuthenticator? authenticator = member is null
             ? null
@@ -72,8 +93,8 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext, ISystem
                 member.RegisteredAtUtc,
                 member.DisabledAtUtc,
                 member.DisabledReason,
-                CountActiveSessions(member, clock.UtcNow),
-                member.Sessions.Count,
+                sessionCounts?.ActiveCount ?? 0,
+                sessionCounts?.TotalCount ?? 0,
                 member.HasPassword,
                 member.Usernames.Any(username => username.IsActive && username.IsVerified),
                 member.ExternalIdentities
@@ -93,9 +114,6 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext, ISystem
             .Select(username => username.Value)
             .FirstOrDefault();
 
-    private static int CountActiveSessions(Member member, DateTimeOffset nowUtc) =>
-        member.Sessions.Count(session => session.IsActive && session.RefreshTokenExpiresAtUtc > nowUtc);
-
     private static ContractMemberStatus ToContractStatus(DomainMemberStatus status) =>
         status switch
         {
@@ -103,4 +121,6 @@ internal sealed class AdminMemberReadRepository(AuthDbContext dbContext, ISystem
             DomainMemberStatus.Disabled => ContractMemberStatus.Disabled,
             _ => ContractMemberStatus.Unknown
         };
+
+    private sealed record MemberSessionCounts(int ActiveCount, int TotalCount);
 }

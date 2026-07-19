@@ -22,6 +22,8 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, IAuth
         this.Set<MemberAuthenticationChallenge>();
     public DbSet<MemberMultiFactorFailureAttempt> MemberMultiFactorFailureAttempts =>
         this.Set<MemberMultiFactorFailureAttempt>();
+    internal DbSet<AuthenticationAttemptRecord> AuthenticationFailureAttempts =>
+        this.Set<AuthenticationAttemptRecord>();
     internal DbSet<ExternalAuthenticationExchangeRecord> ExternalAuthenticationExchanges =>
         this.Set<ExternalAuthenticationExchangeRecord>();
     public DbSet<OutboxMessage> OutboxMessages => this.Set<OutboxMessage>();

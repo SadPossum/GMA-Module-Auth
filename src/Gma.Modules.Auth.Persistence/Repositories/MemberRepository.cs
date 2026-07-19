@@ -1,30 +1,23 @@
 namespace Gma.Modules.Auth.Persistence.Repositories;
 
+using Gma.Framework.Runtime.Time;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 
-internal sealed class MemberRepository(AuthDbContext dbContext) : IMemberRepository
+internal sealed class MemberRepository(AuthDbContext dbContext, ISystemClock? clock = null) : IMemberRepository
 {
     public Task<Member?> GetByIdAsync(MemberId id, CancellationToken cancellationToken) =>
-        dbContext.Members
-            .Include(member => member.Usernames)
-            .Include(member => member.Sessions)
-            .Include(member => member.ExternalIdentities)
-            .AsSplitQuery()
+        this.MembersWithActiveAuthenticationState()
             .FirstOrDefaultAsync(member => member.Id == id, cancellationToken);
 
     public Task<Member?> GetByUsernameAsync(string username, CancellationToken cancellationToken)
     {
         string normalizedUsername = MemberUsername.Normalize(username);
 
-        return dbContext.Members
-            .Include(member => member.Usernames)
-            .Include(member => member.Sessions)
-            .Include(member => member.ExternalIdentities)
-            .AsSplitQuery()
+        return this.MembersWithActiveAuthenticationState()
             .FirstOrDefaultAsync(member => member.Usernames.Any(memberUsername =>
                 memberUsername.IsActive && memberUsername.NormalizedValue == normalizedUsername), cancellationToken);
     }
@@ -34,11 +27,7 @@ internal sealed class MemberRepository(AuthDbContext dbContext) : IMemberReposit
         string normalizedIssuer = issuer.Trim();
         string normalizedSubject = subject.Trim();
         string identityKeyHash = MemberExternalIdentity.CreateIdentityKeyHash(normalizedIssuer, normalizedSubject);
-        return dbContext.Members
-            .Include(member => member.Usernames)
-            .Include(member => member.Sessions)
-            .Include(member => member.ExternalIdentities)
-            .AsSplitQuery()
+        return this.MembersWithActiveAuthenticationState()
             .FirstOrDefaultAsync(member => member.ExternalIdentities.Any(identity =>
                 identity.IdentityKeyHash == identityKeyHash &&
                 identity.Issuer == normalizedIssuer &&
@@ -72,9 +61,6 @@ internal sealed class MemberRepository(AuthDbContext dbContext) : IMemberReposit
         string[] hashes = [.. verificationTokenHashes.Distinct(StringComparer.Ordinal)];
         Member? member = await dbContext.Members
             .Include(item => item.Usernames)
-            .Include(item => item.Sessions)
-            .Include(item => item.ExternalIdentities)
-            .AsSplitQuery()
             .FirstOrDefaultAsync(
                 item => item.Usernames.Any(username =>
                     username.VerificationTokenHash != null && hashes.Contains(username.VerificationTokenHash)),
@@ -92,4 +78,15 @@ internal sealed class MemberRepository(AuthDbContext dbContext) : IMemberReposit
 
     public async Task AddAsync(Member member, CancellationToken cancellationToken) =>
         await dbContext.Members.AddAsync(member, cancellationToken).ConfigureAwait(false);
+
+    private IQueryable<Member> MembersWithActiveAuthenticationState()
+    {
+        DateTimeOffset nowUtc = clock?.UtcNow ?? TimeProvider.System.GetUtcNow();
+        return dbContext.Members
+            .Include(member => member.Usernames)
+            .Include(member => member.Sessions.Where(session =>
+                session.IsActive && session.RefreshTokenExpiresAtUtc > nowUtc))
+            .Include(member => member.ExternalIdentities)
+            .AsSplitQuery();
+    }
 }

@@ -2,8 +2,8 @@ namespace Gma.Modules.Auth.Application.Handlers;
 
 using Gma.Framework.Cqrs;
 using Gma.Framework.Results;
-using Gma.Framework.Runtime.Time;
 using Gma.Framework.Runtime.Identity;
+using Gma.Framework.Runtime.Time;
 using Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Domain.Aggregates;
@@ -19,6 +19,7 @@ internal sealed class SetMemberPasswordCommandHandler(
     IMemberRepository memberRepository,
     IPasswordHashingService passwordHashingService,
     IPasswordBlocklist passwordBlocklist,
+    PasswordProofService passwordProofService,
     ISystemClock clock,
     IIdGenerator idGenerator,
     IOptions<AuthApplicationOptions> options)
@@ -46,13 +47,17 @@ internal sealed class SetMemberPasswordCommandHandler(
 
         if (member.HasPassword)
         {
-            Result password = MemberSecurityAuthorization.RequirePassword(
-                member,
-                command.CurrentPassword,
-                passwordHashingService);
-            if (password.IsFailure)
+            PasswordVerificationOutcome password = await passwordProofService.VerifyAsync(
+                member.ScopeId,
+                AuthenticationAttemptPurposes.PasswordChange,
+                command.MemberId.ToString("D", System.Globalization.CultureInfo.InvariantCulture),
+                member.PasswordHash,
+                command.CurrentPassword ?? string.Empty,
+                clock.UtcNow,
+                cancellationToken).ConfigureAwait(false);
+            if (password == PasswordVerificationOutcome.Unknown)
             {
-                return Result.Failure<Unit>(password.Error);
+                return Result.Failure<Unit>(AuthDomainErrors.CredentialsNotValid);
             }
         }
 

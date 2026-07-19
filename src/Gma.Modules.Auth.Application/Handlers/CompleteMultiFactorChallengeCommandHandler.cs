@@ -78,7 +78,8 @@ internal sealed class CompleteMultiFactorChallengeCommandHandler(
             tokens.ExpiresAtUtc,
             nowUtc,
             challenge.PrimaryAuthenticationMethod,
-            factor.Value);
+            factor.Value,
+            options.Value.MaximumActiveSessionsPerMember);
         if (session.IsFailure)
         {
             return Result.Failure<MultiFactorChallengeCompletion>(session.Error);

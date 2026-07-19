@@ -12,6 +12,7 @@ public sealed class AuthRetentionOptions
     public int ExpiredTotpEnrollmentHistoryHours { get; set; } = 24;
     public int DisabledTotpAuthenticatorHistoryDays { get; set; } = 365;
     public int MultiFactorFailureHistoryHours { get; set; } = 24;
+    public int AuthenticationFailureHistoryHours { get; set; } = 24;
     public int BatchSize { get; set; } = 500;
     public int MaxBatchesPerCategoryPerCycle { get; set; } = 4;
     public int IntervalMinutes { get; set; } = 60;

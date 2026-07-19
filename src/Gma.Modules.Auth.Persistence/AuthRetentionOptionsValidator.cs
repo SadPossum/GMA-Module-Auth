@@ -47,6 +47,11 @@ internal sealed class AuthRetentionOptionsValidator : IValidateOptions<AuthReten
             failures.Add("Auth:Retention:MultiFactorFailureHistoryHours must be between 1 and 8760.");
         }
 
+        if (options.AuthenticationFailureHistoryHours is < 1 or > 8_760)
+        {
+            failures.Add("Auth:Retention:AuthenticationFailureHistoryHours must be between 1 and 8760.");
+        }
+
         if (options.BatchSize is < 1 or > 10_000)
         {
             failures.Add("Auth:Retention:BatchSize must be between 1 and 10000.");

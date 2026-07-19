@@ -16,8 +16,7 @@ using Microsoft.Extensions.Options;
 
 internal sealed class RequestEmailVerificationCommandHandler(
     IMemberRepository memberRepository,
-    ITokenService tokenService,
-    IRefreshTokenHashingService tokenHashingService,
+    IAuthOneTimeTokenService tokenService,
     ISystemClock clock,
     IIdGenerator idGenerator,
     IOptions<AuthApplicationOptions> options)
@@ -51,10 +50,10 @@ internal sealed class RequestEmailVerificationCommandHandler(
             return Result.Failure<Unit>(AuthApplicationErrors.EmailVerificationRequestTooSoon);
         }
 
-        string code = tokenService.GenerateRefreshToken();
+        string code = tokenService.GenerateToken();
         Result result = member.RequestEmailVerification(
             email.Id,
-            tokenHashingService.HashRefreshToken(code),
+            tokenService.HashToken(AuthOneTimeTokenPurpose.EmailVerification, code),
             code,
             idGenerator.NewId(),
             nowUtc.AddMinutes(options.Value.EmailVerificationLifetimeMinutes),

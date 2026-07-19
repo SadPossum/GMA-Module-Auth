@@ -5,6 +5,7 @@ using Gma.Framework.Messaging;
 using Gma.Framework.Persistence.EntityFrameworkCore;
 using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Application.Scoping;
+using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Persistence.Repositories;
@@ -66,6 +67,15 @@ public static class DependencyInjection
         builder.Services.TryAddScoped<IMemberTotpAuthenticatorRepository, MemberTotpAuthenticatorRepository>();
         builder.Services.TryAddScoped<IMemberAuthenticationChallengeRepository, MemberAuthenticationChallengeRepository>();
         builder.Services.TryAddScoped<IMemberMultiFactorFailureAttemptRepository, MemberMultiFactorFailureAttemptRepository>();
+        ServiceDescriptor[] processLocalLimiters = [.. builder.Services.Where(descriptor =>
+            descriptor.ServiceType == typeof(IAuthenticationAttemptLimiter) &&
+            descriptor.ImplementationType == typeof(ProcessLocalAuthenticationAttemptLimiter))];
+        foreach (ServiceDescriptor processLocalLimiter in processLocalLimiters)
+        {
+            builder.Services.Remove(processLocalLimiter);
+        }
+
+        builder.Services.TryAddScoped<IAuthenticationAttemptLimiter, PersistentAuthenticationAttemptLimiter>();
         builder.Services.TryAddEnumerable([
             ServiceDescriptor.Scoped<IUnitOfWork, AuthUnitOfWork>(),
             ServiceDescriptor.Scoped<IOutboxWriter, AuthOutboxWriter>(),

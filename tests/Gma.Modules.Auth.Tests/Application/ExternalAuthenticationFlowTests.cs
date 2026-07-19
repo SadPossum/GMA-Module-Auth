@@ -287,14 +287,12 @@ public sealed class ExternalAuthenticationFlowTests
         Member member = CreatePasswordMember("member@example.com");
         await repository.AddAsync(member, CancellationToken.None);
         await dbContext.SaveChangesAsync();
-        var tokenService = new FakeTokenService("verification-code");
-        var hashingService = new FakeHashingService();
+        var tokenService = new FakeAuthOneTimeTokenService("verification-code");
         var clock = new FakeClock();
         var idGenerator = new SequentialIdGenerator();
         var requestHandler = new RequestEmailVerificationCommandHandler(
             repository,
             tokenService,
-            hashingService,
             clock,
             idGenerator,
             Options.Create(new AuthApplicationOptions()));
@@ -305,7 +303,9 @@ public sealed class ExternalAuthenticationFlowTests
 
         Assert.True(request.IsSuccess);
         MemberUsername email = Assert.Single(member.Usernames);
-        Assert.Equal(Hash("verification-code"), email.VerificationTokenHash);
+        Assert.Equal(
+            Hash($"{AuthOneTimeTokenPurpose.EmailVerification}:verification-code"),
+            email.VerificationTokenHash);
         Assert.DoesNotContain("verification-code", email.VerificationTokenHash, StringComparison.OrdinalIgnoreCase);
 
         Result<Unit> repeatedRequest = await requestHandler.HandleAsync(
@@ -317,7 +317,7 @@ public sealed class ExternalAuthenticationFlowTests
 
         var confirmationHandler = new ConfirmEmailVerificationCommandHandler(
             repository,
-            hashingService,
+            tokenService,
             clock,
             idGenerator);
         Result confirmation = await confirmationHandler.HandleAsync(
@@ -341,6 +341,7 @@ public sealed class ExternalAuthenticationFlowTests
             multiFactorService ?? CreateMultiFactorService(),
             new FakeTokenService("refresh-token"),
             new FakeHashingService(),
+            new FakeAuthOneTimeTokenService("one-time-code"),
             Options.Create(options ?? new AuthApplicationOptions()),
             new TestScopeContext(),
             new FakeClock(),
@@ -535,6 +536,17 @@ public sealed class ExternalAuthenticationFlowTests
     {
         public string HashRefreshToken(string refreshToken) => Hash(refreshToken);
         public IReadOnlyList<string> GetCandidateHashes(string refreshToken) => [Hash(refreshToken)];
+    }
+
+    private sealed class FakeAuthOneTimeTokenService(string token) : IAuthOneTimeTokenService
+    {
+        public string GenerateToken() => token;
+
+        public string HashToken(AuthOneTimeTokenPurpose purpose, string value) =>
+            Hash($"{purpose}:{value}");
+
+        public IReadOnlyList<string> GetCandidateHashes(AuthOneTimeTokenPurpose purpose, string value) =>
+            [this.HashToken(purpose, value), Hash(value)];
     }
 
     private sealed class FakePasswordHashingService : IPasswordHashingService

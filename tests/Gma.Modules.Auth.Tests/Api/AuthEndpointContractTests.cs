@@ -1,14 +1,20 @@
 namespace Gma.Modules.Auth.Tests.Api;
 
+using System.Net;
+using System.Text;
 using Gma.Framework.Api.Modules;
+using Gma.Framework.Api.Security;
 using Gma.Framework.Infrastructure;
 using Gma.Modules.Auth.Api;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Providers.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 [Trait("Category", "Unit")]
@@ -25,11 +31,14 @@ public sealed class AuthEndpointContractTests
             new("Persistence:Provider", "SqlServer"),
             new("ConnectionStrings:SqlServer", "Server=(localdb)\\mssqllocaldb;Database=GmaAuthEndpointTests;Trusted_Connection=True;")
         ]);
+        builder.Services.AddApiSecurityDefaults();
         builder.AddGmaInfrastructure();
         builder.AddAuthModule(AuthProfile.Global("global"));
         builder.AddAuthOpenIdConnectProviders();
 
         await using WebApplication app = builder.Build();
+        app.UseAuthentication();
+        app.UseAuthorization();
         app.MapModules();
 
         string[] routes = [.. ((IEndpointRouteBuilder)app).DataSources
@@ -70,5 +79,33 @@ public sealed class AuthEndpointContractTests
         Assert.Equal(2, recoveryEndpoints.Length);
         Assert.All(recoveryEndpoints, endpoint =>
             Assert.Empty(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>()));
+
+        app.Urls.Add("http://127.0.0.1:0");
+        await app.StartAsync();
+        IServer server = app.Services.GetRequiredService<IServer>();
+        string address = Assert.Single(server.Features.Get<IServerAddressesFeature>()!.Addresses);
+        using var client = new HttpClient { BaseAddress = new Uri(address) };
+
+        using HttpResponseMessage coreResponse = await client.GetAsync("/api/auth/self-registration");
+        using HttpResponseMessage contributedResponse = await client.GetAsync("/api/auth/external/providers");
+        using HttpResponseMessage unauthorizedResponse = await client.GetAsync("/api/auth/sessions");
+        using var malformedContent = new StringContent("{", Encoding.UTF8, "application/json");
+        using HttpResponseMessage malformedResponse = await client.PostAsync("/api/auth/login", malformedContent);
+        using HttpResponseMessage missingResponse = await client.GetAsync("/api/auth/not-a-route");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorizedResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, malformedResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, missingResponse.StatusCode);
+        AssertNoStore(coreResponse);
+        AssertNoStore(contributedResponse);
+        AssertNoStore(unauthorizedResponse);
+        AssertNoStore(malformedResponse);
+        AssertNoStore(missingResponse);
+    }
+
+    private static void AssertNoStore(HttpResponseMessage response)
+    {
+        Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
+        Assert.Contains("no-cache", response.Headers.Pragma.Select(value => value.Name));
     }
 }

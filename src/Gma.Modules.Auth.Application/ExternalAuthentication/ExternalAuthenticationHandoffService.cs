@@ -8,8 +8,7 @@ using Microsoft.Extensions.Options;
 
 internal sealed class ExternalAuthenticationHandoffService(
     IExternalAuthenticationExchangeStore exchangeStore,
-    ITokenService tokenService,
-    IRefreshTokenHashingService tokenHashingService,
+    IAuthOneTimeTokenService tokenService,
     ISystemClock clock,
     IIdGenerator idGenerator,
     IAuthScopeContext scopeContext,
@@ -34,14 +33,14 @@ internal sealed class ExternalAuthenticationHandoffService(
             throw new ArgumentException("Link handoffs require the target member and session.", nameof(intent));
         }
 
-        string code = tokenService.GenerateRefreshToken();
+        string code = tokenService.GenerateToken();
         DateTimeOffset nowUtc = clock.UtcNow;
         DateTimeOffset expiresAtUtc = nowUtc.AddMinutes(options.Value.ExternalExchangeLifetimeMinutes);
         await exchangeStore.AddAsync(
             new ExternalAuthenticationExchange(
                 idGenerator.NewId(),
                 scopeId,
-                tokenHashingService.HashRefreshToken(code),
+                tokenService.HashToken(AuthOneTimeTokenPurpose.ExternalAuthenticationExchange, code),
                 intent,
                 identity.ProviderCode,
                 identity.Issuer,

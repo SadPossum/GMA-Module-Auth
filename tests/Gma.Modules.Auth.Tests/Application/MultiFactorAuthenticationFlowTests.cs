@@ -40,7 +40,7 @@ public sealed class MultiFactorAuthenticationFlowTests
         LoginMemberCommandHandler loginHandler = new(
             new MemberRepository(dbContext),
             new FakePasswordHashingService(),
-            new AllowAllAttemptLimiter(),
+            new PasswordProofService(new FakePasswordHashingService(), new AllowAllAttemptLimiter()),
             multiFactor,
             new FakeTokenService(),
             new FakeRefreshTokenHashingService(),
@@ -356,9 +356,25 @@ public sealed class MultiFactorAuthenticationFlowTests
 
     private sealed class AllowAllAttemptLimiter : IAuthenticationAttemptLimiter
     {
-        public bool IsAllowed(string scopeId, string username, DateTimeOffset nowUtc) => true;
-        public void RecordFailure(string scopeId, string username, DateTimeOffset nowUtc) { }
-        public void RecordSuccess(string scopeId, string username) { }
+        public ValueTask<bool> IsAllowedAsync(
+            string scopeId,
+            string purpose,
+            string target,
+            DateTimeOffset nowUtc,
+            CancellationToken cancellationToken) => ValueTask.FromResult(true);
+
+        public ValueTask RecordFailureAsync(
+            string scopeId,
+            string purpose,
+            string target,
+            DateTimeOffset nowUtc,
+            CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        public ValueTask RecordSuccessAsync(
+            string scopeId,
+            string purpose,
+            string target,
+            CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
 
     private sealed class FakeClock : ISystemClock

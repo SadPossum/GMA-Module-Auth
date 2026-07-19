@@ -10,6 +10,7 @@ using Gma.Modules.Auth.Application.ExternalAuthentication;
 using Gma.Modules.Auth.Application.Ports;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -27,6 +28,7 @@ internal static class OpenIdConnectEventsFactory
         TokenValidatedContext context,
         AuthOpenIdConnectProviderOptions providerOptions)
     {
+        SetNoStoreHeaders(context.Response);
         if (!OpenIdConnectHandoffScope.TryRestore(
                 context.Properties,
                 context.HttpContext.RequestServices))
@@ -108,8 +110,7 @@ internal static class OpenIdConnectEventsFactory
             ["code"] = exchangeCode,
             ["provider"] = provider,
         });
-        context.Response.Headers.CacheControl = "no-store";
-        context.Response.Headers.Pragma = "no-cache";
+        SetNoStoreHeaders(context.Response);
         context.Response.Redirect(destination);
         context.HandleResponse();
         return Task.CompletedTask;
@@ -117,6 +118,7 @@ internal static class OpenIdConnectEventsFactory
 
     private static Task HandleRemoteFailureAsync(RemoteFailureContext context)
     {
+        SetNoStoreHeaders(context.Response);
         string? returnUrl = GetItem(context.Properties, OpenIdConnectHandoffProperties.ReturnUrl);
         if (!string.IsNullOrWhiteSpace(returnUrl))
         {
@@ -131,8 +133,14 @@ internal static class OpenIdConnectEventsFactory
         return Task.CompletedTask;
     }
 
+    private static void SetNoStoreHeaders(HttpResponse response)
+    {
+        response.Headers.CacheControl = "no-store";
+        response.Headers.Pragma = "no-cache";
+    }
+
     private static string? GetItem(
-        Microsoft.AspNetCore.Authentication.AuthenticationProperties? properties,
+        AuthenticationProperties? properties,
         string key) =>
         properties?.Items.TryGetValue(key, out string? value) == true ? value : null;
 

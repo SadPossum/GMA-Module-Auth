@@ -1,8 +1,8 @@
 namespace Gma.Modules.Auth.Tests;
 
+using Gma.Framework.Results;
 using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
-using Gma.Framework.Results;
 using Gma.Modules.Auth.Application;
 using Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Application.Handlers;
@@ -42,6 +42,7 @@ public sealed class AuthenticationMethodHandlerTests
             repository,
             new FakePasswordHashingService(),
             new AllowAllPasswordBlocklist(),
+            CreatePasswordProofService(),
             new FakeClock(),
             new RandomIdGenerator(),
             Options.Create(new AuthApplicationOptions()));
@@ -70,7 +71,7 @@ public sealed class AuthenticationMethodHandlerTests
         MemberRepository repository = await PersistAsync(dbContext, member);
         var handler = new RemoveMemberPasswordCommandHandler(
             repository,
-            new FakePasswordHashingService(),
+            CreatePasswordProofService(),
             new FakeClock(),
             new RandomIdGenerator(),
             Options.Create(new AuthApplicationOptions()));
@@ -111,7 +112,7 @@ public sealed class AuthenticationMethodHandlerTests
         MemberRepository repository = await PersistAsync(dbContext, member);
         var handler = new UnlinkExternalIdentityCommandHandler(
             repository,
-            new FakePasswordHashingService(),
+            CreatePasswordProofService(),
             new FakeClock(),
             new RandomIdGenerator(),
             Options.Create(new AuthApplicationOptions()));
@@ -195,6 +196,9 @@ public sealed class AuthenticationMethodHandlerTests
         Guid.NewGuid(),
         Now).Value;
 
+    private static PasswordProofService CreatePasswordProofService() =>
+        new(new FakePasswordHashingService(), new AllowAllAttemptLimiter());
+
     private sealed class FakePasswordHashingService : IPasswordHashingService
     {
         public string HashPassword(string password) => $"hash:{password}";
@@ -209,6 +213,29 @@ public sealed class AuthenticationMethodHandlerTests
     {
         public ValueTask<bool> IsBlockedAsync(string password, CancellationToken cancellationToken) =>
             ValueTask.FromResult(false);
+    }
+
+    private sealed class AllowAllAttemptLimiter : IAuthenticationAttemptLimiter
+    {
+        public ValueTask<bool> IsAllowedAsync(
+            string scopeId,
+            string purpose,
+            string target,
+            DateTimeOffset nowUtc,
+            CancellationToken cancellationToken) => ValueTask.FromResult(true);
+
+        public ValueTask RecordFailureAsync(
+            string scopeId,
+            string purpose,
+            string target,
+            DateTimeOffset nowUtc,
+            CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        public ValueTask RecordSuccessAsync(
+            string scopeId,
+            string purpose,
+            string target,
+            CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
 
     private sealed class FakeClock : ISystemClock

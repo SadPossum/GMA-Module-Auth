@@ -54,7 +54,7 @@ internal sealed class RegenerateMultiFactorRecoveryCodesCommandHandler(
         }
 
         DateTimeOffset nowUtc = this.Clock.UtcNow;
-        string limiterKey = $"member:{command.MemberId:D}:mfa-management";
+        string limiterTarget = command.MemberId.ToString("D", System.Globalization.CultureInfo.InvariantCulture);
         int recentFailureCount = await failureAttemptRepository.CountSinceAsync(
             memberId,
             MemberMultiFactorFailureAttempt.ManagementPurpose,
@@ -65,7 +65,12 @@ internal sealed class RegenerateMultiFactorRecoveryCodesCommandHandler(
             return Result.Success(MultiFactorRecoveryCodeRegenerationCompletion.Invalid);
         }
 
-        if (!attemptLimiter.IsAllowed(member.ScopeId, limiterKey, nowUtc))
+        if (!await attemptLimiter.IsAllowedAsync(
+                member.ScopeId,
+                AuthenticationAttemptPurposes.MultiFactorManagement,
+                limiterTarget,
+                nowUtc,
+                cancellationToken).ConfigureAwait(false))
         {
             return Result.Success(MultiFactorRecoveryCodeRegenerationCompletion.Invalid);
         }
@@ -83,7 +88,12 @@ internal sealed class RegenerateMultiFactorRecoveryCodesCommandHandler(
                 return Result.Failure<MultiFactorRecoveryCodeRegenerationCompletion>(factor.Error);
             }
 
-            attemptLimiter.RecordFailure(member.ScopeId, limiterKey, nowUtc);
+            await attemptLimiter.RecordFailureAsync(
+                member.ScopeId,
+                AuthenticationAttemptPurposes.MultiFactorManagement,
+                limiterTarget,
+                nowUtc,
+                cancellationToken).ConfigureAwait(false);
             Result<MemberMultiFactorFailureAttempt> failedAttempt = MemberMultiFactorFailureAttempt.Create(
                 new MemberMultiFactorFailureAttemptId(this.IdGenerator.NewId()),
                 memberId,
@@ -122,7 +132,11 @@ internal sealed class RegenerateMultiFactorRecoveryCodesCommandHandler(
             return Result.Failure<MultiFactorRecoveryCodeRegenerationCompletion>(reauthenticated.Error);
         }
 
-        attemptLimiter.RecordSuccess(member.ScopeId, limiterKey);
+        await attemptLimiter.RecordSuccessAsync(
+            member.ScopeId,
+            AuthenticationAttemptPurposes.MultiFactorManagement,
+            limiterTarget,
+            cancellationToken).ConfigureAwait(false);
         return Result.Success(MultiFactorRecoveryCodeRegenerationCompletion.Completed(
             new MultiFactorRecoveryCodesResponse(
                 this.CreateAccessToken(member, reauthenticated.Value),

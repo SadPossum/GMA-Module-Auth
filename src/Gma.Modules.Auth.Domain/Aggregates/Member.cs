@@ -1,13 +1,13 @@
 namespace Gma.Modules.Auth.Domain.Aggregates;
 
+using Gma.Framework.Domain.Models;
 using Gma.Framework.Naming;
+using Gma.Framework.Results;
 using Gma.Modules.Auth.Domain.Entities;
 using Gma.Modules.Auth.Domain.Enums;
 using Gma.Modules.Auth.Domain.Errors;
 using Gma.Modules.Auth.Domain.Events;
 using Gma.Modules.Auth.Domain.ValueObjects;
-using Gma.Framework.Domain.Models;
-using Gma.Framework.Results;
 
 public sealed class Member : ScopedAggregateRoot<MemberId>
 {
@@ -201,12 +201,18 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
         DateTimeOffset refreshTokenExpiresAtUtc,
         DateTimeOffset nowUtc,
         string authenticationMethod = MemberAuthenticationMethods.Password,
-        SessionAuthenticationEvidence? authenticationEvidence = null)
+        SessionAuthenticationEvidence? authenticationEvidence = null,
+        int maximumActiveSessions = int.MaxValue)
     {
         Result statusResult = this.EnsureCanAuthenticate();
         if (statusResult.IsFailure)
         {
             return Result.Failure<MemberSession>(statusResult.Error);
+        }
+
+        if (maximumActiveSessions < 1)
+        {
+            return Result.Failure<MemberSession>(AuthDomainErrors.SessionLimitInvalid);
         }
 
         Result<MemberSession> sessionResult = MemberSession.Create(
@@ -226,6 +232,23 @@ public sealed class Member : ScopedAggregateRoot<MemberId>
 
         MemberSession session = sessionResult.Value;
         this.sessions.Add(session);
+        int excessSessionCount = Math.Max(
+            0,
+            this.sessions.Count(item => item.IsActive && item.RefreshTokenExpiresAtUtc > nowUtc) -
+            maximumActiveSessions);
+        MemberSession[] excessSessions = [.. this.sessions
+            .Where(item =>
+                item.Id != session.Id &&
+                item.IsActive &&
+                item.RefreshTokenExpiresAtUtc > nowUtc)
+            .OrderBy(item => item.LoginDateTimeUtc)
+            .ThenBy(item => item.Id.Value)
+            .Take(excessSessionCount)];
+        foreach (MemberSession excessSession in excessSessions)
+        {
+            _ = excessSession.SignOut(nowUtc);
+        }
+
         this.Touch();
 
         return Result.Success(session);

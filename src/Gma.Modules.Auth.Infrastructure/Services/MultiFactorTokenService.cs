@@ -4,20 +4,21 @@ using System.Security.Cryptography;
 using Gma.Modules.Auth.Domain.Services;
 
 internal sealed class MultiFactorTokenService(
-    ITokenService tokenService,
-    IRefreshTokenHashingService hashingService)
+    IAuthOneTimeTokenService tokenService)
     : IMultiFactorTokenService
 {
     private const int RecoveryCodeByteLength = 16;
 
     public MultiFactorTokenMaterial GenerateChallengeToken()
     {
-        string plaintext = tokenService.GenerateRefreshToken();
-        return new MultiFactorTokenMaterial(plaintext, hashingService.HashRefreshToken(plaintext));
+        string plaintext = tokenService.GenerateToken();
+        return new MultiFactorTokenMaterial(
+            plaintext,
+            tokenService.HashToken(AuthOneTimeTokenPurpose.MultiFactorChallenge, plaintext));
     }
 
     public IReadOnlyList<string> GetCandidateChallengeTokenHashes(string token) =>
-        hashingService.GetCandidateHashes(token.Trim());
+        tokenService.GetCandidateHashes(AuthOneTimeTokenPurpose.MultiFactorChallenge, token.Trim());
 
     public IReadOnlyList<RecoveryCodeMaterial> GenerateRecoveryCodes(int count)
     {
@@ -28,14 +29,18 @@ internal sealed class MultiFactorTokenService(
         {
             string normalized = Convert.ToHexString(RandomNumberGenerator.GetBytes(RecoveryCodeByteLength));
             string plaintext = string.Join('-', Enumerable.Range(0, 4).Select(part => normalized.Substring(part * 8, 8)));
-            codes.Add(new RecoveryCodeMaterial(plaintext, hashingService.HashRefreshToken(normalized)));
+            codes.Add(new RecoveryCodeMaterial(
+                plaintext,
+                tokenService.HashToken(AuthOneTimeTokenPurpose.MultiFactorRecoveryCode, normalized)));
         }
 
         return codes;
     }
 
     public IReadOnlyList<string> GetCandidateRecoveryCodeHashes(string code) =>
-        hashingService.GetCandidateHashes(NormalizeRecoveryCode(code));
+        tokenService.GetCandidateHashes(
+            AuthOneTimeTokenPurpose.MultiFactorRecoveryCode,
+            NormalizeRecoveryCode(code));
 
     private static string NormalizeRecoveryCode(string code) =>
         new string(code.Where(character => character != '-' && !char.IsWhiteSpace(character)).ToArray())

@@ -2,7 +2,23 @@ namespace Gma.Modules.Auth.Application.Security;
 
 public interface IAuthenticationAttemptLimiter
 {
-    bool IsAllowed(string scopeId, string username, DateTimeOffset nowUtc);
-    void RecordFailure(string scopeId, string username, DateTimeOffset nowUtc);
-    void RecordSuccess(string scopeId, string username);
+    ValueTask<bool> IsAllowedAsync(
+        string scopeId,
+        string purpose,
+        string target,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken);
+
+    ValueTask RecordFailureAsync(
+        string scopeId,
+        string purpose,
+        string target,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken);
+
+    ValueTask RecordSuccessAsync(
+        string scopeId,
+        string purpose,
+        string target,
+        CancellationToken cancellationToken);
 }

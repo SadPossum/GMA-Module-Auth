@@ -63,6 +63,7 @@ internal sealed class AuthRetentionService(
         DateTimeOffset expiredEnrollmentCutoffUtc = nowUtc.AddHours(-settings.ExpiredTotpEnrollmentHistoryHours);
         DateTimeOffset disabledAuthenticatorCutoffUtc = nowUtc.AddDays(-settings.DisabledTotpAuthenticatorHistoryDays);
         DateTimeOffset multiFactorFailureCutoffUtc = nowUtc.AddHours(-settings.MultiFactorFailureHistoryHours);
+        DateTimeOffset authenticationFailureCutoffUtc = nowUtc.AddHours(-settings.AuthenticationFailureHistoryHours);
         IExternalAuthenticationExchangeStore exchangeStore = scope.ServiceProvider
             .GetRequiredService<IExternalAuthenticationExchangeStore>();
         AuthDbContext dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
@@ -124,18 +125,30 @@ internal sealed class AuthRetentionService(
                     token),
                 cancellationToken)
             .ConfigureAwait(false);
+        int authenticationFailureCount = await BoundedBatchProcessor.ExecuteAsync(
+                settings.BatchSize,
+                settings.MaxBatchesPerCategoryPerCycle,
+                (batchSize, token) => DeleteAuthenticationFailuresBatchAsync(
+                    dbContext,
+                    authenticationFailureCutoffUtc,
+                    batchSize,
+                    token),
+                cancellationToken)
+            .ConfigureAwait(false);
 
         if (exchangeCount > 0 || sessionCount > 0 || recoveryCount > 0 ||
-            authenticationChallengeCount > 0 || authenticatorCount > 0 || multiFactorFailureCount > 0)
+            authenticationChallengeCount > 0 || authenticatorCount > 0 || multiFactorFailureCount > 0 ||
+            authenticationFailureCount > 0)
         {
             logger.LogInformation(
-                "Auth retention removed {ExchangeCount} external authentication exchanges, {SessionCount} sessions, {RecoveryCount} password recovery challenges, {AuthenticationChallengeCount} authentication challenges, {AuthenticatorCount} TOTP authenticators, and {MultiFactorFailureCount} multi-factor failures.",
+                "Auth retention removed {ExchangeCount} external authentication exchanges, {SessionCount} sessions, {RecoveryCount} password recovery challenges, {AuthenticationChallengeCount} authentication challenges, {AuthenticatorCount} TOTP authenticators, {MultiFactorFailureCount} multi-factor failures, and {AuthenticationFailureCount} credential failures.",
                 exchangeCount,
                 sessionCount,
                 recoveryCount,
                 authenticationChallengeCount,
                 authenticatorCount,
-                multiFactorFailureCount);
+                multiFactorFailureCount,
+                authenticationFailureCount);
         }
     }
 
@@ -297,6 +310,33 @@ internal sealed class AuthRetentionService(
         }
 
         return await dbContext.MemberMultiFactorFailureAttempts
+            .IgnoreQueryFilters()
+            .Where(attempt => attemptIds.Contains(attempt.Id))
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<int> DeleteAuthenticationFailuresBatchAsync(
+        AuthDbContext dbContext,
+        DateTimeOffset cutoffUtc,
+        int batchSize,
+        CancellationToken cancellationToken)
+    {
+        Guid[] attemptIds = await dbContext.AuthenticationFailureAttempts
+            .IgnoreQueryFilters()
+            .Where(attempt => attempt.FailedAtUtc <= cutoffUtc)
+            .OrderBy(attempt => attempt.FailedAtUtc)
+            .Select(attempt => attempt.Id)
+            .Take(batchSize)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (attemptIds.Length == 0)
+        {
+            return 0;
+        }
+
+        return await dbContext.AuthenticationFailureAttempts
             .IgnoreQueryFilters()
             .Where(attempt => attemptIds.Contains(attempt.Id))
             .ExecuteDeleteAsync(cancellationToken)

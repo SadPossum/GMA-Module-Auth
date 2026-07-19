@@ -2,8 +2,8 @@ namespace Gma.Modules.Auth.Application.Handlers;
 
 using Gma.Framework.Cqrs;
 using Gma.Framework.Results;
-using Gma.Framework.Runtime.Time;
 using Gma.Framework.Runtime.Identity;
+using Gma.Framework.Runtime.Time;
 using Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Domain.Aggregates;
@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 
 internal sealed class RemoveMemberPasswordCommandHandler(
     IMemberRepository memberRepository,
-    IPasswordHashingService passwordHashingService,
+    PasswordProofService passwordProofService,
     ISystemClock clock,
     IIdGenerator idGenerator,
     IOptions<AuthApplicationOptions> options)
@@ -43,13 +43,17 @@ internal sealed class RemoveMemberPasswordCommandHandler(
             return Result.Failure<Unit>(freshSession.Error);
         }
 
-        Result password = MemberSecurityAuthorization.RequirePassword(
-            member,
+        PasswordVerificationOutcome password = await passwordProofService.VerifyAsync(
+            member.ScopeId,
+            AuthenticationAttemptPurposes.PasswordRemoval,
+            command.MemberId.ToString("D", System.Globalization.CultureInfo.InvariantCulture),
+            member.PasswordHash,
             command.CurrentPassword,
-            passwordHashingService);
-        if (password.IsFailure)
+            clock.UtcNow,
+            cancellationToken).ConfigureAwait(false);
+        if (password == PasswordVerificationOutcome.Unknown)
         {
-            return Result.Failure<Unit>(password.Error);
+            return Result.Failure<Unit>(AuthDomainErrors.CredentialsNotValid);
         }
 
         Result result = member.RemovePassword();

@@ -10,7 +10,7 @@ using Gma.Modules.Auth.Domain.Services;
 
 internal sealed class ConfirmEmailVerificationCommandHandler(
     IMemberRepository memberRepository,
-    IRefreshTokenHashingService tokenHashingService,
+    IAuthOneTimeTokenService tokenService,
     ISystemClock clock,
     IIdGenerator idGenerator)
     : ICommandHandler<ConfirmEmailVerificationCommand, Unit>
@@ -19,7 +19,9 @@ internal sealed class ConfirmEmailVerificationCommandHandler(
         ConfirmEmailVerificationCommand command,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<string> candidateHashes = tokenHashingService.GetCandidateHashes(command.Code.Trim());
+        IReadOnlyList<string> candidateHashes = tokenService.GetCandidateHashes(
+            AuthOneTimeTokenPurpose.EmailVerification,
+            command.Code.Trim());
         EmailVerificationTarget? target = await memberRepository
             .GetByEmailVerificationTokenHashesAsync(candidateHashes, cancellationToken)
             .ConfigureAwait(false);

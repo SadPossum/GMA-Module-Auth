@@ -2,8 +2,8 @@ namespace Gma.Modules.Auth.Application.Handlers;
 
 using Gma.Framework.Cqrs;
 using Gma.Framework.Results;
-using Gma.Framework.Runtime.Time;
 using Gma.Framework.Runtime.Identity;
+using Gma.Framework.Runtime.Time;
 using Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Domain.Aggregates;
@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 
 internal sealed class UnlinkExternalIdentityCommandHandler(
     IMemberRepository memberRepository,
-    IPasswordHashingService passwordHashingService,
+    PasswordProofService passwordProofService,
     ISystemClock clock,
     IIdGenerator idGenerator,
     IOptions<AuthApplicationOptions> options)
@@ -55,11 +55,15 @@ internal sealed class UnlinkExternalIdentityCommandHandler(
                 MemberAuthenticationMethods.External(identity.ProviderCode),
                 StringComparison.Ordinal))
         {
-            Result password = MemberSecurityAuthorization.RequirePassword(
-                member,
-                command.CurrentPassword,
-                passwordHashingService);
-            if (password.IsFailure)
+            PasswordVerificationOutcome password = await passwordProofService.VerifyAsync(
+                member.ScopeId,
+                AuthenticationAttemptPurposes.ExternalIdentityUnlink,
+                command.MemberId.ToString("D", System.Globalization.CultureInfo.InvariantCulture),
+                member.PasswordHash,
+                command.CurrentPassword ?? string.Empty,
+                clock.UtcNow,
+                cancellationToken).ConfigureAwait(false);
+            if (password == PasswordVerificationOutcome.Unknown)
             {
                 return Result.Failure<Unit>(AuthApplicationErrors.AlternateAuthenticationRequired);
             }
