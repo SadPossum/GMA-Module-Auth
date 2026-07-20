@@ -5,4 +5,5 @@ public sealed record AuthenticationSessionResponse(
     string AuthenticationMethod,
     DateTimeOffset LoginDateTimeUtc,
     DateTimeOffset RefreshTokenExpiresAtUtc,
+    DateTimeOffset AbsoluteExpiresAtUtc,
     bool IsCurrent);

@@ -12,11 +12,11 @@ public sealed class PasswordProofServiceTests
     private static readonly DateTimeOffset Now = new(2026, 7, 19, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task Missing_password_hash_performs_password_work_and_records_failure()
+    public async Task Missing_password_hash_performs_password_work_and_retains_the_attempt()
     {
         var hashingService = new RecordingPasswordHashingService();
         var limiter = new RecordingAttemptLimiter();
-        var service = new PasswordProofService(hashingService, limiter);
+        var service = CreateService(hashingService, limiter);
 
         PasswordVerificationOutcome outcome = await service.VerifyAsync(
             "tenant-a",
@@ -30,7 +30,7 @@ public sealed class PasswordProofServiceTests
         Assert.Equal(PasswordVerificationOutcome.Unknown, outcome);
         Assert.Equal("candidate-password", hashingService.HashedPassword);
         Assert.Null(hashingService.VerifiedHash);
-        Assert.Equal(1, limiter.FailureCount);
+        Assert.Equal(1, limiter.AcquisitionCount);
         Assert.Equal(0, limiter.SuccessCount);
     }
 
@@ -42,7 +42,7 @@ public sealed class PasswordProofServiceTests
             VerificationOutcome = PasswordVerificationOutcome.Success,
         };
         var limiter = new RecordingAttemptLimiter();
-        var service = new PasswordProofService(hashingService, limiter);
+        var service = CreateService(hashingService, limiter);
 
         PasswordVerificationOutcome outcome = await service.VerifyAsync(
             "tenant-a",
@@ -55,58 +55,161 @@ public sealed class PasswordProofServiceTests
 
         Assert.Equal(PasswordVerificationOutcome.Success, outcome);
         Assert.Equal("password-hash", hashingService.VerifiedHash);
-        Assert.Equal(0, limiter.FailureCount);
+        Assert.Equal(1, limiter.AcquisitionCount);
         Assert.Equal(1, limiter.SuccessCount);
     }
 
     [Fact]
     public async Task Process_local_fallback_partitions_failures_and_expires_the_window()
     {
-        var limiter = new ProcessLocalAuthenticationAttemptLimiter(Options.Create(new AuthApplicationOptions
-        {
-            FailedLoginLimit = 2,
-            FailedLoginWindowMinutes = 15,
-        }));
+        var limiter = new ProcessLocalAuthenticationAttemptLimiter();
+        AuthenticationAttemptPolicy policy = new(2, TimeSpan.FromMinutes(15));
 
-        await limiter.RecordFailureAsync("tenant-a", "login", "member@example.com", Now, CancellationToken.None);
-        await limiter.RecordFailureAsync("tenant-a", "login", "MEMBER@example.com", Now, CancellationToken.None);
+        Assert.NotNull(await AcquireAsync(limiter, "tenant-a", "login", "member@example.com", Now, policy));
+        Assert.NotNull(await AcquireAsync(limiter, "tenant-a", "login", "MEMBER@example.com", Now, policy));
 
-        Assert.False(await limiter.IsAllowedAsync(
-            "tenant-a", "login", "member@example.com", Now, CancellationToken.None));
-        Assert.True(await limiter.IsAllowedAsync(
-            "tenant-a", "step-up", "member@example.com", Now, CancellationToken.None));
-        Assert.True(await limiter.IsAllowedAsync(
-            "tenant-b", "login", "member@example.com", Now, CancellationToken.None));
-        Assert.True(await limiter.IsAllowedAsync(
-            "tenant-a", "login", "other@example.com", Now, CancellationToken.None));
-        Assert.True(await limiter.IsAllowedAsync(
-            "tenant-a", "login", "member@example.com", Now.AddMinutes(15), CancellationToken.None));
+        Assert.Null(await AcquireAsync(limiter, "tenant-a", "login", "member@example.com", Now, policy));
+        Assert.NotNull(await AcquireAsync(limiter, "tenant-a", "step-up", "member@example.com", Now, policy));
+        Assert.NotNull(await AcquireAsync(limiter, "tenant-b", "login", "member@example.com", Now, policy));
+        Assert.NotNull(await AcquireAsync(limiter, "tenant-a", "login", "other@example.com", Now, policy));
+        Assert.NotNull(await AcquireAsync(
+            limiter, "tenant-a", "login", "member@example.com", Now.AddMinutes(15), policy));
     }
 
     [Fact]
     public async Task Process_local_fallback_uses_a_bounded_sliding_window()
     {
-        var limiter = new ProcessLocalAuthenticationAttemptLimiter(Options.Create(new AuthApplicationOptions
-        {
-            FailedLoginLimit = 2,
-            FailedLoginWindowMinutes = 15,
-        }));
+        var limiter = new ProcessLocalAuthenticationAttemptLimiter();
+        AuthenticationAttemptPolicy policy = new(2, TimeSpan.FromMinutes(15));
 
-        await limiter.RecordFailureAsync(
-            "tenant-a", "login", "member@example.com", Now, CancellationToken.None);
-        await limiter.RecordFailureAsync(
-            "tenant-a", "login", "member@example.com", Now.AddMinutes(14), CancellationToken.None);
-        Assert.True(await limiter.IsAllowedAsync(
-            "tenant-a", "login", "member@example.com", Now.AddMinutes(15), CancellationToken.None));
+        Assert.NotNull(await AcquireAsync(limiter, "tenant-a", "login", "member@example.com", Now, policy));
+        Assert.NotNull(await AcquireAsync(
+            limiter, "tenant-a", "login", "member@example.com", Now.AddMinutes(14), policy));
+        Assert.NotNull(await AcquireAsync(
+            limiter, "tenant-a", "login", "member@example.com", Now.AddMinutes(15), policy));
 
-        await limiter.RecordFailureAsync(
-            "tenant-a", "login", "member@example.com", Now.AddMinutes(15), CancellationToken.None);
-
-        Assert.False(await limiter.IsAllowedAsync(
-            "tenant-a", "login", "member@example.com", Now.AddMinutes(16), CancellationToken.None));
-        Assert.True(await limiter.IsAllowedAsync(
-            "tenant-a", "login", "member@example.com", Now.AddMinutes(30), CancellationToken.None));
+        Assert.Null(await AcquireAsync(
+            limiter, "tenant-a", "login", "member@example.com", Now.AddMinutes(16), policy));
+        Assert.NotNull(await AcquireAsync(
+            limiter, "tenant-a", "login", "member@example.com", Now.AddMinutes(30), policy));
     }
+
+    [Fact]
+    public async Task Process_local_fallback_caps_concurrent_acquisitions_atomically()
+    {
+        var limiter = new ProcessLocalAuthenticationAttemptLimiter();
+        AuthenticationAttemptPolicy policy = new(5, TimeSpan.FromMinutes(15));
+
+        AuthenticationAttemptLease?[] leases = await Task.WhenAll(
+            Enumerable.Range(0, 32)
+                .Select(_ => AcquireAsync(limiter, "tenant-a", "login", "member@example.com", Now, policy)));
+
+        Assert.Equal(5, leases.Count(lease => lease is not null));
+    }
+
+    [Fact]
+    public async Task Process_local_fallback_bounds_partitions_and_recovers_after_expiry()
+    {
+        var limiter = new ProcessLocalAuthenticationAttemptLimiter(maximumPartitions: 2);
+        AuthenticationAttemptPolicy policy = new(2, TimeSpan.FromMinutes(15));
+
+        Assert.NotNull(await AcquireAsync(limiter, "tenant-a", "login", "first@example.com", Now, policy));
+        Assert.NotNull(await AcquireAsync(limiter, "tenant-a", "login", "second@example.com", Now, policy));
+        Assert.Null(await AcquireAsync(limiter, "tenant-a", "login", "third@example.com", Now, policy));
+        Assert.Equal(2, limiter.PartitionCount);
+
+        Assert.NotNull(await AcquireAsync(
+            limiter,
+            "tenant-a",
+            "login",
+            "third@example.com",
+            Now.AddMinutes(15),
+            policy));
+        Assert.Equal(1, limiter.PartitionCount);
+    }
+
+    [Fact]
+    public void Attempt_policy_rejects_unbounded_values()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new AuthenticationAttemptPolicy(AuthenticationAttemptPolicy.MaximumSupportedAttempts + 1, TimeSpan.FromMinutes(1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new AuthenticationAttemptPolicy(1, AuthenticationAttemptPolicy.MaximumSupportedWindow.Add(TimeSpan.FromTicks(1))));
+    }
+
+    [Theory]
+    [InlineData(" ", "login", "member@example.com")]
+    [InlineData("tenant-a", " ", "member@example.com")]
+    [InlineData("tenant-a", "login", " ")]
+    [InlineData("tenant-a", "bad\npurpose", "member@example.com")]
+    public async Task Process_local_fallback_rejects_invalid_partitions(
+        string scopeId,
+        string purpose,
+        string target)
+    {
+        var limiter = new ProcessLocalAuthenticationAttemptLimiter();
+
+        await Assert.ThrowsAnyAsync<ArgumentException>(() =>
+            AcquireAsync(
+                limiter,
+                scopeId,
+                purpose,
+                target,
+                Now,
+                new AuthenticationAttemptPolicy(1, TimeSpan.FromMinutes(1))));
+    }
+
+    [Fact]
+    public async Task Successful_attempt_clears_itself_and_older_attempts_but_not_later_attempts()
+    {
+        var limiter = new ProcessLocalAuthenticationAttemptLimiter();
+        AuthenticationAttemptPolicy policy = new(2, TimeSpan.FromMinutes(15));
+        AuthenticationAttemptLease older = Assert.IsType<AuthenticationAttemptLease>(
+            await AcquireAsync(limiter, "tenant-a", "login", "member@example.com", Now, policy));
+        AuthenticationAttemptLease later = Assert.IsType<AuthenticationAttemptLease>(
+            await AcquireAsync(limiter, "tenant-a", "login", "member@example.com", Now.AddSeconds(1), policy));
+
+        await limiter.RecordSuccessAsync(
+            "tenant-a", "login", "member@example.com", older, CancellationToken.None);
+
+        Assert.Null(await AcquireAsync(
+            limiter,
+            "tenant-a",
+            "login",
+            "member@example.com",
+            Now.AddSeconds(2),
+            new AuthenticationAttemptPolicy(1, TimeSpan.FromMinutes(15))));
+
+        await limiter.RecordSuccessAsync(
+            "tenant-a", "login", "member@example.com", later, CancellationToken.None);
+        Assert.NotNull(await AcquireAsync(
+            limiter,
+            "tenant-a",
+            "login",
+            "member@example.com",
+            Now.AddSeconds(3),
+            new AuthenticationAttemptPolicy(1, TimeSpan.FromMinutes(15))));
+    }
+
+    private static PasswordProofService CreateService(
+        IPasswordHashingService hashingService,
+        IAuthenticationAttemptLimiter limiter) =>
+        new(hashingService, limiter, Options.Create(new AuthApplicationOptions()));
+
+    private static async Task<AuthenticationAttemptLease?> AcquireAsync(
+        ProcessLocalAuthenticationAttemptLimiter limiter,
+        string scopeId,
+        string purpose,
+        string target,
+        DateTimeOffset nowUtc,
+        AuthenticationAttemptPolicy policy) =>
+        await limiter.TryAcquireAsync(
+            scopeId,
+            purpose,
+            target,
+            nowUtc,
+            policy,
+            CancellationToken.None);
 
     private sealed class RecordingPasswordHashingService : IPasswordHashingService
     {
@@ -129,31 +232,26 @@ public sealed class PasswordProofServiceTests
 
     private sealed class RecordingAttemptLimiter : IAuthenticationAttemptLimiter
     {
-        public int FailureCount { get; private set; }
+        public int AcquisitionCount { get; private set; }
         public int SuccessCount { get; private set; }
 
-        public ValueTask<bool> IsAllowedAsync(
+        public ValueTask<AuthenticationAttemptLease?> TryAcquireAsync(
             string scopeId,
             string purpose,
             string target,
             DateTimeOffset nowUtc,
-            CancellationToken cancellationToken) => ValueTask.FromResult(true);
-
-        public ValueTask RecordFailureAsync(
-            string scopeId,
-            string purpose,
-            string target,
-            DateTimeOffset nowUtc,
+            AuthenticationAttemptPolicy policy,
             CancellationToken cancellationToken)
         {
-            this.FailureCount++;
-            return ValueTask.CompletedTask;
+            this.AcquisitionCount++;
+            return ValueTask.FromResult<AuthenticationAttemptLease?>(new AuthenticationAttemptLease(Guid.NewGuid(), nowUtc));
         }
 
         public ValueTask RecordSuccessAsync(
             string scopeId,
             string purpose,
             string target,
+            AuthenticationAttemptLease lease,
             CancellationToken cancellationToken)
         {
             this.SuccessCount++;

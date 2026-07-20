@@ -7,4 +7,4 @@ public sealed record ActivateTotpCommand(
     Guid MemberId,
     Guid SessionId,
     string Code,
-    string RefreshToken) : ITransactionalCommand<TotpActivationResponse>;
+    string RefreshToken) : ITransactionalCommand<RefreshTokenBoundCompletion<TotpActivationResponse>>;

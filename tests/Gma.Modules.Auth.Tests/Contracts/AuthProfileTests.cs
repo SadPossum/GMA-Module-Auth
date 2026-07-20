@@ -130,13 +130,11 @@ public sealed class AuthProfileTests
     }
 
     [Fact]
-    public void Administrative_multi_factor_reset_has_a_dedicated_scoped_permission()
+    public void Administrative_permissions_support_the_selected_global_or_scope_aware_profile()
     {
-        ModulePermissionDescriptor permission = Assert.Single(
+        Assert.All(
             AuthModuleMetadata.Descriptor.GetPermissions(),
-            item => string.Equals(item.Code, AuthAdminPermissionCodes.MembersResetMultiFactor, StringComparison.Ordinal));
-
-        Assert.Equal(PermissionScopeRequirement.Scoped, permission.ScopeRequirement);
+            permission => Assert.Equal(PermissionScopeRequirement.GlobalOrScoped, permission.ScopeRequirement));
     }
 
     private static ModuleProfileDescriptor CreateScopeContextProfile() => new(

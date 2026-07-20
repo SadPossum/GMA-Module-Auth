@@ -126,7 +126,9 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
                 MultiFactorChallenge: challenge.Value.Challenge));
         }
 
-        var tokens = this.CreateSessionTokens(TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
+        var tokens = this.CreateSessionTokens(
+            TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays),
+            TimeSpan.FromDays(options.Value.SessionAbsoluteLifetimeDays));
         Result<MemberSession> session = member.StartSession(
             tokens.SessionId,
             tokens.RefreshTokenHash,
@@ -134,7 +136,8 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
             this.Clock.UtcNow,
             primaryAuthenticationMethod,
             primaryEvidence,
-            options.Value.MaximumActiveSessionsPerMember);
+            options.Value.MaximumActiveSessionsPerMember,
+            tokens.AbsoluteExpiresAtUtc);
         if (session.IsFailure)
         {
             return Result.Failure<ExternalAuthenticationResponse>(session.Error);
@@ -219,10 +222,13 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
             return Result.Failure<ExternalAuthenticationResponse>(AuthApplicationErrors.MemberNotFound);
         }
 
-        MemberSessionId sessionId = new(exchange.TargetSessionId.Value);
-        MemberSession? session = member.Sessions.FirstOrDefault(item => item.Id == sessionId && item.IsActive);
-        DateTimeOffset freshnessCutoff = this.Clock.UtcNow.AddMinutes(-options.Value.ExternalLinkSessionFreshnessMinutes);
-        if (session is null || session.LoginDateTimeUtc < freshnessCutoff)
+        TimeSpan freshness = TimeSpan.FromMinutes(options.Value.ExternalLinkSessionFreshnessMinutes);
+        Result<MemberSession> freshSession = MemberSecurityAuthorization.RequireFreshSession(
+            member,
+            exchange.TargetSessionId.Value,
+            this.Clock.UtcNow,
+            freshness);
+        if (freshSession.IsFailure)
         {
             return Result.Failure<ExternalAuthenticationResponse>(AuthApplicationErrors.FreshAuthenticationRequired);
         }
@@ -230,6 +236,17 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
         Member? existingOwner = await memberRepository
             .GetByExternalIdentityAsync(exchange.Issuer, exchange.Subject, cancellationToken)
             .ConfigureAwait(false);
+        DateTimeOffset nowUtc = this.Clock.UtcNow;
+        freshSession = MemberSecurityAuthorization.RequireFreshSession(
+            member,
+            exchange.TargetSessionId.Value,
+            nowUtc,
+            freshness);
+        if (freshSession.IsFailure)
+        {
+            return Result.Failure<ExternalAuthenticationResponse>(AuthApplicationErrors.FreshAuthenticationRequired);
+        }
+
         if (existingOwner is not null)
         {
             MemberExternalIdentity existingIdentity = existingOwner.ExternalIdentities.Single(item =>
@@ -247,7 +264,7 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
             exchange.ProviderCode,
             exchange.Issuer,
             exchange.Subject,
-            this.Clock.UtcNow);
+            nowUtc);
         if (linked.IsFailure)
         {
             return Result.Failure<ExternalAuthenticationResponse>(linked.Error);
@@ -257,7 +274,7 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
             MemberAuthenticationMethods.External(linked.Value.ProviderCode),
             MemberAuthenticationMethodChange.Added,
             this.IdGenerator.NewId(),
-            this.Clock.UtcNow);
+            nowUtc);
         return changed.IsSuccess
             ? Result.Success(new ExternalAuthenticationResponse(
                 ExternalAuthenticationStatus.Linked,

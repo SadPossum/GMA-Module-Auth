@@ -55,6 +55,9 @@ public sealed record SessionAuthenticationEvidence
         DateTimeOffset authenticatedAtUtc)
     {
         ArgumentNullException.ThrowIfNull(primaryEvidence);
+        DateTimeOffset effectiveAuthenticatedAtUtc = authenticatedAtUtc < primaryEvidence.AuthenticatedAtUtc
+            ? primaryEvidence.AuthenticatedAtUtc
+            : authenticatedAtUtc;
 
         bool passwordPrimary = string.Equals(
             primaryEvidence.ContextReference,
@@ -69,7 +72,7 @@ public sealed record SessionAuthenticationEvidence
             methods.Add(AuthenticationMethodReferences.MultiFactor);
         }
 
-        return new SessionAuthenticationEvidence(contextReference, methods, authenticatedAtUtc);
+        return new SessionAuthenticationEvidence(contextReference, methods, effectiveAuthenticatedAtUtc);
     }
 
     private static ReadOnlyCollection<string> NormalizeMethodReferences(IEnumerable<string> methodReferences)

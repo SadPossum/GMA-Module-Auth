@@ -15,13 +15,13 @@ public static class AuthModuleMetadata
         .WithSchema(Schema)
         .WithProfiles([AuthProfile.Global().Descriptor, AuthProfile.ScopeAware().Descriptor])
         .WithPermissions([
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersRead, "Read Auth members.", scopeRequirement: PermissionScopeRequirement.Scoped),
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersCreate, "Create Auth members.", scopeRequirement: PermissionScopeRequirement.Scoped),
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersDisable, "Disable Auth members.", scopeRequirement: PermissionScopeRequirement.Scoped),
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersEnable, "Enable Auth members.", scopeRequirement: PermissionScopeRequirement.Scoped),
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersResetPassword, "Reset Auth member passwords.", scopeRequirement: PermissionScopeRequirement.Scoped),
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersResetMultiFactor, "Reset Auth member multi-factor authentication.", scopeRequirement: PermissionScopeRequirement.Scoped),
-            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersRevokeSessions, "Revoke Auth member sessions.", scopeRequirement: PermissionScopeRequirement.Scoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersRead, "Read Auth members.", scopeRequirement: PermissionScopeRequirement.GlobalOrScoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersCreate, "Create Auth members.", scopeRequirement: PermissionScopeRequirement.GlobalOrScoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersDisable, "Disable Auth members.", scopeRequirement: PermissionScopeRequirement.GlobalOrScoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersEnable, "Enable Auth members.", scopeRequirement: PermissionScopeRequirement.GlobalOrScoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersResetPassword, "Reset Auth member passwords.", scopeRequirement: PermissionScopeRequirement.GlobalOrScoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersResetMultiFactor, "Reset Auth member multi-factor authentication.", scopeRequirement: PermissionScopeRequirement.GlobalOrScoped),
+            new ModulePermissionDescriptor(AuthAdminPermissionCodes.MembersRevokeSessions, "Revoke Auth member sessions.", scopeRequirement: PermissionScopeRequirement.GlobalOrScoped),
         ])
         .WithPublishedEvent<MemberRegisteredIntegrationEvent>()
         .WithPublishedEvent<MemberDisabledIntegrationEvent>()

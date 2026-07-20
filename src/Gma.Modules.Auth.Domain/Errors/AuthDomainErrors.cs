@@ -89,6 +89,12 @@ public static class AuthDomainErrors
     public static readonly Error SessionLimitInvalid = new(
         "Auth.SessionLimitInvalid",
         "Maximum active session count is invalid.");
+    public static readonly Error SessionLifetimeInvalid = new(
+        "Auth.SessionLifetimeInvalid",
+        "Maximum session lifetime is invalid.");
+    public static readonly Error AuthenticationEvidenceNotValid = new(
+        "Auth.AuthenticationEvidenceNotValid",
+        "Authentication evidence is not valid for the session timeline.");
     public static readonly Error RefreshTokenInvalid = new("Auth.RefreshTokenInvalid", "Refresh token is invalid.");
     public static readonly Error RefreshTokenHashNotValid = new("Auth.RefreshTokenHashNotValid", "Refresh token hash is not valid.");
     public static readonly Error RefreshTokenExpired = new("Auth.RefreshTokenExpired", "Refresh token has expired.");

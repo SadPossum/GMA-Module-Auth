@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/docs/">
     <File Path="docs/account-recovery-task.md" />
+    <File Path="docs/auth-domain-completion-audit-task.md" />
     <File Path="docs/authentication-assurance-task.md" />
     <File Path="docs/auth-production-hardening-task.md" />
     <File Path="docs/README.md" />

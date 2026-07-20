@@ -94,6 +94,7 @@ public sealed class MemberAuthenticationChallenge : ScopedAggregateRoot<MemberAu
             !TryNormalizeOptional(ipAddress, IpAddressMaxLength, out string? normalizedIpAddress) ||
             !TryNormalizeOptional(userAgent, UserAgentMaxLength, out string? normalizedUserAgent) ||
             maximumAttempts is < 1 or > MaximumAttemptLimit ||
+            primaryEvidence.AuthenticatedAtUtc > nowUtc ||
             expiresAtUtc <= nowUtc)
         {
             return Result.Failure<MemberAuthenticationChallenge>(AuthDomainErrors.AuthenticationChallengeNotValid);

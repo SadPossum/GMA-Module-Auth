@@ -7,6 +7,7 @@ public sealed class AuthApplicationOptions
     public AuthSelfRegistrationOptions SelfRegistration { get; set; } = new();
     public AuthMultiFactorOptions MultiFactor { get; set; } = new();
     public int RefreshTokenLifetimeDays { get; set; } = 30;
+    public int SessionAbsoluteLifetimeDays { get; set; } = 90;
     public int MaximumActiveSessionsPerMember { get; set; } = 20;
     public int FailedLoginLimit { get; set; } = 5;
     public int FailedLoginWindowMinutes { get; set; } = 15;

@@ -104,6 +104,7 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
                 ExternalAuthenticationIntent.SignIn,
                 targetMemberId: null,
                 targetSessionId: null));
+        signIn.Produces(StatusCodes.Status302Found);
         ApplyScope(signIn, profile);
 
         RouteHandlerBuilder link = authGroup.MapGet("/external/{provider}/link", (
@@ -128,6 +129,7 @@ internal sealed class OpenIdConnectAuthEndpointContributor(
                 sessionId);
         })
             .RequireAuthorization();
+        link.Produces(StatusCodes.Status302Found);
         ApplyScope(link, profile);
     }
 

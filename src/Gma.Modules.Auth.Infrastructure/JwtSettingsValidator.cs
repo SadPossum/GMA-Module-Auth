@@ -39,9 +39,11 @@ internal sealed class JwtSettingsValidator : IValidateOptions<JwtSettings>
                 $"{JwtSettings.MinimumSigningKeyBytes} bytes.");
         }
 
-        if (options.AccessTokenLifetimeMinutes <= 0)
+        if (options.AccessTokenLifetimeMinutes is < 1 or > JwtSettings.MaximumAccessTokenLifetimeMinutes)
         {
-            return ValidateOptionsResult.Fail($"{JwtSettings.SectionName}:AccessTokenLifetimeMinutes must be positive.");
+            return ValidateOptionsResult.Fail(
+                $"{JwtSettings.SectionName}:AccessTokenLifetimeMinutes must be between 1 and " +
+                $"{JwtSettings.MaximumAccessTokenLifetimeMinutes}.");
         }
 
         return ValidateOptionsResult.Success;

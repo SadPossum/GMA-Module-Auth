@@ -1,7 +1,6 @@
 namespace Gma.Modules.Auth.Api;
 
 using System.Security.Claims;
-using System.Text.Json;
 using Gma.Framework.Api.Modules;
 using Gma.Framework.Api.Observability;
 using Gma.Framework.Api.Results;
@@ -74,6 +73,48 @@ public sealed partial class AuthModule
         }
 
         return result.ToHttpResult(PublicErrorStatusCodes);
+    }
+
+    private static IResult ToRefreshTokenBoundHttpResult<TResponse>(
+        Result<RefreshTokenBoundCompletion<TResponse>> result,
+        HttpContext httpContext)
+        where TResponse : class
+    {
+        if (result.IsFailure)
+        {
+            return result.ToHttpResult(PublicErrorStatusCodes);
+        }
+
+        SetNoStoreHeaders(httpContext);
+        return result.Value.RefreshTokenReuseDetected
+            ? ToRefreshTokenReuseHttpResult()
+            : Results.Ok(result.Value.Response);
+    }
+
+    private static IResult ToRefreshTokenReuseHttpResult() =>
+        Result.Failure<Unit>(AuthApplicationErrors.RefreshTokenReused)
+            .ToHttpResult(PublicErrorStatusCodes);
+
+    private static IResult ToBrowserRefreshTokenBoundAuthResult(
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result,
+        HttpContext httpContext,
+        int refreshTokenLifetimeDays)
+    {
+        if (result.IsFailure)
+        {
+            return result.ToHttpResult(PublicErrorStatusCodes);
+        }
+
+        if (result.Value.RefreshTokenReuseDetected)
+        {
+            DeleteBrowserCookies(httpContext);
+            return ToRefreshTokenReuseHttpResult();
+        }
+
+        return ToBrowserAuthResult(
+            Result.Success(result.Value.Response),
+            httpContext,
+            refreshTokenLifetimeDays);
     }
 
     private static IResult ToBrowserPrimaryAuthenticationResult(
@@ -223,10 +264,6 @@ public sealed partial class AuthModule
         new(AuthApplicationErrors.UsernameAlreadyExists.Code, StatusCodes.Status409Conflict),
         new(AuthApplicationErrors.ExternalAccountLinkRequired.Code, StatusCodes.Status409Conflict),
         new(AuthApplicationErrors.ExternalIdentityAlreadyLinked.Code, StatusCodes.Status409Conflict));
-
-
-    public sealed record RegisterMemberApiRequest(string Username, JsonElement UsernameType, string Password);
-
     private static Guid? GetMemberId(ClaimsPrincipal user)
     {
         string? memberId = user.FindFirstValue(ApplicationClaimNames.Subject) ??

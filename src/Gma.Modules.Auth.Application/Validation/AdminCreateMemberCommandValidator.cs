@@ -2,6 +2,7 @@ namespace Gma.Modules.Auth.Application.Validation;
 
 using Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Application.Security;
+using Gma.Modules.Auth.Contracts;
 using Gma.Framework.Cqrs;
 
 internal sealed class AdminCreateMemberCommandValidator : ICommandValidator<AdminCreateMemberCommand>
@@ -11,6 +12,10 @@ internal sealed class AdminCreateMemberCommandValidator : ICommandValidator<Admi
         if (string.IsNullOrWhiteSpace(command.Username))
         {
             yield return "Username is required.";
+        }
+        else if (command.Username.Trim().Length > AuthContractLimits.UsernameMaxLength)
+        {
+            yield return "Username is too long.";
         }
 
         if (string.IsNullOrEmpty(command.Password) || command.Password.Length < AuthPasswordPolicy.MinimumLength)

@@ -31,6 +31,26 @@ public sealed class AuthApplicationOptionsValidatorTests
         Assert.Contains("RefreshTokenLifetimeDays", result.FailureMessage, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(0, 30)]
+    [InlineData(3_651, 30)]
+    [InlineData(29, 30)]
+    public void Validate_rejects_invalid_absolute_session_lifetime(
+        int sessionAbsoluteLifetimeDays,
+        int refreshTokenLifetimeDays)
+    {
+        ValidateOptionsResult result = this.validator.Validate(
+            name: null,
+            new AuthApplicationOptions
+            {
+                RefreshTokenLifetimeDays = refreshTokenLifetimeDays,
+                SessionAbsoluteLifetimeDays = sessionAbsoluteLifetimeDays,
+            });
+
+        Assert.True(result.Failed);
+        Assert.Contains("SessionAbsoluteLifetimeDays", result.FailureMessage, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Validate_rejects_missing_self_registration_settings()
     {

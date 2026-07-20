@@ -3,6 +3,9 @@ namespace Gma.Modules.Auth.Contracts;
 public static class AuthContractLimits
 {
     public const int UsernameMaxLength = 256;
+    public const int AccessTokenMaxLength = 16_384;
+    public const int OpaqueTokenMaxLength = 2_048;
+    public const int AuthenticationCodeMaxLength = 2_048;
     public const int DisableReasonMaxLength = 512;
     public const int AuthenticationMethodMaxLength = 256;
     public const int VerificationCodeMaxLength = 2_048;

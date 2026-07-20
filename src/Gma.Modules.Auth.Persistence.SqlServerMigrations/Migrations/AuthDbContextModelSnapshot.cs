@@ -476,6 +476,9 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset>("AbsoluteExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset>("AuthenticatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -531,6 +534,8 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                         .HasColumnName("authentication_method_references");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AbsoluteExpiresAtUtc");
 
                     b.HasIndex("MemberId");
 

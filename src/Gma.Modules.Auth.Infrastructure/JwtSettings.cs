@@ -4,6 +4,7 @@ public sealed class JwtSettings
 {
     public const string SectionName = "Auth:Jwt";
     public const int MinimumSigningKeyBytes = 32;
+    public const int MaximumAccessTokenLifetimeMinutes = 1_440;
 
     public string? Issuer { get; set; }
     public string? Audience { get; set; }

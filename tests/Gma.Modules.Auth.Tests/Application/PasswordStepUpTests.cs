@@ -44,7 +44,7 @@ public sealed class PasswordStepUpTests
         RecordingTokenService tokenService = new();
         StepUpWithPasswordCommandHandler handler = CreateHandler(dbContext, tokenService);
 
-        Result<AuthTokensResponse> result = await handler.HandleAsync(
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result = await handler.HandleAsync(
             new StepUpWithPasswordCommand(
                 member.Id.Value,
                 session.Id.Value,
@@ -53,7 +53,8 @@ public sealed class PasswordStepUpTests
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal("new-refresh", result.Value.RefreshToken);
+        Assert.True(result.Value.Succeeded);
+        Assert.Equal("new-refresh", result.Value.Response.RefreshToken);
         Assert.Equal("hash:new-refresh", session.RefreshTokenHash);
         Assert.Equal("hash:old-refresh", session.PreviousRefreshTokenHash);
         Assert.Equal(AuthenticationContextReferences.Password, session.AuthenticationContextReference);
@@ -79,7 +80,9 @@ public sealed class PasswordStepUpTests
         dbContext.Members.Add(member);
         await dbContext.SaveChangesAsync();
 
-        Result<AuthTokensResponse> result = await CreateHandler(dbContext, new RecordingTokenService()).HandleAsync(
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result = await CreateHandler(
+            dbContext,
+            new RecordingTokenService()).HandleAsync(
             new StepUpWithPasswordCommand(member.Id.Value, session.Id.Value, "wrong", "old-refresh"),
             CancellationToken.None);
 
@@ -115,12 +118,16 @@ public sealed class PasswordStepUpTests
             "old-refresh");
 
         Assert.True((await handler.HandleAsync(command, CancellationToken.None)).IsSuccess);
-        Result<AuthTokensResponse> replay = await handler.HandleAsync(command, CancellationToken.None);
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> replay =
+            await handler.HandleAsync(command, CancellationToken.None);
 
-        Assert.True(replay.IsFailure);
-        Assert.Equal(AuthDomainErrors.RefreshTokenReused, replay.Error);
+        Assert.True(replay.IsSuccess);
+        Assert.False(replay.Value.Succeeded);
+        Assert.True(replay.Value.RefreshTokenReuseDetected);
         Assert.False(session.IsActive);
         Assert.False(otherSession.IsActive);
+        Assert.IsType<MemberSessionsRevokedDomainEvent>(
+            Assert.Single(member.DomainEvents.OfType<MemberSessionsRevokedDomainEvent>()));
     }
 
     [Fact]
@@ -132,7 +139,7 @@ public sealed class PasswordStepUpTests
             new MemberSessionId(Guid.NewGuid()),
             "hash:old-refresh",
             Now.AddDays(1),
-            Now.AddHours(-3),
+            evidence.AuthenticatedAtUtc,
             authenticationEvidence: evidence).Value;
 
         Result<MemberSession> refreshed = member.RefreshSession(
@@ -154,7 +161,10 @@ public sealed class PasswordStepUpTests
         new(
             new MemberRepository(dbContext),
             new FakePasswordHashingService(),
-            new PasswordProofService(new FakePasswordHashingService(), new AllowAllAttemptLimiter()),
+            new PasswordProofService(
+                new FakePasswordHashingService(),
+                new AllowAllAttemptLimiter(),
+                Options.Create(new AuthApplicationOptions())),
             tokenService,
             new FakeRefreshTokenHashingService(),
             Options.Create(new AuthApplicationOptions()),
@@ -190,24 +200,21 @@ public sealed class PasswordStepUpTests
 
     private sealed class AllowAllAttemptLimiter : IAuthenticationAttemptLimiter
     {
-        public ValueTask<bool> IsAllowedAsync(
+        public ValueTask<AuthenticationAttemptLease?> TryAcquireAsync(
             string scopeId,
             string purpose,
             string target,
             DateTimeOffset nowUtc,
-            CancellationToken cancellationToken) => ValueTask.FromResult(true);
-
-        public ValueTask RecordFailureAsync(
-            string scopeId,
-            string purpose,
-            string target,
-            DateTimeOffset nowUtc,
-            CancellationToken cancellationToken) => ValueTask.CompletedTask;
+            AuthenticationAttemptPolicy policy,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<AuthenticationAttemptLease?>(
+                new AuthenticationAttemptLease(Guid.NewGuid(), nowUtc));
 
         public ValueTask RecordSuccessAsync(
             string scopeId,
             string purpose,
             string target,
+            AuthenticationAttemptLease lease,
             CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
 

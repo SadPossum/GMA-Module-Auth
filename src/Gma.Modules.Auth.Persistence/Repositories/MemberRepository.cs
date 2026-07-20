@@ -85,7 +85,9 @@ internal sealed class MemberRepository(AuthDbContext dbContext, ISystemClock? cl
         return dbContext.Members
             .Include(member => member.Usernames)
             .Include(member => member.Sessions.Where(session =>
-                session.IsActive && session.RefreshTokenExpiresAtUtc > nowUtc))
+                session.IsActive &&
+                session.RefreshTokenExpiresAtUtc > nowUtc &&
+                session.AbsoluteExpiresAtUtc > nowUtc))
             .Include(member => member.ExternalIdentities)
             .AsSplitQuery();
     }

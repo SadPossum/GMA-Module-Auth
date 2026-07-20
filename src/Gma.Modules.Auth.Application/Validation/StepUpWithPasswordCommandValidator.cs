@@ -2,6 +2,8 @@ namespace Gma.Modules.Auth.Application.Validation;
 
 using Gma.Framework.Cqrs;
 using Gma.Modules.Auth.Application.Commands;
+using Gma.Modules.Auth.Application.Security;
+using Gma.Modules.Auth.Contracts;
 
 internal sealed class StepUpWithPasswordCommandValidator : ICommandValidator<StepUpWithPasswordCommand>
 {
@@ -21,10 +23,18 @@ internal sealed class StepUpWithPasswordCommandValidator : ICommandValidator<Ste
         {
             yield return "Password is required.";
         }
+        else if (command.Password.Length > AuthPasswordPolicy.MaximumLength)
+        {
+            yield return AuthPasswordPolicy.MaximumLengthMessage;
+        }
 
         if (string.IsNullOrWhiteSpace(command.RefreshToken))
         {
             yield return "Refresh token is required.";
+        }
+        else if (command.RefreshToken.Trim().Length > AuthContractLimits.OpaqueTokenMaxLength)
+        {
+            yield return "Refresh token is too long.";
         }
     }
 }

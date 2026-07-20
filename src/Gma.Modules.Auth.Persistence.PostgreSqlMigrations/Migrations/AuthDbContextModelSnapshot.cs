@@ -476,6 +476,9 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset>("AbsoluteExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset>("AuthenticatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -531,6 +534,8 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                         .HasColumnName("authentication_method_references");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AbsoluteExpiresAtUtc");
 
                     b.HasIndex("MemberId");
 

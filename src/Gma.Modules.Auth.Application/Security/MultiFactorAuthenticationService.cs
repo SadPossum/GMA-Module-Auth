@@ -7,14 +7,17 @@ using Gma.Framework.Runtime.Time;
 using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Aggregates;
+using Gma.Modules.Auth.Domain.Errors;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Microsoft.Extensions.Options;
+using DomainMemberStatus = Gma.Modules.Auth.Domain.Enums.MemberStatus;
 
 internal sealed class MultiFactorAuthenticationService(
     IMemberTotpAuthenticatorRepository authenticatorRepository,
     IMemberAuthenticationChallengeRepository challengeRepository,
+    IAuthenticationChallengeRequestSerializer challengeRequestSerializer,
     ITimeBasedOneTimePasswordProvider totpProvider,
     IAuthenticatorSecretProtector secretProtector,
     IMultiFactorTokenService tokenService,
@@ -32,6 +35,18 @@ internal sealed class MultiFactorAuthenticationService(
         string? userAgent,
         CancellationToken cancellationToken)
     {
+        if (member.Status != DomainMemberStatus.Active)
+        {
+            return Result.Failure<MultiFactorChallengeRequirement>(
+                member.Status == DomainMemberStatus.Disabled
+                    ? AuthDomainErrors.MemberDisabled
+                    : AuthDomainErrors.MemberStatusUnknown);
+        }
+
+        await challengeRequestSerializer
+            .AcquireAsync(member.ScopeId, member.Id, cancellationToken)
+            .ConfigureAwait(false);
+
         MemberTotpAuthenticator? authenticator = await authenticatorRepository
             .GetByMemberAsync(member.Id, cancellationToken)
             .ConfigureAwait(false);

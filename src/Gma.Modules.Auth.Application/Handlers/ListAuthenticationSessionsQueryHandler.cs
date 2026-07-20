@@ -27,8 +27,12 @@ internal sealed class ListAuthenticationSessionsQueryHandler(
             return Result.Failure<AuthenticationSessionsResponse>(AuthDomainErrors.MemberNotFound);
         }
 
+        DateTimeOffset nowUtc = clock.UtcNow;
         AuthenticationSessionResponse[] sessions = member.Sessions
-            .Where(session => session.IsActive && session.RefreshTokenExpiresAtUtc > clock.UtcNow)
+            .Where(session =>
+                session.IsActive &&
+                session.RefreshTokenExpiresAtUtc > nowUtc &&
+                session.AbsoluteExpiresAtUtc > nowUtc)
             .OrderByDescending(session => session.Id.Value == query.CurrentSessionId)
             .ThenByDescending(session => session.LoginDateTimeUtc)
             .Select(session => new AuthenticationSessionResponse(
@@ -36,6 +40,7 @@ internal sealed class ListAuthenticationSessionsQueryHandler(
                 session.AuthenticationMethod,
                 session.LoginDateTimeUtc,
                 session.RefreshTokenExpiresAtUtc,
+                session.AbsoluteExpiresAtUtc,
                 session.Id.Value == query.CurrentSessionId))
             .ToArray();
 

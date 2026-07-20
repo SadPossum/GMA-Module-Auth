@@ -77,14 +77,17 @@ internal sealed class RegisterMemberCommandHandler(
         }
 
         Member member = memberResult.Value;
-        var tokens = this.CreateSessionTokens(TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
+        var tokens = this.CreateSessionTokens(
+            TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays),
+            TimeSpan.FromDays(options.Value.SessionAbsoluteLifetimeDays));
         Result<MemberSession> startSessionResult = member.StartSession(
             tokens.SessionId,
             tokens.RefreshTokenHash,
             tokens.ExpiresAtUtc,
             this.Clock.UtcNow,
             authenticationEvidence: SessionAuthenticationEvidence.Password(this.Clock.UtcNow),
-            maximumActiveSessions: options.Value.MaximumActiveSessionsPerMember);
+            maximumActiveSessions: options.Value.MaximumActiveSessionsPerMember,
+            absoluteExpiresAtUtc: tokens.AbsoluteExpiresAtUtc);
 
         if (startSessionResult.IsFailure)
         {

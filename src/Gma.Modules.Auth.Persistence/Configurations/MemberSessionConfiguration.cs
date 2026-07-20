@@ -53,8 +53,12 @@ internal sealed class MemberSessionConfiguration : IEntityTypeConfiguration<Memb
         builder.Property(session => session.AuthenticatedAtUtc)
             .IsRequired();
 
+        builder.Property(session => session.AbsoluteExpiresAtUtc)
+            .IsRequired();
+
         builder.HasIndex(session => new { session.ScopeId, session.RefreshTokenHash });
         builder.HasIndex(session => session.RefreshTokenExpiresAtUtc);
+        builder.HasIndex(session => session.AbsoluteExpiresAtUtc);
         builder.HasIndex(session => new { session.IsActive, session.SignOutDateTimeUtc });
     }
 }

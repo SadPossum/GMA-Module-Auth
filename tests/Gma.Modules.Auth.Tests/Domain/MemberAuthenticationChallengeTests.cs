@@ -90,6 +90,42 @@ public sealed class MemberAuthenticationChallengeTests
             passwordRecovery.MethodReferences);
     }
 
+    [Fact]
+    public void Challenge_rejects_future_primary_evidence()
+    {
+        var result = MemberAuthenticationChallenge.Create(
+            new MemberAuthenticationChallengeId(Guid.NewGuid()),
+            new MemberId(Guid.NewGuid()),
+            "tenant-a",
+            "token-hash",
+            MemberAuthenticationMethods.Password,
+            SessionAuthenticationEvidence.Password(Now.AddSeconds(1)),
+            null,
+            null,
+            5,
+            Now.AddMinutes(5),
+            Now);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthDomainErrors.AuthenticationChallengeNotValid, result.Error);
+    }
+
+    [Fact]
+    public void Second_step_evidence_never_predates_primary_authentication()
+    {
+        SessionAuthenticationEvidence primary = SessionAuthenticationEvidence.Password(Now);
+
+        SessionAuthenticationEvidence totp = SessionAuthenticationEvidence.CompleteWithTotp(
+            primary,
+            Now.AddSeconds(-1));
+        SessionAuthenticationEvidence recovery = SessionAuthenticationEvidence.CompleteWithRecoveryCode(
+            primary,
+            Now.AddSeconds(-1));
+
+        Assert.Equal(Now, totp.AuthenticatedAtUtc);
+        Assert.Equal(Now, recovery.AuthenticatedAtUtc);
+    }
+
     private static MemberAuthenticationChallenge CreateChallenge(int maximumAttempts = 5) =>
         MemberAuthenticationChallenge.Create(
             new MemberAuthenticationChallengeId(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")),

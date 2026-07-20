@@ -1,5 +1,6 @@
 namespace Gma.Modules.Auth.Tests;
 
+using Gma.Modules.Auth.Application;
 using Gma.Modules.Auth.Persistence;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -52,5 +53,52 @@ public sealed class AuthRetentionOptionsValidatorTests
 
         Assert.True(result.Failed);
         Assert.Equal(11, result.Failures.Count());
+    }
+
+    [Fact]
+    public void Retention_must_cover_active_authentication_attempt_windows()
+    {
+        AuthRetentionOptions retention = new()
+        {
+            Enabled = true,
+            AuthenticationFailureHistoryHours = 1,
+            MultiFactorFailureHistoryHours = 1,
+        };
+        AuthApplicationOptions application = new()
+        {
+            FailedLoginWindowMinutes = 61,
+            MultiFactor = new AuthMultiFactorOptions
+            {
+                ManagementAttemptWindowMinutes = 120,
+            },
+        };
+
+        ValidateOptionsResult result = AuthRetentionOptionsValidator.ValidateCompatibility(
+            retention,
+            application);
+
+        Assert.True(result.Failed);
+        Assert.Equal(2, result.Failures.Count());
+    }
+
+    [Fact]
+    public void Retention_accepts_attempt_windows_within_the_history_horizon()
+    {
+        AuthRetentionOptions retention = new()
+        {
+            Enabled = true,
+            AuthenticationFailureHistoryHours = 2,
+            MultiFactorFailureHistoryHours = 2,
+        };
+        AuthApplicationOptions application = new()
+        {
+            FailedLoginWindowMinutes = 120,
+            MultiFactor = new AuthMultiFactorOptions
+            {
+                ManagementAttemptWindowMinutes = 120,
+            },
+        };
+
+        Assert.True(AuthRetentionOptionsValidator.ValidateCompatibility(retention, application).Succeeded);
     }
 }

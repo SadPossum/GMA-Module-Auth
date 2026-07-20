@@ -1,7 +1,6 @@
 namespace Gma.Modules.Auth.Api;
 
 using System.Security.Claims;
-using System.Text.Json;
 using Gma.Framework.Api.Modules;
 using Gma.Framework.Api.Observability;
 using Gma.Framework.Api.Results;
@@ -38,18 +37,19 @@ public sealed partial class AuthModule
         RequireScopeWhenNeeded(selfRegistration, requireScope);
 
         RouteHandlerBuilder register = group.MapPost("/register", async (
-            RegisterMemberApiRequest request,
+            RegisterMemberRequest request,
             HttpContext httpContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
             ToSecretBearingHttpResult(
                 await dispatcher.SendAsync(
-                new RegisterMemberCommand(
-                    request.Username,
-                    UsernameTypeInput.FromJsonElement(request.UsernameType).Value,
-                    request.Password),
+                    new RegisterMemberCommand(
+                        request.Username,
+                        request.UsernameType,
+                        request.Password),
                 cancellationToken).ConfigureAwait(false),
                 httpContext));
+        register.Produces<AuthTokensResponse>(StatusCodes.Status200OK);
         RequireScopeWhenNeeded(register, requireScope);
 
         RouteHandlerBuilder login = group.MapPost("/login", async (
@@ -75,11 +75,12 @@ public sealed partial class AuthModule
             HttpContext httpContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
-            ToSecretBearingHttpResult(
+            ToRefreshTokenBoundHttpResult(
                 await dispatcher.SendAsync(
                     new RefreshMemberSessionCommand(request.AccessToken, request.RefreshToken),
-                    cancellationToken).ConfigureAwait(false),
+                cancellationToken).ConfigureAwait(false),
                 httpContext));
+        refresh.Produces<AuthTokensResponse>(StatusCodes.Status200OK);
         RequireScopeWhenNeeded(refresh, requireScope);
 
         RouteHandlerBuilder passwordStepUp = group.MapPost("/step-up/password", async (
@@ -97,7 +98,7 @@ public sealed partial class AuthModule
                 return Results.Unauthorized();
             }
 
-            return ToSecretBearingHttpResult(
+            return ToRefreshTokenBoundHttpResult(
                 await dispatcher.SendAsync(
                     new StepUpWithPasswordCommand(
                         memberId,
@@ -157,6 +158,7 @@ public sealed partial class AuthModule
             return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
         })
             .RequireAuthorization();
+        signOut.Produces(StatusCodes.Status204NoContent);
         RequireScopeWhenNeeded(signOut, requireScope);
 
         RouteHandlerBuilder signOutAll = group.MapPost("/sign-out-all", async (
@@ -184,6 +186,7 @@ public sealed partial class AuthModule
             return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
         })
             .RequireAuthorization();
+        signOutAll.Produces(StatusCodes.Status204NoContent);
         RequireScopeWhenNeeded(signOutAll, requireScope);
 
         RouteHandlerBuilder methods = group.MapGet("/methods", async (
@@ -244,11 +247,13 @@ public sealed partial class AuthModule
             return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
         })
             .RequireAuthorization();
+        signOutSession.Produces(StatusCodes.Status204NoContent);
         RequireScopeWhenNeeded(signOutSession, requireScope);
 
         RouteHandlerBuilder setPassword = group.MapPut("/password", async (
             SetPasswordRequest request,
             ClaimsPrincipal user,
+            HttpContext httpContext,
             IAuthScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
@@ -260,21 +265,25 @@ public sealed partial class AuthModule
                 return Results.Unauthorized();
             }
 
-            Result<Unit> result = await dispatcher.SendAsync(
-                new SetMemberPasswordCommand(
-                    memberId,
-                    sessionId,
-                    request.NewPassword,
-                    request.CurrentPassword),
-                cancellationToken).ConfigureAwait(false);
-            return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
+            return ToRefreshTokenBoundHttpResult(
+                await dispatcher.SendAsync(
+                    new SetMemberPasswordCommand(
+                        memberId,
+                        sessionId,
+                        request.NewPassword,
+                        request.CurrentPassword,
+                        request.RefreshToken),
+                    cancellationToken).ConfigureAwait(false),
+                httpContext);
         })
             .RequireAuthorization();
+        setPassword.Produces<AuthTokensResponse>(StatusCodes.Status200OK);
         RequireScopeWhenNeeded(setPassword, requireScope);
 
         RouteHandlerBuilder removePassword = group.MapPost("/password/remove", async (
             RemovePasswordRequest request,
             ClaimsPrincipal user,
+            HttpContext httpContext,
             IAuthScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
@@ -286,18 +295,25 @@ public sealed partial class AuthModule
                 return Results.Unauthorized();
             }
 
-            Result<Unit> result = await dispatcher.SendAsync(
-                new RemoveMemberPasswordCommand(memberId, sessionId, request.CurrentPassword),
-                cancellationToken).ConfigureAwait(false);
-            return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
+            return ToRefreshTokenBoundHttpResult(
+                await dispatcher.SendAsync(
+                    new RemoveMemberPasswordCommand(
+                        memberId,
+                        sessionId,
+                        request.CurrentPassword,
+                        request.RefreshToken),
+                    cancellationToken).ConfigureAwait(false),
+                httpContext);
         })
             .RequireAuthorization();
+        removePassword.Produces<AuthTokensResponse>(StatusCodes.Status200OK);
         RequireScopeWhenNeeded(removePassword, requireScope);
 
         RouteHandlerBuilder unlinkIdentity = group.MapPost("/external-identities/{externalIdentityId:guid}/unlink", async (
             Guid externalIdentityId,
             UnlinkExternalIdentityRequest request,
             ClaimsPrincipal user,
+            HttpContext httpContext,
             IAuthScopeContext scopeContext,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
@@ -309,16 +325,19 @@ public sealed partial class AuthModule
                 return Results.Unauthorized();
             }
 
-            Result<Unit> result = await dispatcher.SendAsync(
-                new UnlinkExternalIdentityCommand(
-                    memberId,
-                    sessionId,
-                    externalIdentityId,
-                    request.CurrentPassword),
-                cancellationToken).ConfigureAwait(false);
-            return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
+            return ToRefreshTokenBoundHttpResult(
+                await dispatcher.SendAsync(
+                    new UnlinkExternalIdentityCommand(
+                        memberId,
+                        sessionId,
+                        externalIdentityId,
+                        request.CurrentPassword,
+                        request.RefreshToken),
+                    cancellationToken).ConfigureAwait(false),
+                httpContext);
         })
             .RequireAuthorization();
+        unlinkIdentity.Produces<AuthTokensResponse>(StatusCodes.Status200OK);
         RequireScopeWhenNeeded(unlinkIdentity, requireScope);
 
         RouteHandlerBuilder requestPasswordRecovery = group.MapPost("/password-recovery", async (
@@ -365,6 +384,7 @@ public sealed partial class AuthModule
             return result.IsSuccess ? Results.Accepted() : result.ToHttpResult(PublicErrorStatusCodes);
         })
             .RequireAuthorization();
+        requestEmailVerification.Produces(StatusCodes.Status202Accepted);
         RequireScopeWhenNeeded(requestEmailVerification, requireScope);
 
         RouteHandlerBuilder confirmEmailVerification = group.MapPost("/email-verification/confirm", async (
@@ -377,6 +397,7 @@ public sealed partial class AuthModule
                 cancellationToken).ConfigureAwait(false);
             return result.IsSuccess ? Results.NoContent() : result.ToHttpResult(PublicErrorStatusCodes);
         });
+        confirmEmailVerification.Produces(StatusCodes.Status204NoContent);
         RequireScopeWhenNeeded(confirmEmailVerification, requireScope);
 
     }

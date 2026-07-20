@@ -26,11 +26,21 @@ internal sealed class ExternalAuthenticationHandoffService(
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentException.ThrowIfNullOrWhiteSpace(returnUrl);
 
+        if (!Enum.IsDefined(intent))
+        {
+            throw new ArgumentOutOfRangeException(nameof(intent));
+        }
+
         string scopeId = scopeContext.ScopeId ?? throw new InvalidOperationException("A scope is required.");
         if (intent == ExternalAuthenticationIntent.Link &&
             (targetMemberId is null || targetSessionId is null))
         {
             throw new ArgumentException("Link handoffs require the target member and session.", nameof(intent));
+        }
+        if (intent == ExternalAuthenticationIntent.SignIn &&
+            (targetMemberId is not null || targetSessionId is not null))
+        {
+            throw new ArgumentException("Sign-in handoffs cannot target a member or session.", nameof(intent));
         }
 
         string code = tokenService.GenerateToken();

@@ -44,11 +44,11 @@ internal sealed class BeginTotpEnrollmentCommandHandler(
             return Result.Failure<TotpEnrollmentResponse>(AuthDomainErrors.MemberNotFound);
         }
 
-        DateTimeOffset nowUtc = clock.UtcNow;
+        DateTimeOffset authorizationCheckedAtUtc = clock.UtcNow;
         Result<MemberSession> freshSession = MemberSecurityAuthorization.RequireFreshSession(
             member,
             command.SessionId,
-            nowUtc,
+            authorizationCheckedAtUtc,
             TimeSpan.FromMinutes(options.Value.MultiFactor.SensitiveSessionFreshnessMinutes));
         if (freshSession.IsFailure ||
             string.Equals(
@@ -65,6 +65,21 @@ internal sealed class BeginTotpEnrollmentCommandHandler(
         if (authenticator?.IsActive == true)
         {
             return Result.Failure<TotpEnrollmentResponse>(AuthApplicationErrors.TotpAuthenticatorAlreadyActive);
+        }
+
+        DateTimeOffset nowUtc = clock.UtcNow;
+        freshSession = MemberSecurityAuthorization.RequireFreshSession(
+            member,
+            command.SessionId,
+            nowUtc,
+            TimeSpan.FromMinutes(options.Value.MultiFactor.SensitiveSessionFreshnessMinutes));
+        if (freshSession.IsFailure ||
+            string.Equals(
+                freshSession.Value.AuthenticationContextReference,
+                AuthenticationContextReferences.Legacy,
+                StringComparison.Ordinal))
+        {
+            return Result.Failure<TotpEnrollmentResponse>(AuthApplicationErrors.FreshAuthenticationRequired);
         }
 
         MemberUsername? username = member.Usernames

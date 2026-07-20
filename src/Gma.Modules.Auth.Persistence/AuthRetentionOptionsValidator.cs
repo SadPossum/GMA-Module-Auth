@@ -1,5 +1,6 @@
 namespace Gma.Modules.Auth.Persistence;
 
+using Gma.Modules.Auth.Application;
 using Microsoft.Extensions.Options;
 
 internal sealed class AuthRetentionOptionsValidator : IValidateOptions<AuthRetentionOptions>
@@ -65,6 +66,46 @@ internal sealed class AuthRetentionOptionsValidator : IValidateOptions<AuthReten
         if (options.IntervalMinutes is < 1 or > 10_080)
         {
             failures.Add("Auth:Retention:IntervalMinutes must be between 1 and 10080.");
+        }
+
+        return failures.Count == 0
+            ? ValidateOptionsResult.Success
+            : ValidateOptionsResult.Fail(failures);
+    }
+
+    public static ValidateOptionsResult ValidateCompatibility(
+        AuthRetentionOptions retention,
+        AuthApplicationOptions application)
+    {
+        ArgumentNullException.ThrowIfNull(retention);
+        ArgumentNullException.ThrowIfNull(application);
+        if (!retention.Enabled)
+        {
+            return ValidateOptionsResult.Success;
+        }
+
+        if (application.MultiFactor is null)
+        {
+            return ValidateOptionsResult.Fail(
+                "Auth:MultiFactor must be configured before retention compatibility can be validated.");
+        }
+
+        List<string> failures = [];
+        int authenticationHistoryMinutes = retention.AuthenticationFailureHistoryHours * 60;
+        int requiredAuthenticationHistoryMinutes = Math.Max(
+            application.FailedLoginWindowMinutes,
+            application.MultiFactor.ManagementAttemptWindowMinutes);
+        if (authenticationHistoryMinutes < requiredAuthenticationHistoryMinutes)
+        {
+            failures.Add(
+                "Auth:Retention:AuthenticationFailureHistoryHours must cover every configured authentication-attempt window.");
+        }
+
+        if (retention.MultiFactorFailureHistoryHours * 60 <
+            application.MultiFactor.ManagementAttemptWindowMinutes)
+        {
+            failures.Add(
+                "Auth:Retention:MultiFactorFailureHistoryHours must cover the multi-factor management attempt window.");
         }
 
         return failures.Count == 0

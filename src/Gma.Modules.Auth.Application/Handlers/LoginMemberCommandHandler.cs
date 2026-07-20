@@ -89,14 +89,17 @@ internal sealed class LoginMemberCommandHandler(
             return Result.Success(PrimaryAuthenticationResult.Challenge(challenge.Value.Challenge!));
         }
 
-        var tokens = this.CreateSessionTokens(TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
+        var tokens = this.CreateSessionTokens(
+            TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays),
+            TimeSpan.FromDays(options.Value.SessionAbsoluteLifetimeDays));
         Result<MemberSession> startSessionResult = member.StartSession(
             tokens.SessionId,
             tokens.RefreshTokenHash,
             tokens.ExpiresAtUtc,
             this.Clock.UtcNow,
             authenticationEvidence: primaryEvidence,
-            maximumActiveSessions: options.Value.MaximumActiveSessionsPerMember);
+            maximumActiveSessions: options.Value.MaximumActiveSessionsPerMember,
+            absoluteExpiresAtUtc: tokens.AbsoluteExpiresAtUtc);
 
         if (startSessionResult.IsFailure)
         {

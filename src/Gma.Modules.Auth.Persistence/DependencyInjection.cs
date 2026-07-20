@@ -1,8 +1,11 @@
 namespace Gma.Modules.Auth.Persistence;
 
 using Gma.Framework.Cqrs.UnitOfWork;
+using Gma.Framework.Cqrs;
+using Gma.Framework.Cqrs.Infrastructure;
 using Gma.Framework.Messaging;
 using Gma.Framework.Persistence.EntityFrameworkCore;
+using Gma.Modules.Auth.Application;
 using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Application.Scoping;
 using Gma.Modules.Auth.Application.Security;
@@ -43,6 +46,20 @@ public static class DependencyInjection
                 retentionValidation.Failures);
         }
 
+        AuthApplicationOptions applicationOptions = builder.Configuration
+            .GetSection(AuthApplicationOptions.SectionName)
+            .Get<AuthApplicationOptions>() ?? new();
+        ValidateOptionsResult compatibilityValidation = AuthRetentionOptionsValidator.ValidateCompatibility(
+            retentionOptions,
+            applicationOptions);
+        if (compatibilityValidation.Failed)
+        {
+            throw new OptionsValidationException(
+                AuthRetentionOptions.SectionName,
+                typeof(AuthRetentionOptions),
+                compatibilityValidation.Failures);
+        }
+
         builder.Services
             .AddOptions<AuthRetentionOptions>()
             .Bind(builder.Configuration.GetSection(AuthRetentionOptions.SectionName))
@@ -64,6 +81,8 @@ public static class DependencyInjection
         builder.Services.TryAddScoped<IExternalAuthenticationExchangeStore, ExternalAuthenticationExchangeStore>();
         builder.Services.TryAddScoped<IPasswordRecoveryRecipientReader, PasswordRecoveryRecipientReader>();
         builder.Services.TryAddScoped<IPasswordRecoveryChallengeRepository, PasswordRecoveryChallengeRepository>();
+        builder.Services.TryAddScoped<IPasswordRecoveryRequestSerializer, PasswordRecoveryRequestSerializer>();
+        builder.Services.TryAddScoped<IAuthenticationChallengeRequestSerializer, AuthenticationChallengeRequestSerializer>();
         builder.Services.TryAddScoped<IMemberTotpAuthenticatorRepository, MemberTotpAuthenticatorRepository>();
         builder.Services.TryAddScoped<IMemberAuthenticationChallengeRepository, MemberAuthenticationChallengeRepository>();
         builder.Services.TryAddScoped<IMemberMultiFactorFailureAttemptRepository, MemberMultiFactorFailureAttemptRepository>();
@@ -76,11 +95,15 @@ public static class DependencyInjection
         }
 
         builder.Services.TryAddScoped<IAuthenticationAttemptLimiter, PersistentAuthenticationAttemptLimiter>();
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Scoped(
+            typeof(ICommandPipelineBehavior<,>),
+            typeof(AuthPersistenceRetryBehavior<,>)));
         builder.Services.TryAddEnumerable([
             ServiceDescriptor.Scoped<IUnitOfWork, AuthUnitOfWork>(),
             ServiceDescriptor.Scoped<IOutboxWriter, AuthOutboxWriter>(),
             ServiceDescriptor.Scoped<IOutboxStore, AuthOutboxStore>()
         ]);
+        builder.Services.MoveCommandUnitOfWorkBehaviorToEnd();
         if (retentionOptions.Enabled)
         {
             builder.Services.TryAddEnumerable(

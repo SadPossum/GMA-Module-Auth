@@ -173,7 +173,7 @@ public sealed partial class MemberUsername : ScopedEntity<MemberUsernameId>
         usernameType switch
         {
             MemberUsernameType.Email => EmailRegex().IsMatch(value),
-            MemberUsernameType.Phone => value.Length == 10 && value.All(char.IsDigit),
+            MemberUsernameType.Phone => InternationalPhoneRegex().IsMatch(value),
             _ => false
         };
 
@@ -194,4 +194,7 @@ public sealed partial class MemberUsername : ScopedEntity<MemberUsernameId>
 
     [GeneratedRegex(@"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")]
     private static partial Regex EmailRegex();
+
+    [GeneratedRegex(@"^\+[1-9]\d{6,14}$", RegexOptions.CultureInvariant)]
+    private static partial Regex InternationalPhoneRegex();
 }

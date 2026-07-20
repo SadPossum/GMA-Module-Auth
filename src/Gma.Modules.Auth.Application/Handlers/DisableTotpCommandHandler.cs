@@ -55,27 +55,39 @@ internal sealed class DisableTotpCommandHandler(
             return Result.Failure<MultiFactorDisableCompletion>(AuthApplicationErrors.TotpAuthenticatorNotActive);
         }
 
-        DateTimeOffset nowUtc = this.Clock.UtcNow;
+        DateTimeOffset attemptCheckedAtUtc = this.Clock.UtcNow;
         string limiterTarget = command.MemberId.ToString("D", System.Globalization.CultureInfo.InvariantCulture);
         int recentFailureCount = await failureAttemptRepository.CountSinceAsync(
             memberId,
             MemberMultiFactorFailureAttempt.ManagementPurpose,
-            nowUtc.AddMinutes(-options.Value.MultiFactor.ManagementAttemptWindowMinutes),
+            attemptCheckedAtUtc.AddMinutes(-options.Value.MultiFactor.ManagementAttemptWindowMinutes),
             cancellationToken).ConfigureAwait(false);
         if (recentFailureCount >= options.Value.MultiFactor.ManagementMaximumAttempts)
         {
             return Result.Success(MultiFactorDisableCompletion.Invalid);
         }
 
-        if (!await attemptLimiter.IsAllowedAsync(
+        if (command.CodeType == MultiFactorCodeType.Totp && !multiFactorAuthentication.TotpProviderAvailable)
+        {
+            return Result.Failure<MultiFactorDisableCompletion>(AuthApplicationErrors.MultiFactorProviderUnavailable);
+        }
+
+        AuthenticationAttemptPolicy attemptPolicy = new(
+            options.Value.MultiFactor.ManagementMaximumAttempts,
+            TimeSpan.FromMinutes(options.Value.MultiFactor.ManagementAttemptWindowMinutes));
+        AuthenticationAttemptLease? attemptLease = await attemptLimiter.TryAcquireAsync(
                 member.ScopeId,
                 AuthenticationAttemptPurposes.MultiFactorManagement,
                 limiterTarget,
-                nowUtc,
-                cancellationToken).ConfigureAwait(false))
+                attemptCheckedAtUtc,
+                attemptPolicy,
+                cancellationToken).ConfigureAwait(false);
+        if (attemptLease is null)
         {
             return Result.Success(MultiFactorDisableCompletion.Invalid);
         }
+
+        DateTimeOffset nowUtc = this.Clock.UtcNow;
 
         Result<SessionAuthenticationEvidence> factor = multiFactorAuthentication.VerifyFactor(
             authenticator,
@@ -90,12 +102,6 @@ internal sealed class DisableTotpCommandHandler(
                 return Result.Failure<MultiFactorDisableCompletion>(factor.Error);
             }
 
-            await attemptLimiter.RecordFailureAsync(
-                member.ScopeId,
-                AuthenticationAttemptPurposes.MultiFactorManagement,
-                limiterTarget,
-                nowUtc,
-                cancellationToken).ConfigureAwait(false);
             Result<MemberMultiFactorFailureAttempt> failedAttempt = MemberMultiFactorFailureAttempt.Create(
                 new MemberMultiFactorFailureAttemptId(this.IdGenerator.NewId()),
                 memberId,
@@ -117,12 +123,15 @@ internal sealed class DisableTotpCommandHandler(
             this.TokenHashingService.GetCandidateHashes(command.RefreshToken),
             this.TokenHashingService.HashRefreshToken(discardedRefreshToken),
             nowUtc.AddDays(options.Value.RefreshTokenLifetimeDays),
+            nowUtc.AddDays(options.Value.SessionAbsoluteLifetimeDays),
             factor.Value,
             this.IdGenerator.NewId(),
             nowUtc);
         if (reauthenticated.IsFailure)
         {
-            return Result.Failure<MultiFactorDisableCompletion>(reauthenticated.Error);
+            return reauthenticated.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(MultiFactorDisableCompletion.ReuseDetected)
+                : Result.Failure<MultiFactorDisableCompletion>(reauthenticated.Error);
         }
 
         Result disabled = authenticator.Disable(nowUtc);
@@ -159,6 +168,7 @@ internal sealed class DisableTotpCommandHandler(
             member.ScopeId,
             AuthenticationAttemptPurposes.MultiFactorManagement,
             limiterTarget,
+            attemptLease.Value,
             cancellationToken).ConfigureAwait(false);
         return Result.Success(MultiFactorDisableCompletion.Completed);
     }

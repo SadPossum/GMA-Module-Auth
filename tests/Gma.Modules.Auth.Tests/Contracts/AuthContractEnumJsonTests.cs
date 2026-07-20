@@ -49,19 +49,6 @@ public sealed class AuthContractEnumJsonTests
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize((UsernameType)999, JsonOptions));
     }
 
-    [Theory]
-    [InlineData("\"email\"", UsernameType.Email)]
-    [InlineData("\"phone\"", UsernameType.Phone)]
-    [InlineData("\"unknown\"", UsernameType.Unknown)]
-    [InlineData("\"telegram\"", UsernameType.Unknown)]
-    [InlineData("999", UsernameType.Unknown)]
-    public void Username_type_input_maps_invalid_values_to_unknown(string json, UsernameType expected)
-    {
-        UsernameTypeInput input = JsonSerializer.Deserialize<UsernameTypeInput>(json, JsonOptions);
-
-        Assert.Equal(expected, input.Value);
-    }
-
     [Fact]
     public void Member_status_json_uses_stable_string_names()
     {

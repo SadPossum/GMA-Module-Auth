@@ -1,7 +1,6 @@
 namespace Gma.Modules.Auth.Api;
 
 using System.Security.Claims;
-using System.Text.Json;
 using Gma.Framework.Api.Modules;
 using Gma.Framework.Api.Observability;
 using Gma.Framework.Api.Results;
@@ -32,7 +31,7 @@ public sealed partial class AuthModule
         RouteGroupBuilder browser = authGroup.MapGroup("/browser");
 
         RouteHandlerBuilder register = browser.MapPost("/register", async (
-            RegisterMemberApiRequest request,
+            RegisterMemberRequest request,
             HttpContext httpContext,
             IRequestDispatcher dispatcher,
             IOptions<AuthApplicationOptions> options,
@@ -41,7 +40,7 @@ public sealed partial class AuthModule
             Result<AuthTokensResponse> result = await dispatcher.SendAsync(
                 new RegisterMemberCommand(
                     request.Username,
-                    UsernameTypeInput.FromJsonElement(request.UsernameType).Value,
+                    request.UsernameType,
                     request.Password),
                 cancellationToken).ConfigureAwait(false);
 
@@ -86,7 +85,7 @@ public sealed partial class AuthModule
                 return Results.Unauthorized();
             }
 
-            Result<AuthTokensResponse> result = await dispatcher.SendAsync(
+            Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result = await dispatcher.SendAsync(
                 new RefreshMemberSessionCommand(accessToken, refreshToken),
                 cancellationToken).ConfigureAwait(false);
 
@@ -96,7 +95,16 @@ public sealed partial class AuthModule
                 return result.ToHttpResult(PublicErrorStatusCodes);
             }
 
-            return ToBrowserAuthResult(result, httpContext, options.Value.RefreshTokenLifetimeDays);
+            if (result.Value.RefreshTokenReuseDetected)
+            {
+                DeleteBrowserCookies(httpContext);
+                return ToRefreshTokenReuseHttpResult();
+            }
+
+            return ToBrowserAuthResult(
+                Result.Success(result.Value.Response),
+                httpContext,
+                options.Value.RefreshTokenLifetimeDays);
         });
         refresh.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
         RequireScopeWhenNeeded(refresh, requireScope);
@@ -118,14 +126,129 @@ public sealed partial class AuthModule
                 return Results.Unauthorized();
             }
 
-            Result<AuthTokensResponse> result = await dispatcher.SendAsync(
+            Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result = await dispatcher.SendAsync(
                 new StepUpWithPasswordCommand(memberId, sessionId, request.Password, refreshToken),
                 cancellationToken).ConfigureAwait(false);
-            return ToBrowserAuthResult(result, httpContext, options.Value.RefreshTokenLifetimeDays);
+            if (result.IsFailure)
+            {
+                return result.ToHttpResult(PublicErrorStatusCodes);
+            }
+
+            if (result.Value.RefreshTokenReuseDetected)
+            {
+                DeleteBrowserCookies(httpContext);
+                return ToRefreshTokenReuseHttpResult();
+            }
+
+            return ToBrowserAuthResult(
+                Result.Success(result.Value.Response),
+                httpContext,
+                options.Value.RefreshTokenLifetimeDays);
         })
             .RequireAuthorization();
         passwordStepUp.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
         RequireScopeWhenNeeded(passwordStepUp, requireScope);
+
+        RouteHandlerBuilder setPassword = browser.MapPut("/password", async (
+            BrowserSetPasswordRequest request,
+            ClaimsPrincipal user,
+            HttpContext httpContext,
+            IAuthScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            IOptions<AuthApplicationOptions> options,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) ||
+                GetMemberId(user) is not { } memberId ||
+                GetSessionId(user) is not { } sessionId ||
+                !TryGetBrowserCookie(httpContext, BrowserRefreshCookieName, out string? refreshToken))
+            {
+                return Results.Unauthorized();
+            }
+
+            return ToBrowserRefreshTokenBoundAuthResult(
+                await dispatcher.SendAsync(
+                    new SetMemberPasswordCommand(
+                        memberId,
+                        sessionId,
+                        request.NewPassword,
+                        request.CurrentPassword,
+                        refreshToken),
+                    cancellationToken).ConfigureAwait(false),
+                httpContext,
+                options.Value.RefreshTokenLifetimeDays);
+        })
+            .RequireAuthorization();
+        setPassword.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(setPassword, requireScope);
+
+        RouteHandlerBuilder removePassword = browser.MapPost("/password/remove", async (
+            BrowserRemovePasswordRequest request,
+            ClaimsPrincipal user,
+            HttpContext httpContext,
+            IAuthScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            IOptions<AuthApplicationOptions> options,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) ||
+                GetMemberId(user) is not { } memberId ||
+                GetSessionId(user) is not { } sessionId ||
+                !TryGetBrowserCookie(httpContext, BrowserRefreshCookieName, out string? refreshToken))
+            {
+                return Results.Unauthorized();
+            }
+
+            return ToBrowserRefreshTokenBoundAuthResult(
+                await dispatcher.SendAsync(
+                    new RemoveMemberPasswordCommand(
+                        memberId,
+                        sessionId,
+                        request.CurrentPassword,
+                        refreshToken),
+                    cancellationToken).ConfigureAwait(false),
+                httpContext,
+                options.Value.RefreshTokenLifetimeDays);
+        })
+            .RequireAuthorization();
+        removePassword.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(removePassword, requireScope);
+
+        RouteHandlerBuilder unlinkIdentity = browser.MapPost(
+            "/external-identities/{externalIdentityId:guid}/unlink",
+            async (
+                Guid externalIdentityId,
+                BrowserUnlinkExternalIdentityRequest request,
+                ClaimsPrincipal user,
+                HttpContext httpContext,
+                IAuthScopeContext scopeContext,
+                IRequestDispatcher dispatcher,
+                IOptions<AuthApplicationOptions> options,
+                CancellationToken cancellationToken) =>
+            {
+                if (!this.TokenTenantMatches(user, scopeContext) ||
+                    GetMemberId(user) is not { } memberId ||
+                    GetSessionId(user) is not { } sessionId ||
+                    !TryGetBrowserCookie(httpContext, BrowserRefreshCookieName, out string? refreshToken))
+                {
+                    return Results.Unauthorized();
+                }
+
+                return ToBrowserRefreshTokenBoundAuthResult(
+                    await dispatcher.SendAsync(
+                        new UnlinkExternalIdentityCommand(
+                            memberId,
+                            sessionId,
+                            externalIdentityId,
+                            request.CurrentPassword,
+                            refreshToken),
+                        cancellationToken).ConfigureAwait(false),
+                    httpContext,
+                    options.Value.RefreshTokenLifetimeDays);
+            })
+            .RequireAuthorization();
+        unlinkIdentity.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
+        RequireScopeWhenNeeded(unlinkIdentity, requireScope);
 
         RouteHandlerBuilder activateTotp = browser.MapPost("/mfa/totp/activate", async (
             BrowserActivateTotpRequest request,
@@ -144,7 +267,7 @@ public sealed partial class AuthModule
                 return Results.Unauthorized();
             }
 
-            Result<TotpActivationResponse> result = await dispatcher.SendAsync(
+            Result<RefreshTokenBoundCompletion<TotpActivationResponse>> result = await dispatcher.SendAsync(
                 new ActivateTotpCommand(memberId, sessionId, request.Code, refreshToken),
                 cancellationToken).ConfigureAwait(false);
             if (result.IsFailure)
@@ -152,14 +275,21 @@ public sealed partial class AuthModule
                 return result.ToHttpResult(PublicErrorStatusCodes);
             }
 
+            if (result.Value.RefreshTokenReuseDetected)
+            {
+                DeleteBrowserCookies(httpContext);
+                return ToRefreshTokenReuseHttpResult();
+            }
+
+            TotpActivationResponse response = result.Value.Response;
             SetBrowserCookies(
                 httpContext,
-                result.Value.AccessToken,
-                result.Value.RefreshToken,
+                response.AccessToken,
+                response.RefreshToken,
                 options.Value.RefreshTokenLifetimeDays);
             return Results.Ok(new BrowserTotpActivationResponse(
-                result.Value.AccessToken,
-                result.Value.RecoveryCodes));
+                response.AccessToken,
+                response.RecoveryCodes));
         })
             .RequireAuthorization();
         activateTotp.Produces<BrowserTotpActivationResponse>(StatusCodes.Status200OK);
@@ -226,6 +356,12 @@ public sealed partial class AuthModule
 
             if (!result.Value.Succeeded)
             {
+                if (result.Value.RefreshTokenReuseDetected)
+                {
+                    DeleteBrowserCookies(httpContext);
+                    return ToRefreshTokenReuseHttpResult();
+                }
+
                 return Results.Unauthorized();
             }
 
@@ -275,6 +411,12 @@ public sealed partial class AuthModule
 
             if (!result.Value.Succeeded)
             {
+                if (result.Value.RefreshTokenReuseDetected)
+                {
+                    DeleteBrowserCookies(httpContext);
+                    return ToRefreshTokenReuseHttpResult();
+                }
+
                 return Results.Unauthorized();
             }
 
@@ -313,6 +455,7 @@ public sealed partial class AuthModule
             }
         })
             .RequireAuthorization();
+        signOut.Produces(StatusCodes.Status204NoContent);
         RequireScopeWhenNeeded(signOut, requireScope);
 
         RouteHandlerBuilder externalExchange = browser.MapPost("/external/exchange", async (

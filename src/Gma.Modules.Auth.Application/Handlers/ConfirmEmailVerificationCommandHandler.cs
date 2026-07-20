@@ -5,6 +5,7 @@ using Gma.Framework.Results;
 using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
 using Gma.Modules.Auth.Application.Commands;
+using Gma.Modules.Auth.Domain.Errors;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
 
@@ -35,6 +36,15 @@ internal sealed class ConfirmEmailVerificationCommandHandler(
             target.MatchedTokenHash,
             idGenerator.NewId(),
             clock.UtcNow);
-        return result.IsSuccess ? Result.Success(Unit.Value) : Result.Failure<Unit>(result.Error);
+        if (result.IsSuccess)
+        {
+            return Result.Success(Unit.Value);
+        }
+
+        return result.Error == AuthDomainErrors.EmailVerificationTokenExpired ||
+               result.Error == AuthDomainErrors.EmailVerificationTokenNotValid ||
+               result.Error == AuthDomainErrors.EmailUsernameNotFound
+            ? Result.Failure<Unit>(AuthApplicationErrors.EmailVerificationInvalid)
+            : Result.Failure<Unit>(result.Error);
     }
 }

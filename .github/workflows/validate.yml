@@ -68,7 +68,7 @@ jobs:
         working-directory: gma-module-auth
         run: dotnet list Gma.Modules.Auth.slnx package --vulnerable --include-transitive
 
-  postgresql:
+  relational:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout module
@@ -98,7 +98,7 @@ jobs:
         working-directory: gma-module-auth
         run: ./eng/bootstrap-source-roots.ps1 -Force
 
-      - name: Run PostgreSQL integration tests
+      - name: Run relational integration tests
         working-directory: gma-module-auth
         env:
           GMA_REQUIRE_DOCKER_TESTS: "true"

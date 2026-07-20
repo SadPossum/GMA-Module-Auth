@@ -280,6 +280,79 @@ public sealed class ExternalAuthenticationFlowTests
     }
 
     [Fact]
+    public async Task Link_exchange_uses_latest_authentication_evidence_instead_of_session_age()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        MemberRepository repository = new(dbContext);
+        Member member = CreatePasswordMember("member@example.com");
+        DateTimeOffset loginAtUtc = Now.AddHours(-1);
+        MemberSession session = member.StartSession(
+            new MemberSessionId(Guid.Parse("aaaaaaaa-0000-0000-0000-000000000003")),
+            "refresh-hash",
+            Now.AddDays(1),
+            loginAtUtc,
+            authenticationEvidence: SessionAuthenticationEvidence.Password(loginAtUtc),
+            absoluteExpiresAtUtc: Now.AddDays(90)).Value;
+        Result<MemberSession> reauthenticated = member.ReauthenticateSession(
+            session.Id,
+            ["refresh-hash"],
+            "reauthenticated-refresh-hash",
+            Now.AddDays(1),
+            Now.AddDays(90),
+            SessionAuthenticationEvidence.Password(Now),
+            Guid.NewGuid(),
+            Now);
+        Assert.True(reauthenticated.IsSuccess);
+        await repository.AddAsync(member, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var store = new InMemoryExchangeStore();
+        store.Add(CreateExchange(
+            "member@example.com",
+            emailVerified: true,
+            ExternalAuthenticationIntent.Link,
+            member.Id.Value,
+            session.Id.Value));
+
+        Result<ExternalAuthenticationResponse> result = await CreateExchangeHandler(store, repository).HandleAsync(
+            new ExchangeExternalAuthenticationCommand("one-time-code", member.Id.Value, session.Id.Value),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ExternalAuthenticationStatus.Linked, result.Value.Status);
+    }
+
+    [Fact]
+    public async Task Link_exchange_rejects_recent_session_with_stale_authentication_evidence()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        MemberRepository repository = new(dbContext);
+        Member member = CreatePasswordMember("member@example.com");
+        MemberSession session = member.StartSession(
+            new MemberSessionId(Guid.Parse("aaaaaaaa-0000-0000-0000-000000000004")),
+            "refresh-hash",
+            Now.AddDays(1),
+            Now,
+            authenticationEvidence: SessionAuthenticationEvidence.Password(Now.AddHours(-1))).Value;
+        await repository.AddAsync(member, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var store = new InMemoryExchangeStore();
+        store.Add(CreateExchange(
+            "member@example.com",
+            emailVerified: true,
+            ExternalAuthenticationIntent.Link,
+            member.Id.Value,
+            session.Id.Value));
+
+        Result<ExternalAuthenticationResponse> result = await CreateExchangeHandler(store, repository).HandleAsync(
+            new ExchangeExternalAuthenticationCommand("one-time-code", member.Id.Value, session.Id.Value),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthApplicationErrors.FreshAuthenticationRequired, result.Error);
+        Assert.Empty(member.ExternalIdentities);
+    }
+
+    [Fact]
     public async Task Email_verification_persists_only_hash_and_clears_it_after_confirmation()
     {
         await using AuthDbContext dbContext = CreateDbContext();
@@ -330,6 +403,40 @@ public sealed class ExternalAuthenticationFlowTests
         Assert.Null(email.VerificationExpiresAtUtc);
     }
 
+    [Fact]
+    public async Task Expired_email_verification_uses_the_stable_public_error()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        MemberRepository repository = new(dbContext);
+        Member member = CreatePasswordMember("member@example.com");
+        await repository.AddAsync(member, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var tokenService = new FakeAuthOneTimeTokenService("verification-code");
+        var idGenerator = new SequentialIdGenerator();
+        var requestHandler = new RequestEmailVerificationCommandHandler(
+            repository,
+            tokenService,
+            new FakeClock(),
+            idGenerator,
+            Options.Create(new AuthApplicationOptions()));
+        Assert.True((await requestHandler.HandleAsync(
+            new RequestEmailVerificationCommand(member.Id.Value, null),
+            CancellationToken.None)).IsSuccess);
+        await dbContext.SaveChangesAsync();
+        var confirmationHandler = new ConfirmEmailVerificationCommandHandler(
+            repository,
+            tokenService,
+            new FakeClock(Now.AddDays(2)),
+            idGenerator);
+
+        Result<Unit> result = await confirmationHandler.HandleAsync(
+            new ConfirmEmailVerificationCommand("verification-code"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthApplicationErrors.EmailVerificationInvalid, result.Error);
+    }
+
     private static ExchangeExternalAuthenticationCommandHandler CreateExchangeHandler(
         IExternalAuthenticationExchangeStore store,
         IMemberRepository repository,
@@ -351,6 +458,7 @@ public sealed class ExternalAuthenticationFlowTests
         new(
             new EmptyTotpAuthenticatorRepository(),
             new EmptyAuthenticationChallengeRepository(),
+            new NoOpAuthenticationChallengeRequestSerializer(),
             new UnavailableTimeBasedOneTimePasswordProvider(),
             new UnavailableAuthenticatorSecretProtector(),
             new FakeMultiFactorTokenService(),
@@ -362,6 +470,7 @@ public sealed class ExternalAuthenticationFlowTests
         new(
             new MemberTotpAuthenticatorRepository(dbContext),
             new MemberAuthenticationChallengeRepository(dbContext),
+            new NoOpAuthenticationChallengeRequestSerializer(),
             new UnavailableTimeBasedOneTimePasswordProvider(),
             new UnavailableAuthenticatorSecretProtector(),
             new FakeMultiFactorTokenService(),
@@ -508,9 +617,9 @@ public sealed class ExternalAuthenticationFlowTests
         public IReadOnlyList<string> GetCandidateRecoveryCodeHashes(string code) => [];
     }
 
-    private sealed class FakeClock : ISystemClock
+    private sealed class FakeClock(DateTimeOffset? nowUtc = null) : ISystemClock
     {
-        public DateTimeOffset UtcNow => Now;
+        public DateTimeOffset UtcNow { get; } = nowUtc ?? Now;
     }
 
     private sealed class SequentialIdGenerator : IIdGenerator

@@ -13,6 +13,10 @@ internal sealed class CompleteMultiFactorChallengeCommandValidator
         {
             yield return "Challenge token is required.";
         }
+        else if (command.ChallengeToken.Trim().Length > AuthContractLimits.OpaqueTokenMaxLength)
+        {
+            yield return "Challenge token is too long.";
+        }
 
         if (command.CodeType is MultiFactorCodeType.Unknown || !Enum.IsDefined(command.CodeType))
         {
@@ -22,6 +26,10 @@ internal sealed class CompleteMultiFactorChallengeCommandValidator
         if (string.IsNullOrWhiteSpace(command.Code))
         {
             yield return "Authentication code is required.";
+        }
+        else if (command.Code.Trim().Length > AuthContractLimits.AuthenticationCodeMaxLength)
+        {
+            yield return "Authentication code is too long.";
         }
     }
 }

@@ -1,10 +1,12 @@
 namespace Gma.Modules.Auth.Application.Security;
 
 using Gma.Modules.Auth.Domain.Services;
+using Microsoft.Extensions.Options;
 
 internal sealed class PasswordProofService(
     IPasswordHashingService passwordHashingService,
-    IAuthenticationAttemptLimiter attemptLimiter)
+    IAuthenticationAttemptLimiter attemptLimiter,
+    IOptions<AuthApplicationOptions> options)
 {
     public async ValueTask<PasswordVerificationOutcome> VerifyAsync(
         string scopeId,
@@ -15,12 +17,17 @@ internal sealed class PasswordProofService(
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken)
     {
-        if (!await attemptLimiter.IsAllowedAsync(
+        AuthenticationAttemptPolicy policy = new(
+            options.Value.FailedLoginLimit,
+            TimeSpan.FromMinutes(options.Value.FailedLoginWindowMinutes));
+        AuthenticationAttemptLease? lease = await attemptLimiter.TryAcquireAsync(
                 scopeId,
                 purpose,
                 target,
                 nowUtc,
-                cancellationToken).ConfigureAwait(false))
+                policy,
+                cancellationToken).ConfigureAwait(false);
+        if (lease is null)
         {
             return PasswordVerificationOutcome.Unknown;
         }
@@ -36,21 +43,13 @@ internal sealed class PasswordProofService(
             outcome = passwordHashingService.VerifyPassword(passwordHash, password);
         }
 
-        if (outcome == PasswordVerificationOutcome.Unknown)
-        {
-            await attemptLimiter.RecordFailureAsync(
-                scopeId,
-                purpose,
-                target,
-                nowUtc,
-                cancellationToken).ConfigureAwait(false);
-        }
-        else
+        if (outcome != PasswordVerificationOutcome.Unknown)
         {
             await attemptLimiter.RecordSuccessAsync(
                 scopeId,
                 purpose,
                 target,
+                lease.Value,
                 cancellationToken).ConfigureAwait(false);
         }
 

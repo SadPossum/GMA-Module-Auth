@@ -274,6 +274,61 @@ public sealed class PasswordRecoveryTests
     }
 
     [Fact]
+    public async Task Invalid_recovery_challenge_does_not_invoke_the_password_blocklist()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        var blocklist = new RecordingPasswordBlocklist();
+        var handler = new ConfirmPasswordRecoveryCommandHandler(
+            new PasswordRecoveryChallengeRepository(dbContext),
+            new MemberRepository(dbContext),
+            new FakeRecoveryTokenService(),
+            new FakePasswordHashingService(),
+            blocklist,
+            new FakeClock(),
+            new RandomIdGenerator());
+
+        Result<Unit> result = await handler.HandleAsync(
+            new ConfirmPasswordRecoveryCommand("invalid-recovery-code", "NewSafePassword123!"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthApplicationErrors.PasswordRecoveryInvalid, result.Error);
+        Assert.Equal(0, blocklist.CallCount);
+    }
+
+    [Fact]
+    public async Task Inactive_recovery_challenge_does_not_invoke_the_password_blocklist()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreateVerifiedPasswordMember();
+        PasswordRecoveryChallenge challenge = CreateChallenge(
+            member.Id,
+            $"hash:{FakeRecoveryTokenService.Code}",
+            FakeRecoveryTokenService.Code);
+        challenge.Revoke(Now.AddMinutes(1));
+        dbContext.Members.Add(member);
+        dbContext.PasswordRecoveryChallenges.Add(challenge);
+        await dbContext.SaveChangesAsync();
+        var blocklist = new RecordingPasswordBlocklist();
+        var handler = new ConfirmPasswordRecoveryCommandHandler(
+            new PasswordRecoveryChallengeRepository(dbContext),
+            new MemberRepository(dbContext),
+            new FakeRecoveryTokenService(),
+            new FakePasswordHashingService(),
+            blocklist,
+            new FakeClock(),
+            new RandomIdGenerator());
+
+        Result<Unit> result = await handler.HandleAsync(
+            new ConfirmPasswordRecoveryCommand(FakeRecoveryTokenService.Code, "NewSafePassword123!"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthApplicationErrors.PasswordRecoveryInvalid, result.Error);
+        Assert.Equal(0, blocklist.CallCount);
+    }
+
+    [Fact]
     public async Task Recovery_lookup_is_isolated_by_the_active_auth_scope()
     {
         string databaseName = $"auth-recovery-scope-{Guid.NewGuid():N}";
@@ -300,6 +355,7 @@ public sealed class PasswordRecoveryTests
     private static RequestPasswordRecoveryCommandHandler CreateRequestHandler(AuthDbContext dbContext) => new(
         new PasswordRecoveryRecipientReader(dbContext),
         new PasswordRecoveryChallengeRepository(dbContext),
+        new NoOpPasswordRecoveryRequestSerializer(),
         new FakeRecoveryTokenService(),
         new FakeClock(),
         new RandomIdGenerator(),
@@ -364,6 +420,14 @@ public sealed class PasswordRecoveryTests
         public IReadOnlyList<string> GetCandidateHashes(string code) => [$"hash:{code}"];
     }
 
+    private sealed class NoOpPasswordRecoveryRequestSerializer : IPasswordRecoveryRequestSerializer
+    {
+        public Task AcquireAsync(
+            string scopeId,
+            MemberId memberId,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
     private sealed class FakePasswordHashingService : IPasswordHashingService
     {
         public string HashPassword(string password) => $"hash:{password}";
@@ -384,6 +448,17 @@ public sealed class PasswordRecoveryTests
     {
         public ValueTask<bool> IsBlockedAsync(string password, CancellationToken cancellationToken) =>
             ValueTask.FromResult(true);
+    }
+
+    private sealed class RecordingPasswordBlocklist : IPasswordBlocklist
+    {
+        public int CallCount { get; private set; }
+
+        public ValueTask<bool> IsBlockedAsync(string password, CancellationToken cancellationToken)
+        {
+            this.CallCount++;
+            return ValueTask.FromResult(false);
+        }
     }
 
     private sealed class FakeClock : ISystemClock

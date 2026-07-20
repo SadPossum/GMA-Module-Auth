@@ -1,15 +1,21 @@
 namespace Gma.Modules.Auth.Tests.Api;
 
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 using Gma.Framework.Api.Modules;
 using Gma.Framework.Api.Security;
+using Gma.Framework.Administration.Api;
 using Gma.Framework.Infrastructure;
+using Gma.Modules.Auth.AdminApi;
 using Gma.Modules.Auth.Api;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Providers.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Routing;
@@ -41,9 +47,10 @@ public sealed class AuthEndpointContractTests
         app.UseAuthorization();
         app.MapModules();
 
-        string[] routes = [.. ((IEndpointRouteBuilder)app).DataSources
+        RouteEndpoint[] endpoints = [.. ((IEndpointRouteBuilder)app).DataSources
             .SelectMany(dataSource => dataSource.Endpoints)
-            .OfType<RouteEndpoint>()
+            .OfType<RouteEndpoint>()];
+        string[] routes = [.. endpoints
             .Select(endpoint => endpoint.RoutePattern.RawText)
             .OfType<string>()];
 
@@ -54,8 +61,14 @@ public sealed class AuthEndpointContractTests
         Assert.Contains("/api/auth/sessions/{sessionId:guid}/sign-out", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/step-up/password", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/browser/step-up/password", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/browser/password", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/browser/password/remove", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/self-registration", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external-identities/{externalIdentityId:guid}/unlink", routes, StringComparer.Ordinal);
+        Assert.Contains(
+            "/api/auth/browser/external-identities/{externalIdentityId:guid}/unlink",
+            routes,
+            StringComparer.Ordinal);
         Assert.Contains("/api/auth/external/providers", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external/{provider}/sign-in/challenge", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/external/{provider}/link/challenge", routes, StringComparer.Ordinal);
@@ -80,6 +93,20 @@ public sealed class AuthEndpointContractTests
         Assert.All(recoveryEndpoints, endpoint =>
             Assert.Empty(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>()));
 
+        RouteEndpoint registerEndpoint = GetEndpoint(endpoints, "/api/auth/register", "POST");
+        Assert.Equal(
+            typeof(RegisterMemberRequest),
+            Assert.IsType<IAcceptsMetadata>(
+                registerEndpoint.Metadata.GetMetadata<IAcceptsMetadata>(),
+                exactMatch: false).RequestType);
+        AssertProduces(registerEndpoint, StatusCodes.Status200OK, typeof(AuthTokensResponse));
+        AssertProduces(GetEndpoint(endpoints, "/api/auth/refresh", "POST"), StatusCodes.Status200OK, typeof(AuthTokensResponse));
+        AssertProduces(GetEndpoint(endpoints, "/api/auth/sign-out", "POST"), StatusCodes.Status204NoContent);
+        AssertProduces(GetEndpoint(endpoints, "/api/auth/email-verification", "POST"), StatusCodes.Status202Accepted);
+        AssertProduces(GetEndpoint(endpoints, "/api/auth/email-verification/confirm", "POST"), StatusCodes.Status204NoContent);
+        AssertProduces(GetEndpoint(endpoints, "/api/auth/browser/sign-out", "POST"), StatusCodes.Status204NoContent);
+        AssertProduces(GetEndpoint(endpoints, "/api/auth/external/{provider}/sign-in", "GET"), StatusCodes.Status302Found);
+
         app.Urls.Add("http://127.0.0.1:0");
         await app.StartAsync();
         IServer server = app.Services.GetRequiredService<IServer>();
@@ -101,6 +128,110 @@ public sealed class AuthEndpointContractTests
         AssertNoStore(unauthorizedResponse);
         AssertNoStore(malformedResponse);
         AssertNoStore(missingResponse);
+    }
+
+    [Fact]
+    public async Task Admin_endpoint_graph_declares_typed_success_contracts()
+    {
+        WebApplicationBuilder builder = WebApplication.CreateBuilder();
+        builder.Configuration.AddInMemoryCollection(
+        [
+            new("Auth:Jwt:SigningKey", "test-jwt-signing-key-000000000000000000000000"),
+            new("Auth:RefreshTokens:Pepper", "test-refresh-token-pepper-000000000000000000000000"),
+            new("Persistence:Provider", "SqlServer"),
+            new("ConnectionStrings:SqlServer", "Server=(localdb)\\mssqllocaldb;Database=GmaAuthAdminEndpointTests;Trusted_Connection=True;")
+        ]);
+        builder.Services.AddGmaAdministrationApi(builder.Configuration);
+        builder.AddGmaInfrastructure();
+        builder.AddAuthAdminApiModule(AuthProfile.Global("global"));
+
+        await using WebApplication app = builder.Build();
+        app.MapAdminApiModules();
+
+        RouteEndpoint[] endpoints = [.. ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(dataSource => dataSource.Endpoints)
+            .OfType<RouteEndpoint>()];
+        RouteEndpoint createMember = GetEndpoint(endpoints, "/api/admin/auth/members/", "POST");
+        Type requestType = Assert.IsType<IAcceptsMetadata>(
+            createMember.Metadata.GetMetadata<IAcceptsMetadata>(),
+            exactMatch: false).RequestType!;
+
+        Assert.Equal(typeof(AuthAdminApiModule.CreateAdminMemberRequest), requestType);
+        Assert.Equal(typeof(UsernameType), requestType.GetProperty("UsernameType")!.PropertyType);
+        AssertProduces(createMember, StatusCodes.Status200OK, typeof(AuthAdminApiModule.AdminCreatedMemberApiResponse));
+        AssertProduces(
+            GetEndpoint(endpoints, "/api/admin/auth/members/{memberId:guid}", "GET"),
+            StatusCodes.Status200OK,
+            typeof(AdminMemberDetails));
+        AssertProduces(
+            GetEndpoint(endpoints, "/api/admin/auth/members/{memberId:guid}/disable", "POST"),
+            StatusCodes.Status204NoContent);
+        AssertProduces(
+            GetEndpoint(endpoints, "/api/admin/auth/members/{memberId:guid}/revoke-sessions", "POST"),
+            StatusCodes.Status200OK,
+            typeof(AdminRevokeSessionsResponse));
+
+        await AssertNoStoreOnDeniedAdminRequest(
+            app,
+            createMember,
+            """{"username":"user@example.com","usernameType":"email","password":null,"generatePassword":true}""");
+        await AssertNoStoreOnDeniedAdminRequest(
+            app,
+            GetEndpoint(endpoints, "/api/admin/auth/members/{memberId:guid}/reset-password", "POST"),
+            """{"newPassword":null,"generatePassword":true,"confirmed":true}""",
+            new RouteValueDictionary { ["memberId"] = Guid.NewGuid().ToString() });
+    }
+
+    private static RouteEndpoint GetEndpoint(RouteEndpoint[] endpoints, string route, string method) =>
+        Assert.Single(endpoints, endpoint =>
+            string.Equals(endpoint.RoutePattern.RawText, route, StringComparison.Ordinal) &&
+            endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.Contains(method, StringComparer.Ordinal) == true);
+
+    private static void AssertProduces(RouteEndpoint endpoint, int statusCode, Type? responseType = null)
+    {
+        IProducesResponseTypeMetadata metadata = Assert.Single(
+            endpoint.Metadata.GetOrderedMetadata<IProducesResponseTypeMetadata>(),
+            item => item.StatusCode == statusCode);
+
+        if (responseType is not null)
+        {
+            Assert.Equal(responseType, metadata.Type);
+        }
+    }
+
+    private static async Task AssertNoStoreOnDeniedAdminRequest(
+        WebApplication app,
+        RouteEndpoint endpoint,
+        string requestJson,
+        RouteValueDictionary? routeValues = null)
+    {
+        await using AsyncServiceScope scope = app.Services.CreateAsyncScope();
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = scope.ServiceProvider,
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "test-admin")],
+                authenticationType: "test"))
+        };
+        httpContext.Request.Method = "POST";
+        httpContext.Request.ContentType = "application/json";
+        httpContext.Request.RouteValues = routeValues ?? [];
+        byte[] requestBody = Encoding.UTF8.GetBytes(requestJson);
+        httpContext.Request.ContentLength = requestBody.Length;
+        httpContext.Request.Body = new MemoryStream(requestBody);
+        httpContext.Response.Body = new MemoryStream();
+        httpContext.Features.Set<IHttpRequestBodyDetectionFeature>(new RequestBodyDetectionFeature());
+
+        await endpoint.RequestDelegate!(httpContext);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, httpContext.Response.StatusCode);
+        Assert.Equal("no-store", httpContext.Response.Headers.CacheControl);
+        Assert.Equal("no-cache", httpContext.Response.Headers.Pragma);
+    }
+
+    private sealed class RequestBodyDetectionFeature : IHttpRequestBodyDetectionFeature
+    {
+        public bool CanHaveBody => true;
     }
 
     private static void AssertNoStore(HttpResponseMessage response)

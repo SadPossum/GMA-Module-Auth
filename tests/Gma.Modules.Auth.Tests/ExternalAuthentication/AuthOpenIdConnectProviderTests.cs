@@ -42,6 +42,57 @@ public sealed class AuthOpenIdConnectProviderTests
     }
 
     [Theory]
+    [InlineData("https://client-secret@accounts.example.com")]
+    [InlineData("https://accounts.example.com?tenant=one")]
+    [InlineData("https://accounts.example.com#issuer")]
+    public void Enabled_configuration_rejects_ambiguous_authorities(string authority)
+    {
+        var validator = new AuthOpenIdConnectOptionsValidator();
+        AuthOpenIdConnectOptions options = CreateOptions();
+        options.Providers["google"].Authority = authority;
+
+        ValidateOptionsResult result = validator.Validate(name: null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains("Authority", result.FailureMessage, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("profile roles")]
+    [InlineData("profile\\roles")]
+    [InlineData("profile\nroles")]
+    public void Enabled_configuration_rejects_invalid_scope_tokens(string scope)
+    {
+        var validator = new AuthOpenIdConnectOptionsValidator();
+        AuthOpenIdConnectOptions options = CreateOptions();
+        options.Providers["google"].Scopes = ["openid", "email", scope];
+
+        ValidateOptionsResult result = validator.Validate(name: null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains("valid OAuth scope tokens", result.FailureMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Enabled_configuration_bounds_scope_count()
+    {
+        var validator = new AuthOpenIdConnectOptionsValidator();
+        AuthOpenIdConnectOptions options = CreateOptions();
+        options.Providers["google"].Scopes =
+        [
+            "openid",
+            "email",
+            .. Enumerable.Range(0, AuthOpenIdConnectProviderOptions.ScopeLimit).Select(index => $"scope-{index}"),
+        ];
+
+        ValidateOptionsResult result = validator.Validate(name: null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains("valid OAuth scope tokens", result.FailureMessage, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("email\nclaim")]
     public void Enabled_configuration_rejects_invalid_claim_names(string claimName)
@@ -93,17 +144,36 @@ public sealed class AuthOpenIdConnectProviderTests
     }
 
     [Fact]
-    public void Return_url_policy_allows_local_paths_and_allowlisted_https_origins_only()
+    public void Return_url_policy_allows_only_explicit_callback_paths_with_runtime_queries()
     {
         AuthOpenIdConnectOptions options = CreateOptions();
-        options.AllowedReturnUrls = ["https://app.example.com/auth/callback"];
+        options.AllowedReturnUrls = ["/auth/callback", "https://app.example.com/auth/callback"];
         var policy = new ExternalReturnUrlPolicy(options);
 
         Assert.True(policy.TryValidate("/auth/callback", out _));
-        Assert.True(policy.TryValidate("https://app.example.com/other", out _));
+        Assert.True(policy.TryValidate("/auth/callback?intent=sign-in", out _));
+        Assert.True(policy.TryValidate("https://app.example.com/auth/callback?intent=link", out _));
+        Assert.False(policy.TryValidate("/other", out _));
+        Assert.False(policy.TryValidate("https://app.example.com/other", out _));
         Assert.False(policy.TryValidate("//evil.example.com", out _));
         Assert.False(policy.TryValidate("https://evil.example.com/callback", out _));
         Assert.False(policy.TryValidate("javascript:alert(1)", out _));
+    }
+
+    [Theory]
+    [InlineData("https://app.example.com/auth/callback?intent=link")]
+    [InlineData("https://app.example.com/auth/callback#fragment")]
+    [InlineData("/auth/callback?intent=link")]
+    public void Enabled_configuration_rejects_ambiguous_callback_allowlist_entries(string returnUrl)
+    {
+        var validator = new AuthOpenIdConnectOptionsValidator();
+        AuthOpenIdConnectOptions options = CreateOptions();
+        options.AllowedReturnUrls = [returnUrl];
+
+        ValidateOptionsResult result = validator.Validate(name: null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains("AllowedReturnUrls", result.FailureMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -131,6 +201,7 @@ public sealed class AuthOpenIdConnectProviderTests
             ["Auth:OpenIdConnect:Providers:google:ClientSecret"] = "client-secret",
             ["Auth:OpenIdConnect:Providers:google:Scopes:0"] = "openid",
             ["Auth:OpenIdConnect:Providers:google:Scopes:1"] = "email",
+            ["Auth:OpenIdConnect:AllowedReturnUrls:0"] = "/auth/callback",
         });
         builder.AddAuthOpenIdConnectProviders();
 
@@ -159,6 +230,7 @@ public sealed class AuthOpenIdConnectProviderTests
             ["Auth:OpenIdConnect:Providers:google:ClientSecret"] = "client-secret",
             ["Auth:OpenIdConnect:Providers:google:Scopes:0"] = "openid",
             ["Auth:OpenIdConnect:Providers:google:Scopes:1"] = "email",
+            ["Auth:OpenIdConnect:AllowedReturnUrls:0"] = "/auth/callback",
         });
 
         builder.AddAuthOpenIdConnectProviders();
@@ -322,6 +394,7 @@ public sealed class AuthOpenIdConnectProviderTests
         new()
         {
             Enabled = true,
+            AllowedReturnUrls = ["/auth/callback"],
             Providers = new Dictionary<string, AuthOpenIdConnectProviderOptions>(StringComparer.OrdinalIgnoreCase)
             {
                 ["google"] = new()

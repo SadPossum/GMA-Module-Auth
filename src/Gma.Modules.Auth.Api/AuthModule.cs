@@ -1,7 +1,6 @@
 namespace Gma.Modules.Auth.Api;
 
 using System.Security.Claims;
-using System.Text.Json;
 using Gma.Framework.Api.Modules;
 using Gma.Framework.Api.Observability;
 using Gma.Framework.Api.Results;

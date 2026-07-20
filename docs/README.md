@@ -37,16 +37,21 @@ Auth can be composed in two scope modes. `AuthProfile.ScopeAware()` follows the 
 - Provider access/refresh tokens are not stored. The browser callback receives only a short-lived, hashed, single-use GMA exchange code.
 - Passwords and verification codes are stored only as hashes. Refresh-token hashing supports active and previous peppers for rotation.
 - Password proof uses a durable, scope/purpose/target-partitioned attempt limiter when the complete Auth module is composed. Attempt targets are stored only as keyed hashes; raw usernames and candidate passwords are never persisted.
+- The single-process fallback shares the same partition normalization, caps its in-memory working set, and fails closed at saturation. Multi-replica production hosts compose Auth persistence for durable limiting.
 - External exchange, email-verification, password-recovery, MFA challenge, and MFA recovery secrets use distinct keyed-hash domains. Legacy unscoped hashes remain readable during pepper rotation so in-flight challenges survive deployment.
 - Refresh-token replay revokes active sessions. Admin password reset also revokes active sessions.
-- Primary authentication enforces a configurable active-session ceiling and retires the oldest unexpired sessions above it. Aggregate reads and self-service discovery exclude expired session history before retention runs.
+- Disabled members cannot begin password/external MFA challenges, record provider authentication, request verification delivery, create sessions, or rotate refresh material.
+- Primary authentication enforces a configurable active-session ceiling and retires the oldest unexpired sessions above it. Ordinary refresh uses a sliding refresh-token lifetime capped by an absolute session lifetime anchored to the last explicit authentication; password or factor reauthentication resets that absolute bound. Aggregate reads and self-service discovery exclude expired session history before retention runs.
+- JWT access tokens are stateless and remain valid until their configured expiry; session revocation blocks refresh and session-bound security mutations immediately but does not introspect every bearer request. Keep access tokens short-lived (the default is 15 minutes), and add a host-owned online token/session check only when a product requires immediate bearer revocation and accepts that per-request availability cost.
 - Password recovery is enumeration-safe, accepts only active password members with a verified email, stores only a rotating HMAC code hash, and revokes every session after confirmation.
+- Password-recovery requests are serialized per member across replicas, so cooldown and single-active-code guarantees remain strict under concurrency.
 - An active local TOTP authenticator is enforced after every password and external primary sign-in. Auth issues no session or token until the one-time primary challenge succeeds.
 - TOTP secrets are protected at rest, accepted time steps cannot replay, recovery codes are stored only as keyed hashes, and invalid challenge or management attempts are retained durably for bounded rate limiting.
 - Sign-ins and authentication-method changes publish security events with bounded client context; secrets and provider tokens are excluded.
 - Scope context and the access-token scope claim must agree on protected scope-aware endpoints.
 - Scope-aware OIDC challenges carry the normalized scope only inside protected authentication state and restore it before the callback transaction; provider redirects do not depend on tenant headers surviving the round trip.
 - Every `/api/auth` response inherits `Cache-Control: no-store` and `Pragma: no-cache`, including optional provider-contributed routes.
+- Phone usernames are canonical international identifiers (`+` followed by 7-15 digits with a nonzero country-code prefix). Products format user input before sending it to Auth; locale-specific phone parsing stays outside the reusable identity domain.
 
 ## User API
 
@@ -62,11 +67,11 @@ Base path: `/api/auth`.
 | `POST` | `/sign-out` | Revoke one session. |
 | `POST` | `/sign-out-all` | Revoke all sessions. |
 | `GET` | `/methods` | List password, email verification, and linked-provider state. |
-| `PUT` | `/password` | Add or change a password after fresh authentication. |
-| `POST` | `/password/remove` | Remove a password when another method remains. |
+| `PUT` | `/password` | Add or change a password after fresh authentication and refresh proof; rotate the current session. |
+| `POST` | `/password/remove` | Remove a password when another method remains; rotate current and revoke sibling password sessions. |
 | `POST` | `/password-recovery` | Request an enumeration-safe password recovery email. |
 | `POST` | `/password-recovery/confirm` | Consume a one-time recovery code, replace the password, and revoke all sessions. |
-| `POST` | `/external-identities/{id}/unlink` | Unlink a provider without account lockout. |
+| `POST` | `/external-identities/{id}/unlink` | Unlink a provider without account lockout; rotate current and revoke sibling sessions from that provider. |
 | `POST` | `/email-verification` | Request a bounded, cooldown-protected verification challenge. |
 | `POST` | `/email-verification/confirm` | Confirm a one-time verification code. |
 | `POST` | `/external/exchange` | Exchange a provider callback code for GMA tokens or complete a link. |
@@ -82,7 +87,7 @@ Base path: `/api/auth`.
 | `POST` | `/mfa/recovery-codes/regenerate` | Replace recovery codes after factor and refresh proof. |
 | `POST` | `/mfa/totp/disable` | Disable TOTP after factor and refresh proof, then revoke all sessions. |
 
-The browser variants under `/api/auth/browser` keep refresh material in HttpOnly cookies. Scope-aware hosts also require `X-Tenant-Id`; protected endpoints require a bearer access token.
+The browser variants under `/api/auth/browser` keep refresh material in HttpOnly cookies. This includes `/password`, `/password/remove`, and `/external-identities/{id}/unlink`; browser application code must not read or submit refresh tokens. Scope-aware hosts also require `X-Tenant-Id`; protected endpoints require a bearer access token.
 
 Registration remains backward-compatible: creating a password account does not suddenly require verified email. Products can request verification after registration and enforce `IsVerified` in their own onboarding/access policy. This avoids silently breaking existing applications while making verification state and delivery durable.
 
@@ -162,7 +167,9 @@ The frontend receives `code` and `provider` on its allowlisted return URL, then 
 
 ## Password and provider hybrid
 
-External-only members can add a password from a fresh provider-authenticated session. Password members can link any number of configured providers. Existing passwords require the current password before change/removal. Unlinking the provider used by the current session requires an alternate proof; another linked provider or password must remain.
+External-only members can add a password from a fresh provider-authenticated session. Password members can link any number of configured providers. Existing passwords require the current password before change/removal. Unlinking the provider used by the current session requires password proof; another linked provider or password must remain.
+
+Adding or changing a password, removing a password, and unlinking an external identity all require the current refresh token and rotate it atomically with the authenticator mutation. Updating an existing password revokes every sibling session. Password removal revokes sibling password-origin sessions, while provider unlink revokes sibling sessions from that provider. Bearer routes return replacement `AuthTokensResponse`; matching browser routes replace the HttpOnly access and refresh cookies and return `BrowserAuthResponse`. Refresh-token replay commits the existing all-session revocation response without committing the requested authenticator mutation.
 
 `GET /methods` is the self-service source for account-security UI. Admin member details additively expose password presence, verified-email presence, and linked provider names.
 
@@ -189,7 +196,7 @@ The adapter uses Otp.NET with a random 160-bit secret, SHA-1, six digits, a 30-s
 
 `AddAuthTotpAuthenticator` replaces Auth's fail-closed unavailable ports. A host that uses KMS/HSM secret custody or another validated TOTP implementation registers its replacement ports after the adapter. The default protector uses ASP.NET Core Data Protection. Production hosts must give it a stable application name and a persisted, encrypted, replica-shared key ring. Losing that key ring makes existing TOTP secrets unusable; an ephemeral key ring is not a production configuration.
 
-Enrollment and recovery-code responses are one-time secret-bearing responses and use `Cache-Control: no-store`. Browser routes keep refresh tokens in the existing HttpOnly cookie transport. Administrative recovery is a confirmed `reset-multi-factor` operation with a dedicated scoped permission, bounded reason, Auth security event, challenge invalidation, and all-session revocation.
+Enrollment and recovery-code responses are one-time secret-bearing responses and use `Cache-Control: no-store`. Browser routes keep refresh tokens in the existing HttpOnly cookie transport. Administrative recovery is a confirmed `reset-multi-factor` operation with a dedicated permission, bounded reason, Auth security event, challenge invalidation, and all-session revocation. Auth admin permissions are global under `AuthProfile.Global(...)` and concrete-scope permissions under `AuthProfile.ScopeAware()`; their metadata uses `GlobalOrScoped`, while each request still authorizes one exact runtime scope.
 
 ## Email verification and notifications
 
@@ -232,6 +239,8 @@ Retention is opt-in and bounded through the shared `BoundedBatchProcessor`. It d
 ```json
 {
   "Auth": {
+    "RefreshTokenLifetimeDays": 30,
+    "SessionAbsoluteLifetimeDays": 90,
     "MaximumActiveSessionsPerMember": 20,
     "FailedLoginLimit": 5,
     "FailedLoginWindowMinutes": 15,

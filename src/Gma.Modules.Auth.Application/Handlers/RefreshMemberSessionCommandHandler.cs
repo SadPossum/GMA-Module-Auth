@@ -13,6 +13,7 @@ using Gma.Framework.Cqrs;
 using Gma.Modules.Auth.Application.Ports;
 using Gma.Framework.Runtime.Time;
 using Gma.Framework.Results;
+using Gma.Framework.Runtime.Identity;
 
 internal sealed class RefreshMemberSessionCommandHandler(
     IMemberRepository memberRepository,
@@ -20,10 +21,11 @@ internal sealed class RefreshMemberSessionCommandHandler(
     IRefreshTokenHashingService refreshTokenHashingService,
     IOptions<AuthApplicationOptions> options,
     IAuthScopeContext scopeContext,
-    ISystemClock clock)
-    : ICommandHandler<RefreshMemberSessionCommand, AuthTokensResponse>
+    ISystemClock clock,
+    IIdGenerator idGenerator)
+    : ICommandHandler<RefreshMemberSessionCommand, RefreshTokenBoundCompletion<AuthTokensResponse>>
 {
-    public async Task<Result<AuthTokensResponse>> HandleAsync(
+    public async Task<Result<RefreshTokenBoundCompletion<AuthTokensResponse>>> HandleAsync(
         RefreshMemberSessionCommand command,
         CancellationToken cancellationToken)
     {
@@ -31,20 +33,20 @@ internal sealed class RefreshMemberSessionCommandHandler(
 
         if (claims is null)
         {
-            return Result.Failure<AuthTokensResponse>(AuthApplicationErrors.TokenInvalid);
+            return Result.Failure<RefreshTokenBoundCompletion<AuthTokensResponse>>(AuthApplicationErrors.TokenInvalid);
         }
 
         if (scopeContext.IsEnabled &&
             !string.Equals(scopeContext.ScopeId, claims.ScopeId, StringComparison.Ordinal))
         {
-            return Result.Failure<AuthTokensResponse>(AuthApplicationErrors.TenantMismatch);
+            return Result.Failure<RefreshTokenBoundCompletion<AuthTokensResponse>>(AuthApplicationErrors.TenantMismatch);
         }
 
         Member? member = await memberRepository.GetByIdAsync(claims.MemberId, cancellationToken).ConfigureAwait(false);
 
         if (member is null)
         {
-            return Result.Failure<AuthTokensResponse>(AuthDomainErrors.MemberNotFound);
+            return Result.Failure<RefreshTokenBoundCompletion<AuthTokensResponse>>(AuthDomainErrors.MemberNotFound);
         }
 
         string refreshToken = tokenService.GenerateRefreshToken();
@@ -56,11 +58,14 @@ internal sealed class RefreshMemberSessionCommandHandler(
             refreshTokenHashes,
             newRefreshTokenHash,
             clock.UtcNow.AddDays(options.Value.RefreshTokenLifetimeDays),
+            idGenerator.NewId(),
             clock.UtcNow);
 
         if (refreshResult.IsFailure)
         {
-            return Result.Failure<AuthTokensResponse>(refreshResult.Error);
+            return refreshResult.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(RefreshTokenBoundCompletion.ReuseDetected<AuthTokensResponse>())
+                : Result.Failure<RefreshTokenBoundCompletion<AuthTokensResponse>>(refreshResult.Error);
         }
 
         string accessToken = tokenService.GenerateAccessToken(new AccessTokenClaims(
@@ -71,6 +76,7 @@ internal sealed class RefreshMemberSessionCommandHandler(
                 refreshResult.Value.AuthenticationContextReference,
                 refreshResult.Value.AuthenticationMethodReferences,
                 refreshResult.Value.AuthenticatedAtUtc)));
-        return Result.Success(new AuthTokensResponse(accessToken, refreshToken));
+        return Result.Success(RefreshTokenBoundCompletion.Completed(
+            new AuthTokensResponse(accessToken, refreshToken)));
     }
 }

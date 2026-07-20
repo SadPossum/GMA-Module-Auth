@@ -27,16 +27,12 @@ internal sealed class ConfirmPasswordRecoveryCommandHandler(
         ConfirmPasswordRecoveryCommand command,
         CancellationToken cancellationToken)
     {
-        if (await passwordBlocklist.IsBlockedAsync(command.NewPassword, cancellationToken).ConfigureAwait(false))
-        {
-            return Result.Failure<Unit>(AuthApplicationErrors.PasswordBlocked);
-        }
-
         IReadOnlyList<string> candidateHashes = tokenService.GetCandidateHashes(command.Code.Trim());
         PasswordRecoveryChallenge? challenge = await challengeRepository
             .GetByTokenHashesAsync(candidateHashes, cancellationToken)
             .ConfigureAwait(false);
-        if (challenge is null)
+        DateTimeOffset challengeCheckedAtUtc = clock.UtcNow;
+        if (challenge is null || !challenge.IsActiveAt(challengeCheckedAtUtc))
         {
             return Invalid();
         }
@@ -56,11 +52,21 @@ internal sealed class ConfirmPasswordRecoveryCommandHandler(
             return Invalid();
         }
 
+        if (await passwordBlocklist.IsBlockedAsync(command.NewPassword, cancellationToken).ConfigureAwait(false))
+        {
+            return Result.Failure<Unit>(AuthApplicationErrors.PasswordBlocked);
+        }
+
         DateTimeOffset nowUtc = clock.UtcNow;
+        if (!challenge.IsActiveAt(nowUtc))
+        {
+            return Invalid();
+        }
+
         IReadOnlyList<PasswordRecoveryChallenge> activeChallenges = await challengeRepository
             .GetActiveByMemberAsync(member.Id, nowUtc, cancellationToken)
             .ConfigureAwait(false);
-        string matchedHash = candidateHashes.Single(hash =>
+        string matchedHash = candidateHashes.First(hash =>
             string.Equals(hash, challenge.TokenHash, StringComparison.Ordinal));
         Result consumed = challenge.Consume(matchedHash, nowUtc);
         if (consumed.IsFailure)

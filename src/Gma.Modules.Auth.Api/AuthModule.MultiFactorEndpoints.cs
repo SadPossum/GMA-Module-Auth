@@ -1,7 +1,6 @@
 namespace Gma.Modules.Auth.Api;
 
 using System.Security.Claims;
-using System.Text.Json;
 using Gma.Framework.Api.Modules;
 using Gma.Framework.Api.Observability;
 using Gma.Framework.Api.Results;
@@ -87,11 +86,10 @@ public sealed partial class AuthModule
                 return Results.Unauthorized();
             }
 
-            Result<TotpActivationResponse> result = await dispatcher.SendAsync(
+            Result<RefreshTokenBoundCompletion<TotpActivationResponse>> result = await dispatcher.SendAsync(
                 new ActivateTotpCommand(memberId, sessionId, request.Code, request.RefreshToken),
                 cancellationToken).ConfigureAwait(false);
-            SetNoStoreHeaders(httpContext);
-            return result.ToHttpResult(PublicErrorStatusCodes);
+            return ToRefreshTokenBoundHttpResult(result, httpContext);
         })
             .RequireAuthorization();
         activateTotp.Produces<TotpActivationResponse>(StatusCodes.Status200OK);
@@ -152,6 +150,11 @@ public sealed partial class AuthModule
                 return result.ToHttpResult(PublicErrorStatusCodes);
             }
 
+            if (result.Value.RefreshTokenReuseDetected)
+            {
+                return ToRefreshTokenReuseHttpResult();
+            }
+
             return result.Value.Succeeded
                 ? Results.Ok(result.Value.Response)
                 : Results.Unauthorized();
@@ -185,6 +188,11 @@ public sealed partial class AuthModule
             if (result.IsFailure)
             {
                 return result.ToHttpResult(PublicErrorStatusCodes);
+            }
+
+            if (result.Value.RefreshTokenReuseDetected)
+            {
+                return ToRefreshTokenReuseHttpResult();
             }
 
             return result.Value.Succeeded ? Results.NoContent() : Results.Unauthorized();

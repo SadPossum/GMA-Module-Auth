@@ -36,8 +36,8 @@ internal sealed class CompleteMultiFactorChallengeCommandHandler(
         MemberAuthenticationChallenge? challenge = await challengeRepository
             .GetByTokenHashesAsync(candidateHashes, cancellationToken)
             .ConfigureAwait(false);
-        DateTimeOffset nowUtc = this.Clock.UtcNow;
-        if (challenge is null || !challenge.IsActiveAt(nowUtc))
+        DateTimeOffset challengeCheckedAtUtc = this.Clock.UtcNow;
+        if (challenge is null || !challenge.IsActiveAt(challengeCheckedAtUtc))
         {
             return Result.Failure<MultiFactorChallengeCompletion>(AuthApplicationErrors.MultiFactorChallengeInvalid);
         }
@@ -48,6 +48,12 @@ internal sealed class CompleteMultiFactorChallengeCommandHandler(
         MemberTotpAuthenticator? authenticator = await authenticatorRepository
             .GetByMemberAsync(challenge.MemberId, cancellationToken)
             .ConfigureAwait(false);
+        DateTimeOffset nowUtc = this.Clock.UtcNow;
+        if (!challenge.IsActiveAt(nowUtc))
+        {
+            return Result.Failure<MultiFactorChallengeCompletion>(AuthApplicationErrors.MultiFactorChallengeInvalid);
+        }
+
         if (member is null || authenticator is null || !authenticator.IsActive)
         {
             challenge.RecordFailure(nowUtc);
@@ -71,7 +77,9 @@ internal sealed class CompleteMultiFactorChallengeCommandHandler(
             return Result.Success(MultiFactorChallengeCompletion.Invalid);
         }
 
-        var tokens = this.CreateSessionTokens(TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays));
+        var tokens = this.CreateSessionTokens(
+            TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays),
+            TimeSpan.FromDays(options.Value.SessionAbsoluteLifetimeDays));
         Result<MemberSession> session = member.StartSession(
             tokens.SessionId,
             tokens.RefreshTokenHash,
@@ -79,7 +87,8 @@ internal sealed class CompleteMultiFactorChallengeCommandHandler(
             nowUtc,
             challenge.PrimaryAuthenticationMethod,
             factor.Value,
-            options.Value.MaximumActiveSessionsPerMember);
+            options.Value.MaximumActiveSessionsPerMember,
+            tokens.AbsoluteExpiresAtUtc);
         if (session.IsFailure)
         {
             return Result.Failure<MultiFactorChallengeCompletion>(session.Error);

@@ -7,4 +7,4 @@ public sealed record StepUpWithPasswordCommand(
     Guid MemberId,
     Guid SessionId,
     string Password,
-    string RefreshToken) : ITransactionalCommand<AuthTokensResponse>;
+    string RefreshToken) : ITransactionalCommand<RefreshTokenBoundCompletion<AuthTokensResponse>>;

@@ -27,9 +27,9 @@ internal sealed class StepUpWithPasswordCommandHandler(
     ISystemClock clock,
     IIdGenerator idGenerator)
     : AuthCommandHandlerBase(tokenService, refreshTokenHashingService, clock, idGenerator),
-        ICommandHandler<StepUpWithPasswordCommand, AuthTokensResponse>
+        ICommandHandler<StepUpWithPasswordCommand, RefreshTokenBoundCompletion<AuthTokensResponse>>
 {
-    public async Task<Result<AuthTokensResponse>> HandleAsync(
+    public async Task<Result<RefreshTokenBoundCompletion<AuthTokensResponse>>> HandleAsync(
         StepUpWithPasswordCommand command,
         CancellationToken cancellationToken)
     {
@@ -39,7 +39,7 @@ internal sealed class StepUpWithPasswordCommandHandler(
             (scopeContext.IsEnabled &&
              !string.Equals(scopeContext.ScopeId, member.ScopeId, StringComparison.Ordinal)))
         {
-            return Result.Failure<AuthTokensResponse>(AuthDomainErrors.CredentialsNotValid);
+            return Result.Failure<RefreshTokenBoundCompletion<AuthTokensResponse>>(AuthDomainErrors.CredentialsNotValid);
         }
 
         PasswordVerificationOutcome passwordVerification = await passwordProofService.VerifyAsync(
@@ -52,7 +52,7 @@ internal sealed class StepUpWithPasswordCommandHandler(
             cancellationToken).ConfigureAwait(false);
         if (passwordVerification == PasswordVerificationOutcome.Unknown)
         {
-            return Result.Failure<AuthTokensResponse>(AuthDomainErrors.CredentialsNotValid);
+            return Result.Failure<RefreshTokenBoundCompletion<AuthTokensResponse>>(AuthDomainErrors.CredentialsNotValid);
         }
 
         string refreshToken = this.GenerateRefreshToken();
@@ -64,12 +64,15 @@ internal sealed class StepUpWithPasswordCommandHandler(
             candidateHashes,
             newRefreshTokenHash,
             nowUtc.AddDays(options.Value.RefreshTokenLifetimeDays),
+            nowUtc.AddDays(options.Value.SessionAbsoluteLifetimeDays),
             SessionAuthenticationEvidence.Password(nowUtc),
             this.IdGenerator.NewId(),
             nowUtc);
         if (reauthenticated.IsFailure)
         {
-            return Result.Failure<AuthTokensResponse>(reauthenticated.Error);
+            return reauthenticated.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(RefreshTokenBoundCompletion.ReuseDetected<AuthTokensResponse>())
+                : Result.Failure<RefreshTokenBoundCompletion<AuthTokensResponse>>(reauthenticated.Error);
         }
 
         if (passwordVerification == PasswordVerificationOutcome.SuccessRehashNeeded)
@@ -77,11 +80,12 @@ internal sealed class StepUpWithPasswordCommandHandler(
             Result rehashResult = member.ResetPassword(passwordHashingService.HashPassword(command.Password));
             if (rehashResult.IsFailure)
             {
-                return Result.Failure<AuthTokensResponse>(rehashResult.Error);
+                return Result.Failure<RefreshTokenBoundCompletion<AuthTokensResponse>>(rehashResult.Error);
             }
         }
 
         string accessToken = this.CreateAccessToken(member, reauthenticated.Value);
-        return Result.Success(new AuthTokensResponse(accessToken, refreshToken));
+        return Result.Success(RefreshTokenBoundCompletion.Completed(
+            new AuthTokensResponse(accessToken, refreshToken)));
     }
 }

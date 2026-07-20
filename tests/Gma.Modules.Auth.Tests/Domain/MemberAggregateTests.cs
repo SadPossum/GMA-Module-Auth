@@ -15,6 +15,7 @@ using Xunit;
 public sealed class MemberAggregateTests
 {
     private static readonly DateTimeOffset Now = new(2026, 6, 14, 12, 0, 0, TimeSpan.Zero);
+    private static readonly TimeSpan MaximumSessionLifetime = TimeSpan.FromDays(90);
 
     [Fact]
     public void Create_rejects_invalid_username()
@@ -29,6 +30,35 @@ public sealed class MemberAggregateTests
         Assert.Equal(AuthDomainErrors.UsernameNotValid, missing.Error);
         Assert.True(overlong.IsFailure);
         Assert.Equal(AuthDomainErrors.UsernameNotValid, overlong.Error);
+    }
+
+    [Theory]
+    [InlineData("+12025550123")]
+    [InlineData("+442012345678")]
+    [InlineData("+8613800138000")]
+    public void Create_accepts_canonical_international_phone_username(string phone)
+    {
+        Result<Member> result = CreateMember(phone, usernameType: MemberUsernameType.Phone);
+
+        Assert.True(result.IsSuccess);
+        MemberUsername username = Assert.Single(result.Value.Usernames);
+        Assert.Equal(phone, username.Value);
+        Assert.Equal(phone, username.NormalizedValue);
+        Assert.Equal(MemberUsernameType.Phone, username.UsernameType);
+    }
+
+    [Theory]
+    [InlineData("2025550123")]
+    [InlineData("+02025550123")]
+    [InlineData("+1 202 555 0123")]
+    [InlineData("+123456")]
+    [InlineData("+1234567890123456")]
+    public void Create_rejects_noncanonical_phone_username(string phone)
+    {
+        Result<Member> result = CreateMember(phone, usernameType: MemberUsernameType.Phone);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthDomainErrors.UsernameNotValid, result.Error);
     }
 
     [Fact]
@@ -164,6 +194,107 @@ public sealed class MemberAggregateTests
     }
 
     [Fact]
+    public void Refresh_session_caps_sliding_expiry_at_the_absolute_session_deadline()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberSessionId sessionId = new(Guid.NewGuid());
+        MemberSession session = member.StartSession(
+            sessionId,
+            "refresh-hash-1",
+            Now.AddDays(90),
+            Now).Value;
+
+        Result<MemberSession> result = member.RefreshSession(
+            sessionId,
+            "refresh-hash-1",
+            "refresh-hash-2",
+            Now.AddDays(119),
+            Now.AddDays(89));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(Now.AddDays(90), session.RefreshTokenExpiresAtUtc);
+    }
+
+    [Fact]
+    public void Refresh_session_rejects_rotation_after_the_absolute_session_deadline()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberSessionId sessionId = new(Guid.NewGuid());
+        MemberSession session = member.StartSession(
+            sessionId,
+            "refresh-hash-1",
+            Now.AddDays(90),
+            Now).Value;
+
+        Result<MemberSession> result = member.RefreshSession(
+            sessionId,
+            "refresh-hash-1",
+            "refresh-hash-2",
+            Now.AddDays(120),
+            Now.AddDays(91));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthDomainErrors.RefreshTokenExpired, result.Error);
+        Assert.Equal("refresh-hash-1", session.RefreshTokenHash);
+    }
+
+    [Fact]
+    public void Explicit_reauthentication_resets_the_absolute_session_deadline()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberSessionId sessionId = new(Guid.NewGuid());
+        MemberSession session = member.StartSession(
+            sessionId,
+            "refresh-hash-1",
+            Now.AddDays(100),
+            Now).Value;
+        DateTimeOffset reauthenticatedAtUtc = Now.AddDays(91);
+        SessionAuthenticationEvidence evidence = SessionAuthenticationEvidence.Password(reauthenticatedAtUtc);
+
+        Result<MemberSession> result = member.ReauthenticateSession(
+            sessionId,
+            ["refresh-hash-1"],
+            "refresh-hash-2",
+            reauthenticatedAtUtc.AddDays(30),
+            reauthenticatedAtUtc.Add(MaximumSessionLifetime),
+            evidence,
+            Guid.NewGuid(),
+            reauthenticatedAtUtc);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("refresh-hash-2", session.RefreshTokenHash);
+        Assert.Equal(reauthenticatedAtUtc, session.AuthenticatedAtUtc);
+        Assert.Equal(reauthenticatedAtUtc.AddDays(30), session.RefreshTokenExpiresAtUtc);
+        Assert.Equal(reauthenticatedAtUtc.Add(MaximumSessionLifetime), session.AbsoluteExpiresAtUtc);
+    }
+
+    [Fact]
+    public void Explicit_reauthentication_rejects_future_evidence_without_rotating()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberSession session = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "refresh-hash-1",
+            Now.AddDays(1),
+            Now).Value;
+
+        Result<MemberSession> result = member.ReauthenticateSession(
+            session.Id,
+            ["refresh-hash-1"],
+            "refresh-hash-2",
+            Now.AddDays(1),
+            Now.Add(MaximumSessionLifetime),
+            SessionAuthenticationEvidence.Password(Now.AddSeconds(1)),
+            Guid.NewGuid(),
+            Now);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthDomainErrors.AuthenticationEvidenceNotValid, result.Error);
+        Assert.Equal("refresh-hash-1", session.RefreshTokenHash);
+        Assert.Null(session.PreviousRefreshTokenHash);
+    }
+
+    [Fact]
     public void Start_session_rejects_invalid_refresh_token_hash()
     {
         var member = CreateMember("member@example.com").Value;
@@ -179,6 +310,59 @@ public sealed class MemberAggregateTests
         Assert.Equal(AuthDomainErrors.RefreshTokenHashNotValid, blank.Error);
         Assert.True(overlong.IsFailure);
         Assert.Equal(AuthDomainErrors.RefreshTokenHashNotValid, overlong.Error);
+    }
+
+    [Fact]
+    public void Start_session_rejects_a_nonfuture_refresh_expiry()
+    {
+        Member member = CreateMember("member@example.com").Value;
+
+        Result<MemberSession> result = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "refresh-hash-1",
+            Now,
+            Now);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthDomainErrors.SessionLifetimeInvalid, result.Error);
+        Assert.Empty(member.Sessions);
+    }
+
+    [Fact]
+    public void Start_session_rejects_authentication_evidence_from_the_future()
+    {
+        Member member = CreateMember("member@example.com").Value;
+
+        Result<MemberSession> result = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "refresh-hash-1",
+            Now.AddDays(1),
+            Now,
+            authenticationEvidence: SessionAuthenticationEvidence.Password(Now.AddSeconds(1)));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthDomainErrors.AuthenticationEvidenceNotValid, result.Error);
+        Assert.Empty(member.Sessions);
+    }
+
+    [Fact]
+    public void Refresh_session_rejects_a_nonfuture_new_expiry_without_rotating()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberSessionId sessionId = new(Guid.NewGuid());
+        MemberSession session = member.StartSession(sessionId, "refresh-hash-1", Now.AddDays(1), Now).Value;
+
+        Result<MemberSession> result = member.RefreshSession(
+            sessionId,
+            "refresh-hash-1",
+            "refresh-hash-2",
+            Now,
+            Now);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthDomainErrors.RefreshTokenExpired, result.Error);
+        Assert.Equal("refresh-hash-1", session.RefreshTokenHash);
+        Assert.Null(session.PreviousRefreshTokenHash);
     }
 
     [Fact]
@@ -262,6 +446,35 @@ public sealed class MemberAggregateTests
     }
 
     [Fact]
+    public void Disabled_member_cannot_record_external_authentication_or_request_verification()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberExternalIdentity externalIdentity = member.LinkExternalIdentity(
+            new MemberExternalIdentityId(Guid.NewGuid()),
+            "google",
+            "https://accounts.google.com",
+            "provider-subject",
+            Now).Value;
+        Assert.True(member.Disable("security hold", Guid.NewGuid(), Now).IsSuccess);
+
+        Result external = member.MarkExternalIdentityAuthenticated(externalIdentity.Id, Now.AddMinutes(1));
+        Result verification = member.RequestEmailVerification(
+            member.Usernames.Single().Id,
+            "verification-hash",
+            "verification-code",
+            Guid.NewGuid(),
+            Now.AddHours(1),
+            Now.AddMinutes(1));
+
+        Assert.True(external.IsFailure);
+        Assert.Equal(AuthDomainErrors.MemberDisabled, external.Error);
+        Assert.True(verification.IsFailure);
+        Assert.Equal(AuthDomainErrors.MemberDisabled, verification.Error);
+        Assert.Equal(Now, externalIdentity.LastAuthenticatedAtUtc);
+        Assert.Null(member.Usernames.Single().VerificationTokenHash);
+    }
+
+    [Fact]
     public void Sign_out_session_only_revokes_the_selected_session()
     {
         Member member = CreateMember("member@example.com").Value;
@@ -275,6 +488,78 @@ public sealed class MemberAggregateTests
         Assert.True(result.IsSuccess);
         Assert.False(member.Sessions.Single(session => session.Id == selectedSessionId).IsActive);
         Assert.True(member.Sessions.Single(session => session.Id == otherSessionId).IsActive);
+    }
+
+    [Fact]
+    public void Revoke_sessions_except_retains_only_the_authorized_session()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberSession retained = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "refresh-hash-retained",
+            Now.AddDays(1),
+            Now).Value;
+        MemberSession firstOther = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "refresh-hash-first",
+            Now.AddDays(1),
+            Now).Value;
+        MemberSession secondOther = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "refresh-hash-second",
+            Now.AddDays(1),
+            Now).Value;
+        member.ClearDomainEvents();
+
+        Result<int> result = member.RevokeSessionsExcept(retained.Id, Guid.NewGuid(), Now.AddMinutes(1));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value);
+        Assert.True(retained.IsActive);
+        Assert.False(firstOther.IsActive);
+        Assert.False(secondOther.IsActive);
+        Assert.Equal(2, Assert.Single(
+            member.DomainEvents.OfType<MemberSessionsRevokedDomainEvent>()).RevokedSessionCount);
+    }
+
+    [Fact]
+    public void Revoke_sessions_by_authentication_method_is_scoped_and_retains_current_session()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        string google = MemberAuthenticationMethods.External("google");
+        MemberSession retained = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "refresh-hash-retained",
+            Now.AddDays(1),
+            Now,
+            google).Value;
+        MemberSession sameMethod = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "refresh-hash-same",
+            Now.AddDays(1),
+            Now,
+            google).Value;
+        MemberSession differentMethod = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "refresh-hash-different",
+            Now.AddDays(1),
+            Now,
+            MemberAuthenticationMethods.External("microsoft")).Value;
+        member.ClearDomainEvents();
+
+        Result<int> result = member.RevokeSessionsAuthenticatedWith(
+            google,
+            retained.Id,
+            Guid.NewGuid(),
+            Now.AddMinutes(1));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value);
+        Assert.True(retained.IsActive);
+        Assert.False(sameMethod.IsActive);
+        Assert.True(differentMethod.IsActive);
+        Assert.Equal(1, Assert.Single(
+            member.DomainEvents.OfType<MemberSessionsRevokedDomainEvent>()).RevokedSessionCount);
     }
 
     [Fact]
@@ -594,12 +879,13 @@ public sealed class MemberAggregateTests
         string passwordHash = "hash",
         MemberId? memberId = null,
         MemberUsernameId? usernameId = null,
-        Guid? registeredEventId = null) =>
+        Guid? registeredEventId = null,
+        MemberUsernameType usernameType = MemberUsernameType.Email) =>
         Member.Create(
             memberId ?? new MemberId(Guid.NewGuid()),
             scopeId,
             username,
-            MemberUsernameType.Email,
+            usernameType,
             passwordHash,
             usernameId ?? new MemberUsernameId(Guid.NewGuid()),
             registeredEventId ?? Guid.NewGuid(),

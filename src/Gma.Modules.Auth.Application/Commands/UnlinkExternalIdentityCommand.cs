@@ -1,11 +1,12 @@
 namespace Gma.Modules.Auth.Application.Commands;
 
 using Gma.Framework.Cqrs;
-using Gma.Framework.Results;
+using Gma.Modules.Auth.Contracts;
 
 public sealed record UnlinkExternalIdentityCommand(
     Guid MemberId,
     Guid SessionId,
     Guid ExternalIdentityId,
-    string? CurrentPassword)
-    : ITransactionalCommand<Unit>;
+    string? CurrentPassword,
+    string RefreshToken)
+    : ITransactionalCommand<RefreshTokenBoundCompletion<AuthTokensResponse>>;

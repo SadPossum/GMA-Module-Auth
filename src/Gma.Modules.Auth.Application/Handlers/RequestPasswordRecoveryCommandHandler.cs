@@ -15,6 +15,7 @@ using Microsoft.Extensions.Options;
 internal sealed class RequestPasswordRecoveryCommandHandler(
     IPasswordRecoveryRecipientReader recipientReader,
     IPasswordRecoveryChallengeRepository challengeRepository,
+    IPasswordRecoveryRequestSerializer requestSerializer,
     IPasswordRecoveryTokenService tokenService,
     ISystemClock clock,
     IIdGenerator idGenerator,
@@ -33,8 +34,17 @@ internal sealed class RequestPasswordRecoveryCommandHandler(
             return Result.Success(Unit.Value);
         }
 
-        DateTimeOffset nowUtc = clock.UtcNow;
         MemberId memberId = new(recipient.MemberId);
+        await requestSerializer.AcquireAsync(recipient.ScopeId, memberId, cancellationToken).ConfigureAwait(false);
+        recipient = await recipientReader
+            .FindEligibleByEmailAsync(command.Email, cancellationToken)
+            .ConfigureAwait(false);
+        if (recipient is null || recipient.MemberId != memberId.Value)
+        {
+            return Result.Success(Unit.Value);
+        }
+
+        DateTimeOffset nowUtc = clock.UtcNow;
         PasswordRecoveryChallenge? latest = await challengeRepository
             .GetLatestByMemberAsync(memberId, cancellationToken)
             .ConfigureAwait(false);

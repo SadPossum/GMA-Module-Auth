@@ -27,10 +27,18 @@ internal sealed class DisableTotpCommandValidator : ICommandValidator<DisableTot
         {
             yield return "Authentication code is required.";
         }
+        else if (command.Code.Trim().Length > AuthContractLimits.AuthenticationCodeMaxLength)
+        {
+            yield return "Authentication code is too long.";
+        }
 
         if (string.IsNullOrWhiteSpace(command.RefreshToken))
         {
             yield return "Refresh token is required.";
+        }
+        else if (command.RefreshToken.Trim().Length > AuthContractLimits.OpaqueTokenMaxLength)
+        {
+            yield return "Refresh token is too long.";
         }
     }
 }

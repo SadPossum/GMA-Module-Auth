@@ -12,6 +12,7 @@ using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
 using Gma.Modules.Auth.Domain.Enums;
+using Gma.Modules.Auth.Domain.Errors;
 using Gma.Modules.Auth.Domain.Events;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
@@ -40,7 +41,10 @@ public sealed class MultiFactorAuthenticationFlowTests
         LoginMemberCommandHandler loginHandler = new(
             new MemberRepository(dbContext),
             new FakePasswordHashingService(),
-            new PasswordProofService(new FakePasswordHashingService(), new AllowAllAttemptLimiter()),
+            new PasswordProofService(
+                new FakePasswordHashingService(),
+                new AllowAllAttemptLimiter(),
+                Options.Create(new AuthApplicationOptions())),
             multiFactor,
             new FakeTokenService(),
             new FakeRefreshTokenHashingService(),
@@ -104,6 +108,40 @@ public sealed class MultiFactorAuthenticationFlowTests
     }
 
     [Fact]
+    public async Task Disabled_member_cannot_begin_a_multi_factor_authentication_challenge()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreateMember();
+        MemberTotpAuthenticator authenticator = CreateActiveAuthenticator(member);
+        Assert.True(member.Disable("security hold", Guid.NewGuid(), Now).IsSuccess);
+        dbContext.AddRange(member, authenticator);
+        await dbContext.SaveChangesAsync();
+        LoginMemberCommandHandler handler = new(
+            new MemberRepository(dbContext),
+            new FakePasswordHashingService(),
+            new PasswordProofService(
+                new FakePasswordHashingService(),
+                new AllowAllAttemptLimiter(),
+                Options.Create(new AuthApplicationOptions())),
+            CreateMultiFactorService(dbContext),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
+            Options.Create(new AuthApplicationOptions()),
+            new TestScopeContext(),
+            new FakeClock(),
+            new RandomIdGenerator());
+
+        Result<PrimaryAuthenticationResult> result = await handler.HandleAsync(
+            new LoginMemberCommand("member@example.com", "password"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthDomainErrors.MemberDisabled, result.Error);
+        Assert.Empty(dbContext.MemberAuthenticationChallenges.Local);
+        Assert.Empty(member.Sessions);
+    }
+
+    [Fact]
     public async Task Activation_rotates_the_session_and_returns_recovery_codes_once()
     {
         await using AuthDbContext dbContext = CreateDbContext();
@@ -128,7 +166,7 @@ public sealed class MultiFactorAuthenticationFlowTests
             new FakeClock(),
             new RandomIdGenerator());
 
-        Result<TotpActivationResponse> result = await handler.HandleAsync(
+        Result<RefreshTokenBoundCompletion<TotpActivationResponse>> result = await handler.HandleAsync(
             new ActivateTotpCommand(
                 member.Id.Value,
                 session.Id.Value,
@@ -137,13 +175,63 @@ public sealed class MultiFactorAuthenticationFlowTests
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
+        Assert.True(result.Value.Succeeded);
         Assert.True(authenticator.IsActive);
         Assert.Equal(10, authenticator.UnusedRecoveryCodeCount);
-        Assert.Equal(10, result.Value.RecoveryCodes.Count);
-        Assert.Equal("new-refresh", result.Value.RefreshToken);
+        Assert.Equal(10, result.Value.Response.RecoveryCodes.Count);
+        Assert.Equal("new-refresh", result.Value.Response.RefreshToken);
         Assert.Equal("hash:new-refresh", session.RefreshTokenHash);
         Assert.Equal(AuthenticationContextReferences.MultiFactor, session.AuthenticationContextReference);
         Assert.Contains(member.DomainEvents, item => item is MemberAuthenticationMethodChangedDomainEvent);
+    }
+
+    [Fact]
+    public async Task Challenge_completion_rechecks_expiry_after_loading_factor_state()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreateMember();
+        MemberTotpAuthenticator authenticator = CreateActiveAuthenticator(member);
+        MemberAuthenticationChallenge challenge = MemberAuthenticationChallenge.Create(
+            new MemberAuthenticationChallengeId(Guid.NewGuid()),
+            member.Id,
+            member.ScopeId,
+            "hash:challenge-token",
+            MemberAuthenticationMethods.Password,
+            SessionAuthenticationEvidence.Password(Now),
+            null,
+            null,
+            5,
+            Now.AddMinutes(1),
+            Now).Value;
+        dbContext.AddRange(member, authenticator, challenge);
+        await dbContext.SaveChangesAsync();
+        var clock = new MutableClock(Now);
+        var handler = new CompleteMultiFactorChallengeCommandHandler(
+            new MemberAuthenticationChallengeRepository(dbContext),
+            new AdvancingAuthenticatorRepository(
+                new MemberTotpAuthenticatorRepository(dbContext),
+                clock,
+                Now.AddMinutes(2)),
+            new MemberRepository(dbContext),
+            CreateMultiFactorService(dbContext),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
+            Options.Create(new AuthApplicationOptions()),
+            clock,
+            new RandomIdGenerator());
+
+        Result<MultiFactorChallengeCompletion> result = await handler.HandleAsync(
+            new CompleteMultiFactorChallengeCommand(
+                "challenge-token",
+                MultiFactorCodeType.Totp,
+                FakeTotpProvider.ValidCode),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthApplicationErrors.MultiFactorChallengeInvalid, result.Error);
+        Assert.Null(challenge.ConsumedAtUtc);
+        Assert.Equal(41, authenticator.LastAcceptedTimeStep);
+        Assert.Empty(member.Sessions);
     }
 
     [Fact]
@@ -288,6 +376,7 @@ public sealed class MultiFactorAuthenticationFlowTests
     private static MultiFactorAuthenticationService CreateMultiFactorService(AuthDbContext dbContext) => new(
         new MemberTotpAuthenticatorRepository(dbContext),
         new MemberAuthenticationChallengeRepository(dbContext),
+        new NoOpAuthenticationChallengeRequestSerializer(),
         new FakeTotpProvider(),
         new FakeSecretProtector(),
         new FakeMultiFactorTokenService(),
@@ -313,6 +402,27 @@ public sealed class MultiFactorAuthenticationFlowTests
         public bool IsAvailable => true;
         public string Protect(byte[] secret) => "protected-secret";
         public byte[] Unprotect(string protectedSecret) => [1, 2, 3, 4];
+    }
+
+    private sealed class AdvancingAuthenticatorRepository(
+        IMemberTotpAuthenticatorRepository inner,
+        MutableClock clock,
+        DateTimeOffset nextUtc)
+        : IMemberTotpAuthenticatorRepository
+    {
+        public async Task<MemberTotpAuthenticator?> GetByMemberAsync(
+            MemberId memberId,
+            CancellationToken cancellationToken)
+        {
+            MemberTotpAuthenticator? authenticator = await inner
+                .GetByMemberAsync(memberId, cancellationToken)
+                .ConfigureAwait(false);
+            clock.UtcNow = nextUtc;
+            return authenticator;
+        }
+
+        public Task AddAsync(MemberTotpAuthenticator authenticator, CancellationToken cancellationToken) =>
+            inner.AddAsync(authenticator, cancellationToken);
     }
 
     private sealed class FakeMultiFactorTokenService : IMultiFactorTokenService
@@ -356,30 +466,32 @@ public sealed class MultiFactorAuthenticationFlowTests
 
     private sealed class AllowAllAttemptLimiter : IAuthenticationAttemptLimiter
     {
-        public ValueTask<bool> IsAllowedAsync(
+        public ValueTask<AuthenticationAttemptLease?> TryAcquireAsync(
             string scopeId,
             string purpose,
             string target,
             DateTimeOffset nowUtc,
-            CancellationToken cancellationToken) => ValueTask.FromResult(true);
-
-        public ValueTask RecordFailureAsync(
-            string scopeId,
-            string purpose,
-            string target,
-            DateTimeOffset nowUtc,
-            CancellationToken cancellationToken) => ValueTask.CompletedTask;
+            AuthenticationAttemptPolicy policy,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<AuthenticationAttemptLease?>(
+                new AuthenticationAttemptLease(Guid.NewGuid(), nowUtc));
 
         public ValueTask RecordSuccessAsync(
             string scopeId,
             string purpose,
             string target,
+            AuthenticationAttemptLease lease,
             CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
 
     private sealed class FakeClock : ISystemClock
     {
         public DateTimeOffset UtcNow => Now;
+    }
+
+    private sealed class MutableClock(DateTimeOffset nowUtc) : ISystemClock
+    {
+        public DateTimeOffset UtcNow { get; set; } = nowUtc;
     }
 
     private sealed class RandomIdGenerator : IIdGenerator

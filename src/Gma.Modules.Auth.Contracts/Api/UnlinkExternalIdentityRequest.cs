@@ -1,3 +1,3 @@
 namespace Gma.Modules.Auth.Contracts;
 
-public sealed record UnlinkExternalIdentityRequest(string? CurrentPassword = null);
+public sealed record UnlinkExternalIdentityRequest(string RefreshToken, string? CurrentPassword = null);

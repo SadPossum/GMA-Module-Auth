@@ -2,6 +2,7 @@ namespace Gma.Modules.Auth.Application.Validation;
 
 using Gma.Framework.Cqrs;
 using Gma.Modules.Auth.Application.Commands;
+using Gma.Modules.Auth.Contracts;
 
 internal sealed class ActivateTotpCommandValidator : ICommandValidator<ActivateTotpCommand>
 {
@@ -21,10 +22,18 @@ internal sealed class ActivateTotpCommandValidator : ICommandValidator<ActivateT
         {
             yield return "TOTP code is required.";
         }
+        else if (command.Code.Trim().Length > AuthContractLimits.AuthenticationCodeMaxLength)
+        {
+            yield return "TOTP code is too long.";
+        }
 
         if (string.IsNullOrWhiteSpace(command.RefreshToken))
         {
             yield return "Refresh token is required.";
+        }
+        else if (command.RefreshToken.Trim().Length > AuthContractLimits.OpaqueTokenMaxLength)
+        {
+            yield return "Refresh token is too long.";
         }
     }
 }

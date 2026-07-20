@@ -17,11 +17,27 @@ function Get-RelativePath {
 
 foreach ($projectFile in $projectFiles) {
     [xml] $project = Get-Content -LiteralPath $projectFile.FullName -Raw
+    $relativeProject = Get-RelativePath -BasePath $repositoryRoot -TargetPath $projectFile.FullName
     foreach ($reference in $project.SelectNodes('//ProjectReference')) {
         $include = $reference.GetAttribute('Include')
-        if ($include -match '\$\(GmaModule(?!AuthRoot\))') {
-            $relativeProject = Get-RelativePath -BasePath $repositoryRoot -TargetPath $projectFile.FullName
+        if ($include -match '\$\(GmaModule(?!AuthRoot\))' -or
+            $include -match 'Gma\.Modules\.(?!Auth(?:\.|\\|/))') {
             $errors.Add("$relativeProject references another reusable module through '$include'.")
+        }
+
+        if ($include -match '(?:BunkFy|StayQuest)') {
+            $errors.Add("$relativeProject references product-specific project '$include'.")
+        }
+    }
+
+    foreach ($reference in $project.SelectNodes('//PackageReference')) {
+        $include = $reference.GetAttribute('Include')
+        if ($include -match '^Gma\.Modules\.(?!Auth(?:\.|$))') {
+            $errors.Add("$relativeProject references another reusable module package '$include'.")
+        }
+
+        if ($include -match '^(?:BunkFy|StayQuest)(?:\.|$)') {
+            $errors.Add("$relativeProject references product-specific package '$include'.")
         }
     }
 }

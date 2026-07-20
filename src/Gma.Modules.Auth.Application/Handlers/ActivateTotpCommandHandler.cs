@@ -28,9 +28,9 @@ internal sealed class ActivateTotpCommandHandler(
     ISystemClock clock,
     IIdGenerator idGenerator)
     : AuthCommandHandlerBase(tokenService, refreshTokenHashingService, clock, idGenerator),
-        ICommandHandler<ActivateTotpCommand, TotpActivationResponse>
+        ICommandHandler<ActivateTotpCommand, RefreshTokenBoundCompletion<TotpActivationResponse>>
 {
-    public async Task<Result<TotpActivationResponse>> HandleAsync(
+    public async Task<Result<RefreshTokenBoundCompletion<TotpActivationResponse>>> HandleAsync(
         ActivateTotpCommand command,
         CancellationToken cancellationToken)
     {
@@ -39,11 +39,36 @@ internal sealed class ActivateTotpCommandHandler(
         if (member is null ||
             (scopeContext.IsEnabled && !string.Equals(scopeContext.ScopeId, member.ScopeId, StringComparison.Ordinal)))
         {
-            return Result.Failure<TotpActivationResponse>(AuthDomainErrors.MemberNotFound);
+            return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(AuthDomainErrors.MemberNotFound);
+        }
+
+        DateTimeOffset authorizationCheckedAtUtc = this.Clock.UtcNow;
+        Result<MemberSession> freshSession = MemberSecurityAuthorization.RequireFreshSession(
+            member,
+            command.SessionId,
+            authorizationCheckedAtUtc,
+            TimeSpan.FromMinutes(options.Value.MultiFactor.SensitiveSessionFreshnessMinutes));
+        if (freshSession.IsFailure ||
+            string.Equals(
+                freshSession.Value.AuthenticationContextReference,
+                AuthenticationContextReferences.Legacy,
+                StringComparison.Ordinal))
+        {
+            return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(
+                AuthApplicationErrors.FreshAuthenticationRequired);
+        }
+
+        MemberTotpAuthenticator? authenticator = await authenticatorRepository
+            .GetByMemberAsync(memberId, cancellationToken)
+            .ConfigureAwait(false);
+        if (authenticator is null)
+        {
+            return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(
+                AuthApplicationErrors.TotpEnrollmentInvalid);
         }
 
         DateTimeOffset nowUtc = this.Clock.UtcNow;
-        Result<MemberSession> freshSession = MemberSecurityAuthorization.RequireFreshSession(
+        freshSession = MemberSecurityAuthorization.RequireFreshSession(
             member,
             command.SessionId,
             nowUtc,
@@ -54,15 +79,8 @@ internal sealed class ActivateTotpCommandHandler(
                 AuthenticationContextReferences.Legacy,
                 StringComparison.Ordinal))
         {
-            return Result.Failure<TotpActivationResponse>(AuthApplicationErrors.FreshAuthenticationRequired);
-        }
-
-        MemberTotpAuthenticator? authenticator = await authenticatorRepository
-            .GetByMemberAsync(memberId, cancellationToken)
-            .ConfigureAwait(false);
-        if (authenticator is null)
-        {
-            return Result.Failure<TotpActivationResponse>(AuthApplicationErrors.TotpEnrollmentInvalid);
+            return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(
+                AuthApplicationErrors.FreshAuthenticationRequired);
         }
 
         Result<long> verification = multiFactorAuthentication.VerifyPendingTotp(
@@ -71,19 +89,10 @@ internal sealed class ActivateTotpCommandHandler(
             nowUtc);
         if (verification.IsFailure)
         {
-            return Result.Failure<TotpActivationResponse>(verification.Error);
+            return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(verification.Error);
         }
 
         IReadOnlyList<RecoveryCodeMaterial> recoveryCodes = multiFactorAuthentication.GenerateRecoveryCodes();
-        Result activated = authenticator.Activate(
-            verification.Value,
-            multiFactorAuthentication.CreateRecoveryCodeRegistrations(recoveryCodes),
-            nowUtc);
-        if (activated.IsFailure)
-        {
-            return Result.Failure<TotpActivationResponse>(activated.Error);
-        }
-
         SessionAuthenticationEvidence primaryEvidence = CreatePrimaryEvidence(
             freshSession.Value.AuthenticationMethod,
             nowUtc);
@@ -93,12 +102,24 @@ internal sealed class ActivateTotpCommandHandler(
             this.TokenHashingService.GetCandidateHashes(command.RefreshToken),
             this.TokenHashingService.HashRefreshToken(refreshToken),
             nowUtc.AddDays(options.Value.RefreshTokenLifetimeDays),
+            nowUtc.AddDays(options.Value.SessionAbsoluteLifetimeDays),
             SessionAuthenticationEvidence.CompleteWithTotp(primaryEvidence, nowUtc),
             this.IdGenerator.NewId(),
             nowUtc);
         if (reauthenticated.IsFailure)
         {
-            return Result.Failure<TotpActivationResponse>(reauthenticated.Error);
+            return reauthenticated.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(RefreshTokenBoundCompletion.ReuseDetected<TotpActivationResponse>())
+                : Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(reauthenticated.Error);
+        }
+
+        Result activated = authenticator.Activate(
+            verification.Value,
+            multiFactorAuthentication.CreateRecoveryCodeRegistrations(recoveryCodes),
+            nowUtc);
+        if (activated.IsFailure)
+        {
+            return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(activated.Error);
         }
 
         Result methodChanged = member.RecordAuthenticationMethodChanged(
@@ -108,13 +129,14 @@ internal sealed class ActivateTotpCommandHandler(
             nowUtc);
         if (methodChanged.IsFailure)
         {
-            return Result.Failure<TotpActivationResponse>(methodChanged.Error);
+            return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(methodChanged.Error);
         }
 
-        return Result.Success(new TotpActivationResponse(
-            this.CreateAccessToken(member, reauthenticated.Value),
-            refreshToken,
-            recoveryCodes.Select(code => code.Plaintext).ToArray()));
+        return Result.Success(RefreshTokenBoundCompletion.Completed(
+            new TotpActivationResponse(
+                this.CreateAccessToken(member, reauthenticated.Value),
+                refreshToken,
+                recoveryCodes.Select(code => code.Plaintext).ToArray())));
     }
 
     private static SessionAuthenticationEvidence CreatePrimaryEvidence(

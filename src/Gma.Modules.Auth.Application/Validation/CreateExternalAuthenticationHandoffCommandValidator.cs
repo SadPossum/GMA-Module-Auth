@@ -19,11 +19,23 @@ internal sealed class CreateExternalAuthenticationHandoffCommandValidator
             yield return "A valid external authentication return URL is required.";
         }
 
+        if (!Enum.IsDefined(command.Intent))
+        {
+            yield return "External authentication intent is invalid.";
+            yield break;
+        }
+
         bool invalidTargetMember = command.TargetMemberId is null || command.TargetMemberId == Guid.Empty;
         bool invalidTargetSession = command.TargetSessionId is null || command.TargetSessionId == Guid.Empty;
         if (command.Intent == ExternalAuthenticationIntent.Link && (invalidTargetMember || invalidTargetSession))
         {
             yield return "Link handoffs require a member and session.";
+        }
+
+        if (command.Intent == ExternalAuthenticationIntent.SignIn &&
+            (command.TargetMemberId is not null || command.TargetSessionId is not null))
+        {
+            yield return "Sign-in handoffs cannot target a member or session.";
         }
     }
 }

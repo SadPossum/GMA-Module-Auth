@@ -1,118 +1,109 @@
 namespace Gma.Modules.Auth.Persistence;
 
-using Gma.Framework.Naming;
+using System.Data;
+using Gma.Framework.Persistence.EntityFrameworkCore;
 using Gma.Modules.Auth.Application;
 using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Domain.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 internal sealed class PersistentAuthenticationAttemptLimiter(
     IServiceScopeFactory scopeFactory,
-    IRefreshTokenHashingService hashingService,
-    IOptions<AuthApplicationOptions> options)
+    IRefreshTokenHashingService hashingService)
     : IAuthenticationAttemptLimiter
 {
     private const string HashPurpose = "authentication-attempt.v1";
+    private const int LockTimeoutMilliseconds = 30_000;
 
-    public async ValueTask<bool> IsAllowedAsync(
+    public async ValueTask<AuthenticationAttemptLease?> TryAcquireAsync(
         string scopeId,
         string purpose,
         string target,
         DateTimeOffset nowUtc,
+        AuthenticationAttemptPolicy policy,
         CancellationToken cancellationToken)
     {
-        string normalizedScopeId = ScopeIds.Normalize(scopeId);
-        string normalizedPurpose = NormalizePurpose(purpose);
-        IReadOnlyList<string> targetHashes = this.GetCandidateHashes(normalizedScopeId, normalizedPurpose, target);
-        DateTimeOffset cutoffUtc = nowUtc.AddMinutes(-options.Value.FailedLoginWindowMinutes);
+        ArgumentNullException.ThrowIfNull(policy);
+        AuthenticationAttemptPartition partition = AuthenticationAttemptPartition.Create(scopeId, purpose, target);
+        string hashInput = CreateHashInput(partition);
+        IReadOnlyList<string> targetHashes = hashingService.GetCandidateHashes(hashInput);
+        DateTimeOffset cutoffUtc = nowUtc.Subtract(policy.Window);
+        AuthenticationAttemptLease lease = new(Guid.CreateVersion7(), nowUtc);
 
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
         AuthDbContext dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        await using IDbContextTransaction transaction = await dbContext.Database
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
+        await EfTransactionKeyLock.AcquireAsync(
+            dbContext,
+            $"auth-attempt.v1\n{hashInput}",
+            TimeSpan.FromMilliseconds(LockTimeoutMilliseconds),
+            cancellationToken).ConfigureAwait(false);
         int count = await dbContext.AuthenticationFailureAttempts
             .AsNoTracking()
             .Where(attempt =>
-                attempt.ScopeId == normalizedScopeId &&
-                attempt.Purpose == normalizedPurpose &&
+                attempt.ScopeId == partition.ScopeId &&
+                attempt.Purpose == partition.Purpose &&
                 targetHashes.Contains(attempt.TargetHash) &&
                 attempt.FailedAtUtc > cutoffUtc)
-            .Take(options.Value.FailedLoginLimit)
+            .Take(policy.MaximumAttempts)
             .CountAsync(cancellationToken)
             .ConfigureAwait(false);
-        return count < options.Value.FailedLoginLimit;
-    }
+        if (count >= policy.MaximumAttempts)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return null;
+        }
 
-    public async ValueTask RecordFailureAsync(
-        string scopeId,
-        string purpose,
-        string target,
-        DateTimeOffset nowUtc,
-        CancellationToken cancellationToken)
-    {
-        string normalizedScopeId = ScopeIds.Normalize(scopeId);
-        string normalizedPurpose = NormalizePurpose(purpose);
-        string targetHash = hashingService.HashRefreshToken(
-            CreateHashInput(normalizedScopeId, normalizedPurpose, target));
-
-        await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
-        AuthDbContext dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
         dbContext.AuthenticationFailureAttempts.Add(new AuthenticationAttemptRecord
         {
-            Id = Guid.CreateVersion7(),
-            ScopeId = normalizedScopeId,
-            Purpose = normalizedPurpose,
-            TargetHash = targetHash,
+            Id = lease.AttemptId,
+            ScopeId = partition.ScopeId,
+            Purpose = partition.Purpose,
+            TargetHash = hashingService.HashRefreshToken(hashInput),
             FailedAtUtc = nowUtc,
         });
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return lease;
     }
 
     public async ValueTask RecordSuccessAsync(
         string scopeId,
         string purpose,
         string target,
+        AuthenticationAttemptLease lease,
         CancellationToken cancellationToken)
     {
-        string normalizedScopeId = ScopeIds.Normalize(scopeId);
-        string normalizedPurpose = NormalizePurpose(purpose);
-        IReadOnlyList<string> targetHashes = this.GetCandidateHashes(normalizedScopeId, normalizedPurpose, target);
+        AuthenticationAttemptPartition partition = AuthenticationAttemptPartition.Create(scopeId, purpose, target);
+        string hashInput = CreateHashInput(partition);
+        IReadOnlyList<string> targetHashes = hashingService.GetCandidateHashes(hashInput);
 
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
         AuthDbContext dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        await using IDbContextTransaction transaction = await dbContext.Database
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
+        await EfTransactionKeyLock.AcquireAsync(
+            dbContext,
+            $"auth-attempt.v1\n{hashInput}",
+            TimeSpan.FromMilliseconds(LockTimeoutMilliseconds),
+            cancellationToken).ConfigureAwait(false);
         await dbContext.AuthenticationFailureAttempts
             .Where(attempt =>
-                attempt.ScopeId == normalizedScopeId &&
-                attempt.Purpose == normalizedPurpose &&
-                targetHashes.Contains(attempt.TargetHash))
+                attempt.ScopeId == partition.ScopeId &&
+                attempt.Purpose == partition.Purpose &&
+                targetHashes.Contains(attempt.TargetHash) &&
+                (attempt.FailedAtUtc < lease.AcquiredAtUtc ||
+                    (attempt.FailedAtUtc == lease.AcquiredAtUtc && attempt.Id == lease.AttemptId)))
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private IReadOnlyList<string> GetCandidateHashes(string scopeId, string purpose, string target) =>
-        hashingService.GetCandidateHashes(CreateHashInput(scopeId, purpose, target));
-
-    private static string CreateHashInput(string scopeId, string purpose, string target)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(target);
-        string normalizedTarget = target.Trim().ToUpperInvariant();
-        if (normalizedTarget.Length > 512 || normalizedTarget.Any(char.IsControl))
-        {
-            throw new ArgumentException("Authentication attempt target is invalid.", nameof(target));
-        }
-
-        return $"{HashPurpose}\n{scopeId}\n{purpose}\n{normalizedTarget}";
-    }
-
-    private static string NormalizePurpose(string purpose)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(purpose);
-        string normalized = purpose.Trim().ToLowerInvariant();
-        if (normalized.Length > AuthenticationAttemptRecord.PurposeMaxLength || normalized.Any(char.IsControl))
-        {
-            throw new ArgumentException("Authentication attempt purpose is invalid.", nameof(purpose));
-        }
-
-        return normalized;
-    }
+    private static string CreateHashInput(AuthenticationAttemptPartition partition) =>
+        $"{HashPurpose}\n{partition.Key}";
 }

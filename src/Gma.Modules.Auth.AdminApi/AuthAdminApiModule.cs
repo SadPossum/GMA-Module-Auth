@@ -1,6 +1,5 @@
 namespace Gma.Modules.Auth.AdminApi;
 
-using System.Text.Json;
 using Gma.Framework.Administration;
 using Gma.Framework.Administration.Api;
 using Gma.Framework.Api.Observability;
@@ -54,7 +53,7 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
             .WithTags("Auth Admin")
             .RequireAuthorization();
 
-        members.MapGet("/", async (
+        RouteHandlerBuilder listMembers = members.MapGet("/", async (
             int? page,
             int? pageSize,
             HttpContext httpContext,
@@ -69,8 +68,9 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
                     new ListAdminMembersQuery(page ?? PageRequest.DefaultPage, pageSize ?? PageRequest.DefaultPageSize),
                     token),
                 cancellationToken).ConfigureAwait(false));
+        listMembers.Produces<AdminMemberListResponse>(StatusCodes.Status200OK);
 
-        members.MapGet("/{memberId:guid}", async (
+        RouteHandlerBuilder getMember = members.MapGet("/{memberId:guid}", async (
             Guid memberId,
             HttpContext httpContext,
             AdminApiExecutor executor,
@@ -83,8 +83,9 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
                 token => dispatcher.QueryAsync(new GetAdminMemberQuery(memberId), token),
                 cancellationToken,
                 errorStatusCodes: AdminErrorStatusCodes).ConfigureAwait(false));
+        getMember.Produces<AdminMemberDetails>(StatusCodes.Status200OK);
 
-        members.MapPost("/", async (
+        RouteHandlerBuilder createMember = members.MapPost("/", async (
             CreateAdminMemberRequest request,
             HttpContext httpContext,
             AdminApiExecutor executor,
@@ -92,6 +93,7 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
             IOptions<AdminApiOptions> adminApiOptions,
             CancellationToken cancellationToken) =>
         {
+            SetNoStoreHeaders(httpContext);
             return await executor.ExecuteAsync(
                 httpContext,
                 AdminOperation.Create(AuthAdminOperationNames.MembersCreate, AuthAdminPermissions.MembersCreate),
@@ -100,8 +102,9 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
                 cancellationToken,
                 errorStatusCodes: AdminErrorStatusCodes).ConfigureAwait(false);
         });
+        createMember.Produces<AdminCreatedMemberApiResponse>(StatusCodes.Status200OK);
 
-        members.MapPost("/{memberId:guid}/disable", async (
+        RouteHandlerBuilder disableMember = members.MapPost("/{memberId:guid}/disable", async (
             Guid memberId,
             DisableAdminMemberRequest request,
             HttpContext httpContext,
@@ -119,8 +122,9 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
                 cancellationToken,
                 errorStatusCodes: AdminErrorStatusCodes).ConfigureAwait(false);
         });
+        disableMember.Produces(StatusCodes.Status204NoContent);
 
-        members.MapPost("/{memberId:guid}/enable", async (
+        RouteHandlerBuilder enableMember = members.MapPost("/{memberId:guid}/enable", async (
             Guid memberId,
             HttpContext httpContext,
             AdminApiExecutor executor,
@@ -133,8 +137,9 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
                 token => dispatcher.SendAsync(new EnableMemberCommand(memberId), token),
                 cancellationToken,
                 errorStatusCodes: AdminErrorStatusCodes).ConfigureAwait(false));
+        enableMember.Produces(StatusCodes.Status204NoContent);
 
-        members.MapPost("/{memberId:guid}/reset-password", async (
+        RouteHandlerBuilder resetPassword = members.MapPost("/{memberId:guid}/reset-password", async (
             Guid memberId,
             ResetAdminMemberPasswordRequest request,
             HttpContext httpContext,
@@ -143,6 +148,7 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
             IOptions<AdminApiOptions> adminApiOptions,
             CancellationToken cancellationToken) =>
         {
+            SetNoStoreHeaders(httpContext);
             return await executor.ExecuteAsync(
                 httpContext,
                 AdminOperation.Create(AuthAdminOperationNames.MembersResetPassword, AuthAdminPermissions.MembersResetPassword),
@@ -151,8 +157,9 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
                 cancellationToken,
                 errorStatusCodes: AdminErrorStatusCodes).ConfigureAwait(false);
         });
+        resetPassword.Produces<ResetAdminMemberPasswordResponse>(StatusCodes.Status200OK);
 
-        members.MapPost("/{memberId:guid}/reset-multi-factor", async (
+        RouteHandlerBuilder resetMultiFactor = members.MapPost("/{memberId:guid}/reset-multi-factor", async (
             Guid memberId,
             ResetAdminMemberMultiFactorRequest request,
             HttpContext httpContext,
@@ -176,8 +183,9 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
                     : Task.FromResult(Result.Failure<Unit>(AdminErrors.ConfirmationRequired)),
                 cancellationToken,
                 errorStatusCodes: AdminErrorStatusCodes).ConfigureAwait(false));
+        resetMultiFactor.Produces(StatusCodes.Status204NoContent);
 
-        members.MapPost("/{memberId:guid}/revoke-sessions", async (
+        RouteHandlerBuilder revokeSessions = members.MapPost("/{memberId:guid}/revoke-sessions", async (
             Guid memberId,
             RevokeAdminMemberSessionsRequest request,
             HttpContext httpContext,
@@ -195,6 +203,7 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
                 cancellationToken,
                 errorStatusCodes: AdminErrorStatusCodes).ConfigureAwait(false);
         });
+        revokeSessions.Produces<AdminRevokeSessionsResponse>(StatusCodes.Status200OK);
     }
 
     private static void AddProfileServices(IHostApplicationBuilder builder, AuthProfile profile)
@@ -221,7 +230,7 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
         Result<AdminCreatedMemberResponse> result = await dispatcher.SendAsync(
             new AdminCreateMemberCommand(
                 request.Username,
-                UsernameTypeInput.FromJsonElement(request.UsernameType).Value,
+                request.UsernameType,
                 password.Value.Password),
             cancellationToken).ConfigureAwait(false);
 
@@ -288,8 +297,14 @@ public sealed class AuthAdminApiModule(AuthProfile profile) : IAdminApiModule
             : Result.Success(new PasswordInput(password, Generated: false));
     }
 
+    private static void SetNoStoreHeaders(HttpContext httpContext)
+    {
+        httpContext.Response.Headers.CacheControl = "no-store";
+        httpContext.Response.Headers.Pragma = "no-cache";
+    }
+
     private sealed record PasswordInput(string Password, bool Generated);
-    public sealed record CreateAdminMemberRequest(string Username, JsonElement UsernameType, string? Password, bool GeneratePassword);
+    public sealed record CreateAdminMemberRequest(string Username, UsernameType UsernameType, string? Password, bool GeneratePassword);
     public sealed record AdminCreatedMemberApiResponse(Guid MemberId, string Username, string? GeneratedPassword);
     public sealed record DisableAdminMemberRequest(string Reason, bool Confirmed);
     public sealed record ResetAdminMemberPasswordRequest(string? NewPassword, bool GeneratePassword, bool Confirmed);

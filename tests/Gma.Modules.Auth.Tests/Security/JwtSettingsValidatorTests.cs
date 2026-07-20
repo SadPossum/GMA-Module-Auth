@@ -69,12 +69,14 @@ public sealed class JwtSettingsValidatorTests
         AssertFailure(result, "SigningKey");
     }
 
-    [Fact]
-    public void Validate_rejects_non_positive_access_token_lifetime()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1_441)]
+    public void Validate_rejects_unsafe_access_token_lifetime(int lifetimeMinutes)
     {
         ValidateOptionsResult result = this.validator.Validate(
             name: null,
-            ValidSettings(accessTokenLifetimeMinutes: 0));
+            ValidSettings(accessTokenLifetimeMinutes: lifetimeMinutes));
 
         AssertFailure(result, "AccessTokenLifetimeMinutes");
     }

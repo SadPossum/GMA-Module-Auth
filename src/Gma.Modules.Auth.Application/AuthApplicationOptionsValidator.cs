@@ -36,6 +36,14 @@ internal sealed class AuthApplicationOptionsValidator : IValidateOptions<AuthApp
                 $"{AuthApplicationOptions.SectionName}:RefreshTokenLifetimeDays must be between 1 and 3650.");
         }
 
+        if (options.SessionAbsoluteLifetimeDays is < 1 or > 3_650 ||
+            options.SessionAbsoluteLifetimeDays < options.RefreshTokenLifetimeDays)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{AuthApplicationOptions.SectionName}:SessionAbsoluteLifetimeDays must be between " +
+                "RefreshTokenLifetimeDays and 3650.");
+        }
+
         if (options.MaximumActiveSessionsPerMember is < 1 or > 1_000)
         {
             return ValidateOptionsResult.Fail(

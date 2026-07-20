@@ -8,6 +8,7 @@ using Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Application.Handlers;
 using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Application.Security;
+using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
 using Gma.Modules.Auth.Domain.Enums;
@@ -43,19 +44,166 @@ public sealed class AuthenticationMethodHandlerTests
             new FakePasswordHashingService(),
             new AllowAllPasswordBlocklist(),
             CreatePasswordProofService(),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
             new FakeClock(),
             new RandomIdGenerator(),
             Options.Create(new AuthApplicationOptions()));
 
-        Result result = await handler.HandleAsync(
-            new SetMemberPasswordCommand(member.Id.Value, session.Id.Value, "SafePassword123!", null),
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result = await handler.HandleAsync(
+            new SetMemberPasswordCommand(
+                member.Id.Value,
+                session.Id.Value,
+                "SafePassword123!",
+                null,
+                "refresh-hash"),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
+        Assert.True(result.Value.Succeeded);
         Assert.True(member.HasPassword);
+        Assert.Equal("new-refresh-hash", session.RefreshTokenHash);
         MemberAuthenticationMethodChangedDomainEvent changed = Assert.Single(
             member.DomainEvents.OfType<MemberAuthenticationMethodChangedDomainEvent>());
         Assert.Equal(MemberAuthenticationMethodChange.Added, changed.Change);
+    }
+
+    [Fact]
+    public async Task Password_update_rotates_current_session_and_revokes_every_sibling_session()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreatePasswordMember();
+        MemberSession current = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "current-refresh-hash",
+            Now.AddDays(1),
+            Now).Value;
+        MemberSession sibling = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "sibling-refresh-hash",
+            Now.AddDays(1),
+            Now).Value;
+        MemberRepository repository = await PersistAsync(dbContext, member);
+        var handler = new SetMemberPasswordCommandHandler(
+            repository,
+            new FakePasswordHashingService(),
+            new AllowAllPasswordBlocklist(),
+            CreatePasswordProofService(),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
+            new FakeClock(),
+            new RandomIdGenerator(),
+            Options.Create(new AuthApplicationOptions()));
+
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result = await handler.HandleAsync(
+            new SetMemberPasswordCommand(
+                member.Id.Value,
+                current.Id.Value,
+                "NewSafePassword123!",
+                "CurrentPassword123!",
+                "current-refresh-hash"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.Succeeded);
+        Assert.Equal("hash:NewSafePassword123!", member.PasswordHash);
+        Assert.True(current.IsActive);
+        Assert.Equal("new-refresh-hash", current.RefreshTokenHash);
+        Assert.False(sibling.IsActive);
+        Assert.Equal(1, Assert.Single(
+            member.DomainEvents.OfType<MemberSessionsRevokedDomainEvent>()).RevokedSessionCount);
+    }
+
+    [Fact]
+    public async Task Password_creation_rechecks_session_freshness_after_blocklist_work()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreateExternalMember();
+        MemberSession session = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "refresh-hash",
+            Now.AddDays(1),
+            Now,
+            MemberAuthenticationMethods.External("google")).Value;
+        MemberRepository repository = await PersistAsync(dbContext, member);
+        var clock = new MutableClock(Now);
+        var handler = new SetMemberPasswordCommandHandler(
+            repository,
+            new FakePasswordHashingService(),
+            new AdvancingPasswordBlocklist(clock, Now.AddMinutes(11)),
+            CreatePasswordProofService(),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
+            clock,
+            new RandomIdGenerator(),
+            Options.Create(new AuthApplicationOptions { ExternalLinkSessionFreshnessMinutes = 10 }));
+
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result = await handler.HandleAsync(
+            new SetMemberPasswordCommand(
+                member.Id.Value,
+                session.Id.Value,
+                "SafePassword123!",
+                null,
+                "refresh-hash"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthApplicationErrors.FreshAuthenticationRequired, result.Error);
+        Assert.False(member.HasPassword);
+        Assert.Equal("refresh-hash", session.RefreshTokenHash);
+    }
+
+    [Fact]
+    public async Task Password_update_replay_revokes_sessions_without_changing_the_password()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreatePasswordMember();
+        MemberSession current = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "old-refresh-hash",
+            Now.AddDays(1),
+            Now).Value;
+        _ = member.RefreshSession(
+            current.Id,
+            "old-refresh-hash",
+            "current-refresh-hash",
+            Now.AddDays(1),
+            Now);
+        MemberSession sibling = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "sibling-refresh-hash",
+            Now.AddDays(1),
+            Now).Value;
+        member.ClearDomainEvents();
+        MemberRepository repository = await PersistAsync(dbContext, member);
+        var handler = new SetMemberPasswordCommandHandler(
+            repository,
+            new FakePasswordHashingService(),
+            new AllowAllPasswordBlocklist(),
+            CreatePasswordProofService(),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
+            new FakeClock(),
+            new RandomIdGenerator(),
+            Options.Create(new AuthApplicationOptions()));
+
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result = await handler.HandleAsync(
+            new SetMemberPasswordCommand(
+                member.Id.Value,
+                current.Id.Value,
+                "NewSafePassword123!",
+                "CurrentPassword123!",
+                "old-refresh-hash"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.RefreshTokenReuseDetected);
+        Assert.Equal("hash:CurrentPassword123!", member.PasswordHash);
+        Assert.False(current.IsActive);
+        Assert.False(sibling.IsActive);
+        Assert.Empty(member.DomainEvents.OfType<MemberAuthenticationMethodChangedDomainEvent>());
+        Assert.Equal(2, Assert.Single(
+            member.DomainEvents.OfType<MemberSessionsRevokedDomainEvent>()).RevokedSessionCount);
     }
 
     [Fact]
@@ -72,17 +220,77 @@ public sealed class AuthenticationMethodHandlerTests
         var handler = new RemoveMemberPasswordCommandHandler(
             repository,
             CreatePasswordProofService(),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
             new FakeClock(),
             new RandomIdGenerator(),
             Options.Create(new AuthApplicationOptions()));
 
-        Result result = await handler.HandleAsync(
-            new RemoveMemberPasswordCommand(member.Id.Value, session.Id.Value, "CurrentPassword123!"),
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result = await handler.HandleAsync(
+            new RemoveMemberPasswordCommand(
+                member.Id.Value,
+                session.Id.Value,
+                "CurrentPassword123!",
+                "refresh-hash"),
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
         Assert.Equal(AuthDomainErrors.AuthenticationMethodRequired, result.Error);
         Assert.True(member.HasPassword);
+    }
+
+    [Fact]
+    public async Task Password_removal_rotates_current_and_revokes_only_password_siblings()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreatePasswordMember();
+        _ = member.LinkExternalIdentity(
+            new MemberExternalIdentityId(Guid.NewGuid()),
+            "google",
+            "https://accounts.google.com",
+            "google-subject",
+            Now);
+        MemberSession current = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "current-refresh-hash",
+            Now.AddDays(1),
+            Now).Value;
+        MemberSession passwordSibling = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "password-sibling-refresh-hash",
+            Now.AddDays(1),
+            Now).Value;
+        MemberSession externalSibling = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "external-sibling-refresh-hash",
+            Now.AddDays(1),
+            Now,
+            MemberAuthenticationMethods.External("google")).Value;
+        MemberRepository repository = await PersistAsync(dbContext, member);
+        var handler = new RemoveMemberPasswordCommandHandler(
+            repository,
+            CreatePasswordProofService(),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
+            new FakeClock(),
+            new RandomIdGenerator(),
+            Options.Create(new AuthApplicationOptions()));
+
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result = await handler.HandleAsync(
+            new RemoveMemberPasswordCommand(
+                member.Id.Value,
+                current.Id.Value,
+                "CurrentPassword123!",
+                "current-refresh-hash"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.Succeeded);
+        Assert.False(member.HasPassword);
+        Assert.True(current.IsActive);
+        Assert.Equal("new-refresh-hash", current.RefreshTokenHash);
+        Assert.False(passwordSibling.IsActive);
+        Assert.True(externalSibling.IsActive);
     }
 
     [Fact]
@@ -113,21 +321,95 @@ public sealed class AuthenticationMethodHandlerTests
         var handler = new UnlinkExternalIdentityCommandHandler(
             repository,
             CreatePasswordProofService(),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
             new FakeClock(),
             new RandomIdGenerator(),
             Options.Create(new AuthApplicationOptions()));
 
-        Result denied = await handler.HandleAsync(
-            new UnlinkExternalIdentityCommand(member.Id.Value, googleSession.Id.Value, google.Id.Value, null),
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> denied = await handler.HandleAsync(
+            new UnlinkExternalIdentityCommand(
+                member.Id.Value,
+                googleSession.Id.Value,
+                google.Id.Value,
+                null,
+                "google-refresh-hash"),
             CancellationToken.None);
-        Result unlinked = await handler.HandleAsync(
-            new UnlinkExternalIdentityCommand(member.Id.Value, microsoftSession.Id.Value, google.Id.Value, null),
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> unlinked = await handler.HandleAsync(
+            new UnlinkExternalIdentityCommand(
+                member.Id.Value,
+                microsoftSession.Id.Value,
+                google.Id.Value,
+                null,
+                "microsoft-refresh-hash"),
             CancellationToken.None);
 
         Assert.True(denied.IsFailure);
         Assert.Equal(AuthApplicationErrors.AlternateAuthenticationRequired, denied.Error);
         Assert.True(unlinked.IsSuccess);
+        Assert.True(unlinked.Value.Succeeded);
+        Assert.False(googleSession.IsActive);
+        Assert.True(microsoftSession.IsActive);
+        Assert.Equal("new-refresh-hash", microsoftSession.RefreshTokenHash);
         Assert.Equal(microsoft.Id, Assert.Single(member.ExternalIdentities).Id);
+    }
+
+    [Fact]
+    public async Task Unlinking_current_provider_rotates_current_and_revokes_provider_siblings()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreatePasswordMember();
+        MemberExternalIdentity google = member.LinkExternalIdentity(
+            new MemberExternalIdentityId(Guid.NewGuid()),
+            "google",
+            "https://accounts.google.com",
+            "google-subject",
+            Now).Value;
+        string googleMethod = MemberAuthenticationMethods.External("google");
+        MemberSession current = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "current-refresh-hash",
+            Now.AddDays(1),
+            Now,
+            googleMethod).Value;
+        MemberSession providerSibling = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "provider-sibling-refresh-hash",
+            Now.AddDays(1),
+            Now,
+            googleMethod).Value;
+        MemberSession passwordSibling = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "password-sibling-refresh-hash",
+            Now.AddDays(1),
+            Now).Value;
+        MemberRepository repository = await PersistAsync(dbContext, member);
+        var handler = new UnlinkExternalIdentityCommandHandler(
+            repository,
+            CreatePasswordProofService(),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
+            new FakeClock(),
+            new RandomIdGenerator(),
+            Options.Create(new AuthApplicationOptions()));
+
+        Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result = await handler.HandleAsync(
+            new UnlinkExternalIdentityCommand(
+                member.Id.Value,
+                current.Id.Value,
+                google.Id.Value,
+                "CurrentPassword123!",
+                "current-refresh-hash"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.Succeeded);
+        Assert.Empty(member.ExternalIdentities);
+        Assert.True(current.IsActive);
+        Assert.Equal("new-refresh-hash", current.RefreshTokenHash);
+        Assert.Contains(AuthenticationMethodReferences.Password, current.AuthenticationMethodReferences);
+        Assert.False(providerSibling.IsActive);
+        Assert.True(passwordSibling.IsActive);
     }
 
     [Fact]
@@ -197,7 +479,10 @@ public sealed class AuthenticationMethodHandlerTests
         Now).Value;
 
     private static PasswordProofService CreatePasswordProofService() =>
-        new(new FakePasswordHashingService(), new AllowAllAttemptLimiter());
+        new(
+            new FakePasswordHashingService(),
+            new AllowAllAttemptLimiter(),
+            Options.Create(new AuthApplicationOptions()));
 
     private sealed class FakePasswordHashingService : IPasswordHashingService
     {
@@ -215,32 +500,58 @@ public sealed class AuthenticationMethodHandlerTests
             ValueTask.FromResult(false);
     }
 
+    private sealed class AdvancingPasswordBlocklist(MutableClock clock, DateTimeOffset nextUtc)
+        : IPasswordBlocklist
+    {
+        public ValueTask<bool> IsBlockedAsync(string password, CancellationToken cancellationToken)
+        {
+            clock.UtcNow = nextUtc;
+            return ValueTask.FromResult(false);
+        }
+    }
+
     private sealed class AllowAllAttemptLimiter : IAuthenticationAttemptLimiter
     {
-        public ValueTask<bool> IsAllowedAsync(
+        public ValueTask<AuthenticationAttemptLease?> TryAcquireAsync(
             string scopeId,
             string purpose,
             string target,
             DateTimeOffset nowUtc,
-            CancellationToken cancellationToken) => ValueTask.FromResult(true);
-
-        public ValueTask RecordFailureAsync(
-            string scopeId,
-            string purpose,
-            string target,
-            DateTimeOffset nowUtc,
-            CancellationToken cancellationToken) => ValueTask.CompletedTask;
+            AuthenticationAttemptPolicy policy,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<AuthenticationAttemptLease?>(
+                new AuthenticationAttemptLease(Guid.NewGuid(), nowUtc));
 
         public ValueTask RecordSuccessAsync(
             string scopeId,
             string purpose,
             string target,
+            AuthenticationAttemptLease lease,
             CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    }
+
+    private sealed class FakeTokenService : ITokenService
+    {
+        public string GenerateAccessToken(AccessTokenClaims claims) => "access-token";
+        public string GenerateRefreshToken() => "new-refresh";
+        public MemberId? GetMemberId(string accessToken, bool validateLifetime) => null;
+        public AccessTokenClaims? GetAccessTokenClaims(string accessToken, bool validateLifetime) => null;
+    }
+
+    private sealed class FakeRefreshTokenHashingService : IRefreshTokenHashingService
+    {
+        public string HashRefreshToken(string refreshToken) => $"{refreshToken}-hash";
+        public IReadOnlyList<string> GetCandidateHashes(string refreshToken) => [refreshToken];
     }
 
     private sealed class FakeClock : ISystemClock
     {
         public DateTimeOffset UtcNow => Now;
+    }
+
+    private sealed class MutableClock(DateTimeOffset nowUtc) : ISystemClock
+    {
+        public DateTimeOffset UtcNow { get; set; } = nowUtc;
     }
 
     private sealed class RandomIdGenerator : IIdGenerator

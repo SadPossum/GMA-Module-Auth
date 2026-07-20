@@ -20,6 +20,7 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         string scopeId,
         string refreshTokenHash,
         DateTimeOffset refreshTokenExpiresAtUtc,
+        DateTimeOffset absoluteExpiresAtUtc,
         DateTimeOffset loginDateTimeUtc,
         string authenticationMethod,
         SessionAuthenticationEvidence authenticationEvidence)
@@ -28,6 +29,7 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         this.MemberId = memberId;
         this.RefreshTokenHash = NormalizeRefreshTokenHash(refreshTokenHash);
         this.RefreshTokenExpiresAtUtc = refreshTokenExpiresAtUtc;
+        this.AbsoluteExpiresAtUtc = absoluteExpiresAtUtc;
         this.LoginDateTimeUtc = loginDateTimeUtc;
         this.AuthenticationMethod = authenticationMethod;
         this.SetAuthenticationEvidence(authenticationEvidence);
@@ -38,6 +40,7 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
     public string RefreshTokenHash { get; private set; } = string.Empty;
     public string? PreviousRefreshTokenHash { get; private set; }
     public DateTimeOffset RefreshTokenExpiresAtUtc { get; private set; }
+    public DateTimeOffset AbsoluteExpiresAtUtc { get; private set; }
     public DateTimeOffset LoginDateTimeUtc { get; private set; }
     public string AuthenticationMethod { get; private set; } = MemberAuthenticationMethods.Password;
     public string AuthenticationContextReference { get; private set; } = AuthenticationContextReferences.Legacy;
@@ -52,6 +55,7 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         string scopeId,
         string refreshTokenHash,
         DateTimeOffset refreshTokenExpiresAtUtc,
+        DateTimeOffset absoluteExpiresAtUtc,
         DateTimeOffset loginDateTimeUtc,
         string authenticationMethod = MemberAuthenticationMethods.Password,
         SessionAuthenticationEvidence? authenticationEvidence = null)
@@ -76,6 +80,13 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
             return Result.Failure<MemberSession>(AuthDomainErrors.RefreshTokenHashNotValid);
         }
 
+        if (refreshTokenExpiresAtUtc <= loginDateTimeUtc ||
+            absoluteExpiresAtUtc <= loginDateTimeUtc ||
+            refreshTokenExpiresAtUtc > absoluteExpiresAtUtc)
+        {
+            return Result.Failure<MemberSession>(AuthDomainErrors.SessionLifetimeInvalid);
+        }
+
         if (!MemberAuthenticationMethods.TryNormalize(authenticationMethod, out string normalizedAuthenticationMethod))
         {
             return Result.Failure<MemberSession>(AuthDomainErrors.AuthenticationMethodNotValid);
@@ -83,6 +94,10 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
 
         SessionAuthenticationEvidence evidence = authenticationEvidence ??
             CreateConservativeEvidence(normalizedAuthenticationMethod, loginDateTimeUtc);
+        if (evidence.AuthenticatedAtUtc > loginDateTimeUtc)
+        {
+            return Result.Failure<MemberSession>(AuthDomainErrors.AuthenticationEvidenceNotValid);
+        }
 
         return Result.Success(new MemberSession(
             id,
@@ -90,6 +105,7 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
             scopeId,
             refreshTokenHash,
             refreshTokenExpiresAtUtc,
+            absoluteExpiresAtUtc,
             loginDateTimeUtc,
             normalizedAuthenticationMethod,
             evidence));
@@ -99,6 +115,48 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         string refreshTokenHash,
         string newRefreshTokenHash,
         DateTimeOffset newRefreshTokenExpiresAtUtc,
+        DateTimeOffset nowUtc)
+        => this.RotateRefreshToken(
+            refreshTokenHash,
+            newRefreshTokenHash,
+            newRefreshTokenExpiresAtUtc,
+            this.AbsoluteExpiresAtUtc,
+            nowUtc);
+
+    internal Result Reauthenticate(
+        string refreshTokenHash,
+        string newRefreshTokenHash,
+        DateTimeOffset newRefreshTokenExpiresAtUtc,
+        DateTimeOffset newAbsoluteExpiresAtUtc,
+        SessionAuthenticationEvidence authenticationEvidence,
+        DateTimeOffset nowUtc)
+    {
+        ArgumentNullException.ThrowIfNull(authenticationEvidence);
+        if (authenticationEvidence.AuthenticatedAtUtc > nowUtc)
+        {
+            return Result.Failure(AuthDomainErrors.AuthenticationEvidenceNotValid);
+        }
+
+        Result result = this.RotateRefreshToken(
+            refreshTokenHash,
+            newRefreshTokenHash,
+            newRefreshTokenExpiresAtUtc,
+            newAbsoluteExpiresAtUtc,
+            nowUtc);
+        if (result.IsSuccess)
+        {
+            this.AbsoluteExpiresAtUtc = newAbsoluteExpiresAtUtc;
+            this.SetAuthenticationEvidence(authenticationEvidence);
+        }
+
+        return result;
+    }
+
+    private Result RotateRefreshToken(
+        string refreshTokenHash,
+        string newRefreshTokenHash,
+        DateTimeOffset newRefreshTokenExpiresAtUtc,
+        DateTimeOffset absoluteExpiresAtUtc,
         DateTimeOffset nowUtc)
     {
         if (!this.IsActive)
@@ -116,6 +174,16 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
             return Result.Failure(AuthDomainErrors.RefreshTokenExpired);
         }
 
+        if (newRefreshTokenExpiresAtUtc <= nowUtc)
+        {
+            return Result.Failure(AuthDomainErrors.RefreshTokenExpired);
+        }
+
+        if (absoluteExpiresAtUtc <= nowUtc)
+        {
+            return Result.Failure(AuthDomainErrors.RefreshTokenExpired);
+        }
+
         if (!TryNormalizeRefreshTokenHash(newRefreshTokenHash, out string? normalizedRefreshTokenHash))
         {
             return Result.Failure(AuthDomainErrors.RefreshTokenHashNotValid);
@@ -123,7 +191,9 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
 
         this.PreviousRefreshTokenHash = this.RefreshTokenHash;
         this.RefreshTokenHash = normalizedRefreshTokenHash;
-        this.RefreshTokenExpiresAtUtc = newRefreshTokenExpiresAtUtc;
+        this.RefreshTokenExpiresAtUtc = newRefreshTokenExpiresAtUtc <= absoluteExpiresAtUtc
+            ? newRefreshTokenExpiresAtUtc
+            : absoluteExpiresAtUtc;
 
         return Result.Success();
     }
@@ -150,9 +220,6 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         this.SignOutDateTimeUtc = nowUtc;
         return Result.Success();
     }
-
-    internal void RecordAuthenticationEvidence(SessionAuthenticationEvidence authenticationEvidence) =>
-        this.SetAuthenticationEvidence(authenticationEvidence);
 
     private void SetAuthenticationEvidence(SessionAuthenticationEvidence authenticationEvidence)
     {

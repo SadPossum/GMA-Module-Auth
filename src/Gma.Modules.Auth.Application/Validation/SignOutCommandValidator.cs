@@ -1,6 +1,7 @@
 namespace Gma.Modules.Auth.Application.Validation;
 
 using Gma.Modules.Auth.Application.Commands;
+using Gma.Modules.Auth.Contracts;
 using Gma.Framework.Cqrs;
 
 internal sealed class SignOutCommandValidator : ICommandValidator<SignOutCommand>
@@ -15,6 +16,10 @@ internal sealed class SignOutCommandValidator : ICommandValidator<SignOutCommand
         if (string.IsNullOrWhiteSpace(command.RefreshToken))
         {
             yield return "Refresh token is required.";
+        }
+        else if (command.RefreshToken.Trim().Length > AuthContractLimits.OpaqueTokenMaxLength)
+        {
+            yield return "Refresh token is too long.";
         }
     }
 }
