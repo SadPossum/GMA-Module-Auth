@@ -1,6 +1,6 @@
 # Auth Domain Completion Audit Task
 
-Status: implementation verified; publication and downstream alignment pending
+Status: complete
 Date: 2026-07-19
 
 ## Goal
@@ -97,7 +97,7 @@ These findings do not change ownership: attempt policy, recovery serialization k
 - PostgreSQL and SQL Server migration-drift checks passed with the absolute-session-lifetime migrations applied to both provider models.
 - Auth boundary checks and `git diff --check` passed; Framework and Auth transitive package audits reported no vulnerable packages.
 - The canonical Skeleton public and Admin hosts generated typed `UsernameType` schemas and the intended Auth success status/response contracts.
-- Skeleton, Extensions, and BunkFy exact published gitlinks remain pending until Framework and Auth are committed and pushed in dependency order.
+- Framework and Auth were published in dependency order; Skeleton, Extensions, and BunkFy were aligned to the published runtime revisions and passed their required composition, build, migration, architecture, and test gates. This final task-record closeout changes documentation only.
 
 ## Completion Criteria
 
