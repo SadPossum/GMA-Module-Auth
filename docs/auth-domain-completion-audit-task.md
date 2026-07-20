@@ -1,6 +1,6 @@
 # Auth Domain Completion Audit Task
 
-Status: in progress (reopened by exact-head consumer verification)
+Status: complete
 Date: 2026-07-19
 Updated: 2026-07-20
 
@@ -100,7 +100,8 @@ These findings do not change ownership: attempt policy, recovery serialization k
 - PostgreSQL and SQL Server migration-drift checks passed with the absolute-session-lifetime migrations applied to both provider models.
 - Auth boundary checks and `git diff --check` passed; Framework and Auth transitive package audits reported no vulnerable packages.
 - The canonical Skeleton public and Admin hosts generated typed `UsernameType` schemas and the intended Auth success status/response contracts.
-- Exact-head BunkFy Docker verification reopened the slice by exposing findings 31 and 32 plus stale consumer assertions for malformed typed enum payloads. The Auth repairs pass standalone validation; exact published-head consumer verification remains pending before this record returns to complete.
+- Exact-head BunkFy Docker verification reopened the slice by exposing findings 31 and 32 plus stale consumer assertions for malformed typed enum payloads. The consumer now treats malformed enum JSON as an HTTP binding error, retains command-level validation for non-HTTP callers, and includes response bodies in test-helper failures.
+- Auth runtime revision `c90aec58f9a4298f712076c2c3dff4d2a3fc6ab6` passed standalone CI run `29739567132`; Skeleton revision `e0f22f2c84bc8bf2a82147798c4d42a322819c87` passed Windows and Linux run `29740621268`; BunkFy Backend revision `bd245e4ccf1cf570bb316614122a8f6a4b420568` passed Windows and Linux run `29740642655` plus all 27 Docker tests in run `29740642611`.
 
 ## Completion Criteria
 
