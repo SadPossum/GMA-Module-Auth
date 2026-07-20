@@ -1,7 +1,8 @@
 # Auth Domain Completion Audit Task
 
-Status: complete
+Status: in progress (reopened by exact-head consumer verification)
 Date: 2026-07-19
+Updated: 2026-07-20
 
 ## Goal
 
@@ -71,6 +72,8 @@ Verify that Auth is production-grade as a reusable identity and authentication d
 28. Several public, browser, OpenID Connect, and administrative endpoints return typed, accepted, no-content, or redirect success results through `IResult` helpers without explicit response metadata. Swagger consequently reports generic bodyless `200` responses. Declare each real success status and response type so generated clients match runtime behavior without changing endpoint execution.
 29. Administrative create/reset-password endpoints can return one-time generated passwords when the host explicitly enables that capability, but those responses do not disable intermediary or browser caching. Apply `no-store` and `no-cache` headers at both secret-capable Admin API boundaries; keep CLI generation as an intentional one-time terminal response.
 30. The `Member` aggregate has cohesive ownership and already delegates child state to username, session, and external-identity entities, but its implementation has grown to 971 lines and obscures invariant review. Preserve one aggregate and split its implementation into core/lifecycle, session, and authentication-method partials without moving behavior or weakening transaction boundaries.
+31. Session creation sampled the system clock inside token material generation and again when constructing session authentication evidence. A real advancing clock could therefore place registration evidence after the session login timestamp and correctly fail the domain timeline invariant. Pass one explicit authentication timestamp through every session-creation path and cover registration with an advancing-clock regression.
+32. The durable authentication-attempt limiter opens an independent service scope so an attempt is committed before slow credential verification, but a scope-aware Auth profile did not restore the caller's Auth partition in that child scope. Preserve the independent transaction while restoring the normalized Auth scope before resolving `AuthDbContext`; retain the write guard and cover both relational providers through a non-default scope.
 
 These findings do not change ownership: attempt policy, recovery serialization keys, and retry semantics remain Auth-owned; Framework receives only generic EF provider error classification and transaction-scoped key locking.
 
@@ -92,12 +95,12 @@ These findings do not change ownership: attempt policy, recovery serialization k
 ## Verification Evidence
 
 - Framework restore and zero-warning build passed; all 991 Framework tests passed.
-- Auth restore and zero-warning build passed; all 293 non-Docker Auth tests passed.
-- Required PostgreSQL/SQL Server relational integration lane passed all 3 Docker tests.
+- Auth restore and zero-warning build passed; all 294 non-Docker Auth tests passed.
+- Required PostgreSQL/SQL Server relational integration lane passed all 3 Docker tests, including scope-aware durable-attempt coverage on both providers.
 - PostgreSQL and SQL Server migration-drift checks passed with the absolute-session-lifetime migrations applied to both provider models.
 - Auth boundary checks and `git diff --check` passed; Framework and Auth transitive package audits reported no vulnerable packages.
 - The canonical Skeleton public and Admin hosts generated typed `UsernameType` schemas and the intended Auth success status/response contracts.
-- Framework and Auth were published in dependency order; Skeleton, Extensions, and BunkFy were aligned to the published runtime revisions and passed their required composition, build, migration, architecture, and test gates. This final task-record closeout changes documentation only.
+- Exact-head BunkFy Docker verification reopened the slice by exposing findings 31 and 32 plus stale consumer assertions for malformed typed enum payloads. The Auth repairs pass standalone validation; exact published-head consumer verification remains pending before this record returns to complete.
 
 ## Completion Criteria
 

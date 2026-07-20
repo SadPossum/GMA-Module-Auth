@@ -90,13 +90,14 @@ internal sealed class LoginMemberCommandHandler(
         }
 
         var tokens = this.CreateSessionTokens(
+            nowUtc,
             TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays),
             TimeSpan.FromDays(options.Value.SessionAbsoluteLifetimeDays));
         Result<MemberSession> startSessionResult = member.StartSession(
             tokens.SessionId,
             tokens.RefreshTokenHash,
             tokens.ExpiresAtUtc,
-            this.Clock.UtcNow,
+            nowUtc,
             authenticationEvidence: primaryEvidence,
             maximumActiveSessions: options.Value.MaximumActiveSessionsPerMember,
             absoluteExpiresAtUtc: tokens.AbsoluteExpiresAtUtc);
@@ -109,7 +110,7 @@ internal sealed class LoginMemberCommandHandler(
         Result authenticated = member.RecordAuthentication(
             tokens.SessionId,
             this.IdGenerator.NewId(),
-            this.Clock.UtcNow,
+            nowUtc,
             AuthenticationClientContext.NormalizeIpAddress(command.IpAddress),
             AuthenticationClientContext.NormalizeUserAgent(command.UserAgent));
         if (authenticated.IsFailure)

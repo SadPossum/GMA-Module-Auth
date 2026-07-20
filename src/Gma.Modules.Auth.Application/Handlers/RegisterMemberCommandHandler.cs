@@ -56,6 +56,7 @@ internal sealed class RegisterMemberCommandHandler(
         }
 
         string passwordHash = passwordHashingService.HashPassword(command.Password);
+        DateTimeOffset nowUtc = this.Clock.UtcNow;
         Result<Member> memberResult = Member.Create(
             new MemberId(this.IdGenerator.NewId()),
             scopeContext.ScopeId,
@@ -64,7 +65,7 @@ internal sealed class RegisterMemberCommandHandler(
             passwordHash,
             new MemberUsernameId(this.IdGenerator.NewId()),
             this.IdGenerator.NewId(),
-            this.Clock.UtcNow);
+            nowUtc);
 
         if (memberResult.IsFailure)
         {
@@ -78,14 +79,15 @@ internal sealed class RegisterMemberCommandHandler(
 
         Member member = memberResult.Value;
         var tokens = this.CreateSessionTokens(
+            nowUtc,
             TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays),
             TimeSpan.FromDays(options.Value.SessionAbsoluteLifetimeDays));
         Result<MemberSession> startSessionResult = member.StartSession(
             tokens.SessionId,
             tokens.RefreshTokenHash,
             tokens.ExpiresAtUtc,
-            this.Clock.UtcNow,
-            authenticationEvidence: SessionAuthenticationEvidence.Password(this.Clock.UtcNow),
+            nowUtc,
+            authenticationEvidence: SessionAuthenticationEvidence.Password(nowUtc),
             maximumActiveSessions: options.Value.MaximumActiveSessionsPerMember,
             absoluteExpiresAtUtc: tokens.AbsoluteExpiresAtUtc);
 

@@ -3,6 +3,7 @@ namespace Gma.Modules.Auth.Persistence;
 using System.Data;
 using Gma.Framework.Persistence.EntityFrameworkCore;
 using Gma.Modules.Auth.Application;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Domain.Services;
 using Microsoft.EntityFrameworkCore;
@@ -33,6 +34,7 @@ internal sealed class PersistentAuthenticationAttemptLimiter(
         AuthenticationAttemptLease lease = new(Guid.CreateVersion7(), nowUtc);
 
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
+        RestoreScope(scope.ServiceProvider, partition.ScopeId);
         AuthDbContext dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
         await using IDbContextTransaction transaction = await dbContext.Database
             .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
@@ -83,6 +85,7 @@ internal sealed class PersistentAuthenticationAttemptLimiter(
         IReadOnlyList<string> targetHashes = hashingService.GetCandidateHashes(hashInput);
 
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
+        RestoreScope(scope.ServiceProvider, partition.ScopeId);
         AuthDbContext dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
         await using IDbContextTransaction transaction = await dbContext.Database
             .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
@@ -106,4 +109,13 @@ internal sealed class PersistentAuthenticationAttemptLimiter(
 
     private static string CreateHashInput(AuthenticationAttemptPartition partition) =>
         $"{HashPurpose}\n{partition.Key}";
+
+    private static void RestoreScope(IServiceProvider services, string scopeId)
+    {
+        IAuthScopeContext scopeContext = services.GetRequiredService<IAuthScopeContext>();
+        if (!scopeContext.TryRestoreScope(scopeId))
+        {
+            throw new InvalidOperationException($"Authentication attempt scope '{scopeId}' could not be restored.");
+        }
+    }
 }

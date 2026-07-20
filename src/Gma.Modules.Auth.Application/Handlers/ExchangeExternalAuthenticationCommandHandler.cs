@@ -94,13 +94,13 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
 
         MemberExternalIdentity identity = member.ExternalIdentities.Single(item =>
             item.Matches(exchange.Issuer, exchange.Subject));
-        Result authenticated = member.MarkExternalIdentityAuthenticated(identity.Id, this.Clock.UtcNow);
+        DateTimeOffset nowUtc = this.Clock.UtcNow;
+        Result authenticated = member.MarkExternalIdentityAuthenticated(identity.Id, nowUtc);
         if (authenticated.IsFailure)
         {
             return Result.Failure<ExternalAuthenticationResponse>(authenticated.Error);
         }
 
-        DateTimeOffset nowUtc = this.Clock.UtcNow;
         string primaryAuthenticationMethod = MemberAuthenticationMethods.External(exchange.ProviderCode);
         SessionAuthenticationEvidence primaryEvidence = SessionAuthenticationEvidence.External(nowUtc);
         Result<MultiFactorChallengeRequirement> challenge = await multiFactorAuthentication
@@ -127,13 +127,14 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
         }
 
         var tokens = this.CreateSessionTokens(
+            nowUtc,
             TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays),
             TimeSpan.FromDays(options.Value.SessionAbsoluteLifetimeDays));
         Result<MemberSession> session = member.StartSession(
             tokens.SessionId,
             tokens.RefreshTokenHash,
             tokens.ExpiresAtUtc,
-            this.Clock.UtcNow,
+            nowUtc,
             primaryAuthenticationMethod,
             primaryEvidence,
             options.Value.MaximumActiveSessionsPerMember,
@@ -146,7 +147,7 @@ internal sealed class ExchangeExternalAuthenticationCommandHandler(
         Result authenticatedEvent = member.RecordAuthentication(
             tokens.SessionId,
             this.IdGenerator.NewId(),
-            this.Clock.UtcNow,
+            nowUtc,
             AuthenticationClientContext.NormalizeIpAddress(command.IpAddress),
             AuthenticationClientContext.NormalizeUserAgent(command.UserAgent));
         if (authenticatedEvent.IsFailure)

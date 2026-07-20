@@ -78,6 +78,7 @@ internal sealed class CompleteMultiFactorChallengeCommandHandler(
         }
 
         var tokens = this.CreateSessionTokens(
+            nowUtc,
             TimeSpan.FromDays(options.Value.RefreshTokenLifetimeDays),
             TimeSpan.FromDays(options.Value.SessionAbsoluteLifetimeDays));
         Result<MemberSession> session = member.StartSession(

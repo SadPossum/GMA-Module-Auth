@@ -51,6 +51,7 @@ public sealed class AuthPostgreSqlIntegrationTests
         await postgreSql.StartAsync();
 
         await RunAttemptLimiterScenarioAsync("PostgreSql", postgreSql.GetConnectionString());
+        await RunScopeAwareAttemptLimiterScenarioAsync("PostgreSql", postgreSql.GetConnectionString());
     }
 
     [DockerFact]
@@ -60,6 +61,42 @@ public sealed class AuthPostgreSqlIntegrationTests
         await sqlServer.StartAsync();
 
         await RunAttemptLimiterScenarioAsync("SqlServer", sqlServer.GetConnectionString());
+        await RunScopeAwareAttemptLimiterScenarioAsync("SqlServer", sqlServer.GetConnectionString());
+    }
+
+    private static async Task RunScopeAwareAttemptLimiterScenarioAsync(
+        string providerName,
+        string connectionString)
+    {
+        await using ServiceProvider provider = CreateProvider(
+            providerName,
+            connectionString,
+            AuthProfile.ScopeAware());
+        await MigrateAsync(provider);
+
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            IAuthScopeContext scopeContext = scope.ServiceProvider.GetRequiredService<IAuthScopeContext>();
+            Assert.True(scopeContext.TryRestoreScope("tenant-a"));
+            IAuthenticationAttemptLimiter limiter = scope.ServiceProvider
+                .GetRequiredService<IAuthenticationAttemptLimiter>();
+
+            Assert.NotNull(await limiter.TryAcquireAsync(
+                "tenant-a",
+                AuthenticationAttemptPurposes.PasswordLogin,
+                "scope-aware@example.com",
+                Now,
+                new AuthenticationAttemptPolicy(2, TimeSpan.FromMinutes(15)),
+                CancellationToken.None));
+        }
+
+        await using AsyncServiceScope readScope = provider.CreateAsyncScope();
+        IAuthScopeContext readScopeContext = readScope.ServiceProvider.GetRequiredService<IAuthScopeContext>();
+        Assert.True(readScopeContext.TryRestoreScope("tenant-a"));
+        AuthDbContext dbContext = readScope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        AuthenticationAttemptRecord attempt = Assert.Single(
+            await dbContext.AuthenticationFailureAttempts.AsNoTracking().ToArrayAsync());
+        Assert.Equal("tenant-a", attempt.ScopeId);
     }
 
     private static async Task RunAttemptLimiterScenarioAsync(string providerName, string connectionString)
@@ -200,7 +237,10 @@ public sealed class AuthPostgreSqlIntegrationTests
         Assert.Equal("recent-target-hash", Assert.Single(attempts).TargetHash);
     }
 
-    private static ServiceProvider CreateProvider(string providerName, string connectionString)
+    private static ServiceProvider CreateProvider(
+        string providerName,
+        string connectionString,
+        AuthProfile? profile = null)
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder();
         builder.Configuration.AddInMemoryCollection(
@@ -210,7 +250,12 @@ public sealed class AuthPostgreSqlIntegrationTests
             new("Persistence:Provider", providerName),
             new($"ConnectionStrings:{providerName}", connectionString),
         ]);
-        AuthProfile profile = AuthProfile.Global("global");
+        profile ??= AuthProfile.Global("global");
+        if (profile.RequiresScopeContext)
+        {
+            builder.Services.AddScoped<IAuthScopeContext, MutableAuthScopeContext>();
+        }
+
         builder.AddCqrsInfrastructure();
         builder.AddApplicationEventsInfrastructure();
         builder.AddMessagingInfrastructure();
@@ -594,4 +639,21 @@ public sealed class AuthPostgreSqlIntegrationTests
     }
 
     private sealed record StoredAttempt(string ScopeId, string Purpose, string TargetHash);
+
+    private sealed class MutableAuthScopeContext : IAuthScopeContext
+    {
+        public bool IsEnabled => true;
+        public string? ScopeId { get; private set; } = "default";
+
+        public bool TryRestoreScope(string? scopeId)
+        {
+            if (string.IsNullOrWhiteSpace(scopeId))
+            {
+                return false;
+            }
+
+            this.ScopeId = scopeId.Trim().ToLowerInvariant();
+            return true;
+        }
+    }
 }

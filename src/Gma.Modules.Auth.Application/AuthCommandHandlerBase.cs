@@ -67,12 +67,14 @@ internal abstract class AuthCommandHandlerBase(
         string RefreshTokenHash,
         DateTimeOffset ExpiresAtUtc,
         DateTimeOffset AbsoluteExpiresAtUtc)
-        CreateSessionTokens(TimeSpan refreshTokenLifetime, TimeSpan absoluteSessionLifetime)
+        CreateSessionTokens(
+            DateTimeOffset nowUtc,
+            TimeSpan refreshTokenLifetime,
+            TimeSpan absoluteSessionLifetime)
     {
         MemberSessionId sessionId = new(this.IdGenerator.NewId());
         string refreshToken = tokenService.GenerateRefreshToken();
         string refreshTokenHash = refreshTokenHashingService.HashRefreshToken(refreshToken);
-        DateTimeOffset nowUtc = this.Clock.UtcNow;
         DateTimeOffset expiresAtUtc = nowUtc.Add(refreshTokenLifetime);
         DateTimeOffset absoluteExpiresAtUtc = nowUtc.Add(absoluteSessionLifetime);
 

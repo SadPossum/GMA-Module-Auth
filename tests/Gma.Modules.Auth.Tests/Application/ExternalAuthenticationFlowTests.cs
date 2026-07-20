@@ -55,6 +55,34 @@ public sealed class ExternalAuthenticationFlowTests
     }
 
     [Fact]
+    public async Task Password_self_registration_uses_one_timestamp_for_session_evidence()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        MemberRepository repository = new(dbContext);
+        var clock = new IncrementingClock(Now);
+        var handler = new RegisterMemberCommandHandler(
+            repository,
+            new TestScopeContext(),
+            new FakePasswordHashingService(),
+            new AllowAllPasswordBlocklist(),
+            new FakeTokenService("refresh-token"),
+            new FakeHashingService(),
+            Options.Create(new AuthApplicationOptions()),
+            clock,
+            new SequentialIdGenerator());
+
+        Result<AuthTokensResponse> result = await handler.HandleAsync(
+            new RegisterMemberCommand("member@example.com", UsernameType.Email, "safe-test-password"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Member member = Assert.Single(dbContext.ChangeTracker.Entries<Member>()).Entity;
+        MemberSession session = Assert.Single(member.Sessions);
+        Assert.Equal(session.LoginDateTimeUtc, session.AuthenticatedAtUtc);
+        Assert.Equal(1, clock.ReadCount);
+    }
+
+    [Fact]
     public async Task Verified_external_identity_creates_account_and_exchange_is_single_use()
     {
         await using AuthDbContext dbContext = CreateDbContext();
@@ -620,6 +648,23 @@ public sealed class ExternalAuthenticationFlowTests
     private sealed class FakeClock(DateTimeOffset? nowUtc = null) : ISystemClock
     {
         public DateTimeOffset UtcNow { get; } = nowUtc ?? Now;
+    }
+
+    private sealed class IncrementingClock(DateTimeOffset nowUtc) : ISystemClock
+    {
+        private DateTimeOffset nowUtc = nowUtc;
+
+        public int ReadCount { get; private set; }
+
+        public DateTimeOffset UtcNow
+        {
+            get
+            {
+                this.ReadCount++;
+                this.nowUtc = this.nowUtc.AddTicks(1);
+                return this.nowUtc;
+            }
+        }
     }
 
     private sealed class SequentialIdGenerator : IIdGenerator
