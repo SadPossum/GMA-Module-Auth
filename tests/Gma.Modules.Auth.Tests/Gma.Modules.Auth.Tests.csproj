@@ -21,6 +21,7 @@
     <ProjectReference Include="$(GmaModuleAuthRoot)Gma.Modules.Auth.Application\Gma.Modules.Auth.Application.csproj" />
     <ProjectReference Include="$(GmaModuleAuthRoot)Gma.Modules.Auth.Domain\Gma.Modules.Auth.Domain.csproj" />
     <ProjectReference Include="$(GmaModuleAuthRoot)Gma.Modules.Auth.Infrastructure\Gma.Modules.Auth.Infrastructure.csproj" />
+    <ProjectReference Include="$(GmaModuleAuthRoot)Gma.Modules.Auth.Infrastructure.TokenHashing\Gma.Modules.Auth.Infrastructure.TokenHashing.csproj" />
     <ProjectReference Include="$(GmaModuleAuthRoot)Gma.Modules.Auth.Providers.OpenIdConnect\Gma.Modules.Auth.Providers.OpenIdConnect.csproj" />
     <ProjectReference Include="$(GmaModuleAuthRoot)Gma.Modules.Auth.Persistence\Gma.Modules.Auth.Persistence.csproj" />
     <ProjectReference Include="$(GmaFrameworkRoot)Domain\Gma.Framework.Domain\Gma.Framework.Domain.csproj" />

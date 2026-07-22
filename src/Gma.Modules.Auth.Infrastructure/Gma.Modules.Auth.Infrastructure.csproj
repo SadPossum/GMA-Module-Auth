@@ -7,6 +7,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Gma.Modules.Auth.Domain\Gma.Modules.Auth.Domain.csproj" />
+    <ProjectReference Include="..\Gma.Modules.Auth.Infrastructure.TokenHashing\Gma.Modules.Auth.Infrastructure.TokenHashing.csproj" />
     <ProjectReference Include="$(GmaFrameworkRoot)Runtime\Gma.Framework.Runtime\Gma.Framework.Runtime.csproj" />
     <ProjectReference Include="$(GmaFrameworkRoot)Security\Gma.Framework.Security\Gma.Framework.Security.csproj" />
   </ItemGroup>

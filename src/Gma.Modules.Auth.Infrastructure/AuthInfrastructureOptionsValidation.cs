@@ -16,23 +16,8 @@ internal static class AuthInfrastructureOptionsValidation
         ApplicationIdentityOptions applicationIdentity = configuration
             .GetSection(ApplicationIdentityOptions.SectionName)
             .Get<ApplicationIdentityOptions>() ?? new ApplicationIdentityOptions();
-        RefreshTokenHashingOptions refreshTokenHashingOptions = configuration
-            .GetSection(RefreshTokenHashingOptions.SectionName)
-            .Get<RefreshTokenHashingOptions>() ?? new RefreshTokenHashingOptions();
-
         ApplyJwtIdentityDefaults(jwtSettings, applicationIdentity);
         ValidateJwtSettings(jwtSettings);
-        ValidateRefreshTokenHashingOptions(refreshTokenHashingOptions);
-    }
-
-    public static void ValidateTokenHashing(IConfiguration configuration)
-    {
-        ArgumentNullException.ThrowIfNull(configuration);
-
-        RefreshTokenHashingOptions refreshTokenHashingOptions = configuration
-            .GetSection(RefreshTokenHashingOptions.SectionName)
-            .Get<RefreshTokenHashingOptions>() ?? new RefreshTokenHashingOptions();
-        ValidateRefreshTokenHashingOptions(refreshTokenHashingOptions);
     }
 
     public static void ApplyJwtIdentityDefaults(JwtSettings options, ApplicationIdentityOptions applicationIdentity)
@@ -61,16 +46,4 @@ internal static class AuthInfrastructureOptionsValidation
         }
     }
 
-    private static void ValidateRefreshTokenHashingOptions(RefreshTokenHashingOptions options)
-    {
-        ValidateOptionsResult result = new RefreshTokenHashingOptionsValidator().Validate(name: null, options);
-
-        if (result.Failed)
-        {
-            throw new OptionsValidationException(
-                RefreshTokenHashingOptions.SectionName,
-                typeof(RefreshTokenHashingOptions),
-                result.Failures);
-        }
-    }
 }

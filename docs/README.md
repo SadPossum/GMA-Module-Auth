@@ -12,6 +12,7 @@ Gma.Modules.Auth.Domain
 Gma.Modules.Auth.Application
 Gma.Modules.Auth.Infrastructure
 Gma.Modules.Auth.Infrastructure.JwtBearer
+Gma.Modules.Auth.Infrastructure.TokenHashing
 Gma.Modules.Auth.Persistence
 Gma.Modules.Auth.Persistence.SqlServerMigrations
 Gma.Modules.Auth.Persistence.PostgreSqlMigrations
