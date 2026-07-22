@@ -101,6 +101,54 @@ public sealed class AuthApplicationRegistrationTests
     }
 
     [Fact]
+    public void Auth_token_hashing_registration_requires_only_pepper_and_is_idempotent()
+    {
+        ServiceCollection services = new();
+        IConfiguration configuration = CreateConfiguration(
+            ("Auth:RefreshTokens:Pepper", "test-refresh-token-pepper-000000000000000000000000"));
+
+        services.AddAuthTokenHashingInfrastructure(configuration);
+        services.AddAuthTokenHashingInfrastructure(configuration);
+
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IRefreshTokenHashingService));
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IValidateOptions<RefreshTokenHashingOptions>));
+        Assert.Single(services, descriptor => descriptor.ServiceType.Name == "AuthTokenHashingRegistrationMarker");
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IValidateOptions<JwtSettings>));
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(ITokenService));
+    }
+
+    [Fact]
+    public void Auth_token_hashing_registration_can_be_extended_to_full_infrastructure()
+    {
+        ServiceCollection services = new();
+        IConfiguration configuration = CreateConfiguration(CreateValidAuthInfrastructureValues());
+
+        services.AddAuthTokenHashingInfrastructure(configuration);
+        services.AddAuthInfrastructure(configuration);
+
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IRefreshTokenHashingService));
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IValidateOptions<RefreshTokenHashingOptions>));
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IValidateOptions<JwtSettings>));
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(ITokenService));
+        Assert.Single(services, descriptor => descriptor.ServiceType.Name == "AuthTokenHashingRegistrationMarker");
+        Assert.Single(services, descriptor => descriptor.ServiceType.Name == "AuthInfrastructureRegistrationMarker");
+    }
+
+    [Fact]
+    public void Auth_token_hashing_registration_rejects_invalid_pepper_before_service_mutation()
+    {
+        ServiceCollection services = new();
+        IConfiguration configuration = CreateConfiguration(("Auth:RefreshTokens:Pepper", "short"));
+
+        OptionsValidationException exception = Assert.Throws<OptionsValidationException>(() =>
+            services.AddAuthTokenHashingInfrastructure(configuration));
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("Pepper", StringComparison.Ordinal));
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IRefreshTokenHashingService));
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType.Name == "AuthTokenHashingRegistrationMarker");
+    }
+
+    [Fact]
     public void Auth_application_registration_rejects_null_arguments()
     {
         IConfiguration configuration = new ConfigurationBuilder().Build();
@@ -109,6 +157,8 @@ public sealed class AuthApplicationRegistrationTests
         Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddAuthApplication(null!));
         Assert.Throws<ArgumentNullException>(() => Infrastructure.DependencyInjection.AddAuthInfrastructure(null!, configuration));
         Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddAuthInfrastructure(null!));
+        Assert.Throws<ArgumentNullException>(() => Infrastructure.DependencyInjection.AddAuthTokenHashingInfrastructure(null!, configuration));
+        Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddAuthTokenHashingInfrastructure(null!));
     }
 
     private static Predicate<ServiceDescriptor> HasService<TService, TImplementation>() =>

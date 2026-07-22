@@ -25,6 +25,16 @@ internal static class AuthInfrastructureOptionsValidation
         ValidateRefreshTokenHashingOptions(refreshTokenHashingOptions);
     }
 
+    public static void ValidateTokenHashing(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        RefreshTokenHashingOptions refreshTokenHashingOptions = configuration
+            .GetSection(RefreshTokenHashingOptions.SectionName)
+            .Get<RefreshTokenHashingOptions>() ?? new RefreshTokenHashingOptions();
+        ValidateRefreshTokenHashingOptions(refreshTokenHashingOptions);
+    }
+
     public static void ApplyJwtIdentityDefaults(JwtSettings options, ApplicationIdentityOptions applicationIdentity)
     {
         ArgumentNullException.ThrowIfNull(options);
