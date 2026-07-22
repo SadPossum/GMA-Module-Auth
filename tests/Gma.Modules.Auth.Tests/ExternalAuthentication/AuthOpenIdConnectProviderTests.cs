@@ -161,6 +161,32 @@ public sealed class AuthOpenIdConnectProviderTests
     }
 
     [Theory]
+    [InlineData("http://localhost:8080/auth/callback")]
+    [InlineData("http://127.0.0.1:8080/auth/callback")]
+    [InlineData("http://[::1]:8080/auth/callback")]
+    public void Return_url_policy_allows_http_only_for_explicit_loopback_callbacks(string returnUrl)
+    {
+        AuthOpenIdConnectOptions options = CreateOptions();
+        options.AllowedReturnUrls = [returnUrl];
+        var policy = new ExternalReturnUrlPolicy(options);
+
+        Assert.True(policy.TryValidate($"{returnUrl}?intent=sign-in", out _));
+    }
+
+    [Fact]
+    public void Enabled_configuration_rejects_non_loopback_http_callback()
+    {
+        var validator = new AuthOpenIdConnectOptionsValidator();
+        AuthOpenIdConnectOptions options = CreateOptions();
+        options.AllowedReturnUrls = ["http://app.example.com/auth/callback"];
+
+        ValidateOptionsResult result = validator.Validate(name: null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains("AllowedReturnUrls", result.FailureMessage, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData("https://app.example.com/auth/callback?intent=link")]
     [InlineData("https://app.example.com/auth/callback#fragment")]
     [InlineData("/auth/callback?intent=link")]

@@ -1,5 +1,7 @@
 namespace Gma.Modules.Auth.Providers.OpenIdConnect;
 
+using System.Net;
+
 internal sealed class ExternalReturnUrlPolicy(AuthOpenIdConnectOptions options)
 {
     private static readonly Uri LocalBaseUri = new("https://gma.invalid", UriKind.Absolute);
@@ -74,7 +76,7 @@ internal sealed class ExternalReturnUrlPolicy(AuthOpenIdConnectOptions options)
         }
 
         if (!Uri.TryCreate(candidate, UriKind.Absolute, out Uri? uri) ||
-            uri.Scheme != Uri.UriSchemeHttps ||
+            !IsAllowedScheme(uri) ||
             !string.IsNullOrEmpty(uri.UserInfo) ||
             !string.IsNullOrEmpty(uri.Fragment))
         {
@@ -84,4 +86,12 @@ internal sealed class ExternalReturnUrlPolicy(AuthOpenIdConnectOptions options)
         normalized = $"absolute:{uri.GetLeftPart(UriPartial.Path)}";
         return true;
     }
+
+    private static bool IsAllowedScheme(Uri uri) =>
+        uri.Scheme == Uri.UriSchemeHttps ||
+        (uri.Scheme == Uri.UriSchemeHttp && IsLoopbackHost(uri.Host));
+
+    private static bool IsLoopbackHost(string host) =>
+        string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+        (IPAddress.TryParse(host.Trim('[', ']'), out IPAddress? address) && IPAddress.IsLoopback(address));
 }
