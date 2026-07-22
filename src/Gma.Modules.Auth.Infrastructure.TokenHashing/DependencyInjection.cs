@@ -1,13 +1,13 @@
-namespace Gma.Modules.Auth.Infrastructure;
+namespace Gma.Modules.Auth.Infrastructure.TokenHashing;
 
 using Gma.Modules.Auth.Domain.Services;
-using Gma.Modules.Auth.Infrastructure.Services;
+using Gma.Modules.Auth.Infrastructure.TokenHashing.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-public static class TokenHashingDependencyInjection
+public static class DependencyInjection
 {
     public static IServiceCollection AddAuthTokenHashingInfrastructure(
         this IServiceCollection services,

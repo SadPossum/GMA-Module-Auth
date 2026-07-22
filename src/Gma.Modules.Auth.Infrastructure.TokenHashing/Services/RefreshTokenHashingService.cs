@@ -1,4 +1,4 @@
-namespace Gma.Modules.Auth.Infrastructure.Services;
+namespace Gma.Modules.Auth.Infrastructure.TokenHashing.Services;
 
 using System.Security.Cryptography;
 using System.Text;

@@ -1,4 +1,4 @@
-namespace Gma.Modules.Auth.Infrastructure;
+namespace Gma.Modules.Auth.Infrastructure.TokenHashing;
 
 using System.Text;
 using Microsoft.Extensions.Options;

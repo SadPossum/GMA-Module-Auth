@@ -2,8 +2,8 @@ namespace Gma.Modules.Auth.Tests;
 
 using System.Security.Cryptography;
 using System.Text;
-using Gma.Modules.Auth.Infrastructure;
-using Gma.Modules.Auth.Infrastructure.Services;
+using Gma.Modules.Auth.Infrastructure.TokenHashing;
+using Gma.Modules.Auth.Infrastructure.TokenHashing.Services;
 using Microsoft.Extensions.Options;
 using Xunit;
 

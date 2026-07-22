@@ -6,6 +6,7 @@ using Gma.Modules.Auth.Application.Handlers;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Infrastructure;
+using Gma.Modules.Auth.Infrastructure.TokenHashing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -157,7 +158,7 @@ public sealed class AuthApplicationRegistrationTests
         Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddAuthApplication(null!));
         Assert.Throws<ArgumentNullException>(() => Infrastructure.DependencyInjection.AddAuthInfrastructure(null!, configuration));
         Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddAuthInfrastructure(null!));
-        Assert.Throws<ArgumentNullException>(() => Infrastructure.DependencyInjection.AddAuthTokenHashingInfrastructure(null!, configuration));
+        Assert.Throws<ArgumentNullException>(() => Infrastructure.TokenHashing.DependencyInjection.AddAuthTokenHashingInfrastructure(null!, configuration));
         Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddAuthTokenHashingInfrastructure(null!));
     }
 

@@ -3,6 +3,7 @@ namespace Gma.Modules.Auth.Infrastructure;
 using Gma.Framework.Runtime;
 using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Infrastructure.Services;
+using Gma.Modules.Auth.Infrastructure.TokenHashing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -13,7 +14,7 @@ public static class DependencyInjection
     public static IServiceCollection AddAuthTokenHashingInfrastructure(
         IServiceCollection services,
         IConfiguration configuration) =>
-        TokenHashingDependencyInjection.AddAuthTokenHashingInfrastructure(services, configuration);
+        TokenHashing.DependencyInjection.AddAuthTokenHashingInfrastructure(services, configuration);
 
     public static IServiceCollection AddAuthInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
