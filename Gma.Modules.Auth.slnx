@@ -2,12 +2,34 @@
   <Folder Name="/.github/">
     <File Path=".github/dependabot.yml" />
   </Folder>
+  <Folder Name="/.github/workflows/">
+    <File Path=".github/workflows/release-evidence.yml" />
+    <File Path=".github/workflows/security.yml" />
+    <File Path=".github/workflows/validate.yml" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path=".gma/release-evidence.json" />
+    <File Path=".gma/repository-security.json" />
+    <File Path=".gma/security-exceptions.json" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="Gma.SourceRoots.props.example" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+    <File Path="SECURITY.md" />
+    <File Path="SUPPORT.md" />
+    <File Path="global.json" />
+    <File Path="nuget.config" />
+  </Folder>
   <Folder Name="/docs/">
+    <File Path="docs/README.md" />
     <File Path="docs/account-recovery-task.md" />
     <File Path="docs/auth-domain-completion-audit-task.md" />
-    <File Path="docs/authentication-assurance-task.md" />
     <File Path="docs/auth-production-hardening-task.md" />
-    <File Path="docs/README.md" />
+    <File Path="docs/authentication-assurance-task.md" />
     <File Path="docs/global-identity-with-tenancy-task.md" />
     <File Path="docs/mfa-authenticator-lifecycle-task.md" />
   </Folder>
@@ -15,55 +37,25 @@
     <File Path="eng/bootstrap-source-roots.ps1" />
     <File Path="eng/check-boundaries.ps1" />
     <File Path="eng/check-migrations.ps1" />
+    <File Path="eng/check-repository-release.ps1" />
     <File Path="eng/check-repository-security.ps1" />
   </Folder>
-  <Folder Name="/.github/workflows/">
-    <File Path=".github/workflows/security.yml" />
-    <File Path=".github/workflows/validate.yml" />
-  </Folder>
-  <Folder Name="/Solution Items/">
-    <File Path=".editorconfig" />
-    <File Path=".gitattributes" />
-    <File Path=".gma/repository-security.json" />
-    <File Path=".gma/security-exceptions.json" />
-    <File Path=".gitignore" />
-    <File Path="Directory.Build.props" />
-    <File Path="Directory.Packages.props" />
-    <File Path="global.json" />
-    <File Path="Gma.SourceRoots.props.example" />
-    <File Path="LICENSE" />
-    <File Path="nuget.config" />
-    <File Path="README.md" />
-    <File Path="SECURITY.md" />
-  </Folder>
-  <Folder Name="/src/Admin/">
+  <Folder Name="/src/">
     <Project Path="src/Gma.Modules.Auth.Admin.Contracts/Gma.Modules.Auth.Admin.Contracts.csproj" />
     <Project Path="src/Gma.Modules.Auth.AdminApi/Gma.Modules.Auth.AdminApi.csproj" />
     <Project Path="src/Gma.Modules.Auth.AdminCli/Gma.Modules.Auth.AdminCli.csproj" />
-  </Folder>
-  <Folder Name="/src/Api/">
     <Project Path="src/Gma.Modules.Auth.Api/Gma.Modules.Auth.Api.csproj" />
-  </Folder>
-  <Folder Name="/src/Application/">
     <Project Path="src/Gma.Modules.Auth.Application/Gma.Modules.Auth.Application.csproj" />
-  </Folder>
-  <Folder Name="/src/Contracts/">
-    <Project Path="src/Gma.Modules.Auth.Contracts/Gma.Modules.Auth.Contracts.csproj" />
-  </Folder>
-  <Folder Name="/src/Domain/">
-    <Project Path="src/Gma.Modules.Auth.Domain/Gma.Modules.Auth.Domain.csproj" />
-  </Folder>
-  <Folder Name="/src/Infrastructure/">
     <Project Path="src/Gma.Modules.Auth.Authenticators.Totp/Gma.Modules.Auth.Authenticators.Totp.csproj" />
+    <Project Path="src/Gma.Modules.Auth.Contracts/Gma.Modules.Auth.Contracts.csproj" />
+    <Project Path="src/Gma.Modules.Auth.Domain/Gma.Modules.Auth.Domain.csproj" />
     <Project Path="src/Gma.Modules.Auth.Infrastructure.JwtBearer/Gma.Modules.Auth.Infrastructure.JwtBearer.csproj" />
     <Project Path="src/Gma.Modules.Auth.Infrastructure.TokenHashing/Gma.Modules.Auth.Infrastructure.TokenHashing.csproj" />
     <Project Path="src/Gma.Modules.Auth.Infrastructure/Gma.Modules.Auth.Infrastructure.csproj" />
-    <Project Path="src/Gma.Modules.Auth.Providers.OpenIdConnect/Gma.Modules.Auth.Providers.OpenIdConnect.csproj" />
-  </Folder>
-  <Folder Name="/src/Persistence/">
     <Project Path="src/Gma.Modules.Auth.Persistence.PostgreSqlMigrations/Gma.Modules.Auth.Persistence.PostgreSqlMigrations.csproj" />
     <Project Path="src/Gma.Modules.Auth.Persistence.SqlServerMigrations/Gma.Modules.Auth.Persistence.SqlServerMigrations.csproj" />
     <Project Path="src/Gma.Modules.Auth.Persistence/Gma.Modules.Auth.Persistence.csproj" />
+    <Project Path="src/Gma.Modules.Auth.Providers.OpenIdConnect/Gma.Modules.Auth.Providers.OpenIdConnect.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Gma.Modules.Auth.IntegrationTests/Gma.Modules.Auth.IntegrationTests.csproj" />
