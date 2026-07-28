@@ -1,6 +1,7 @@
 namespace Gma.Modules.Auth.Application;
 
 using Gma.Framework.Application.Composition;
+using Gma.Framework.Observability;
 using Gma.Modules.Auth.Application.ExternalAuthentication;
 using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Application.Scoping;
@@ -38,6 +39,11 @@ public static class DependencyInjection
         }
 
         services.AddAuthScopeContext(profile);
+        services.AddSecuritySignalCore();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                ISecuritySignalDefinitionSource,
+                AuthSecuritySignalDefinitions>());
         services.AddApplicationServicesFromAssembly(typeof(DependencyInjection).Assembly);
         services.TryAddSingleton<IPasswordBlocklist, CommonPasswordBlocklist>();
         services.TryAddSingleton<IAuthenticationAttemptLimiter, ProcessLocalAuthenticationAttemptLimiter>();

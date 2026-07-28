@@ -38,6 +38,7 @@ Auth can be composed in two scope modes. `AuthProfile.ScopeAware()` follows the 
 - Provider access/refresh tokens are not stored. The browser callback receives only a short-lived, hashed, single-use GMA exchange code.
 - Passwords and verification codes are stored only as hashes. Refresh-token hashing supports active and previous peppers for rotation.
 - Password proof uses a durable, scope/purpose/target-partitioned attempt limiter when the complete Auth module is composed. Attempt targets are stored only as keyed hashes; raw usernames and candidate passwords are never persisted.
+- Auth registers a payload-free `auth.password-proof-rate-limited` security signal. It is emitted only when the attempt bucket refuses a proof, not for every invalid password, and never carries the scope, target, username, password, IP address, or target hash. Hosts opt into the GMA logger/metric recorder.
 - The single-process fallback shares the same partition normalization, caps its in-memory working set, and fails closed at saturation. Multi-replica production hosts compose Auth persistence for durable limiting.
 - External exchange, email-verification, password-recovery, MFA challenge, and MFA recovery secrets use distinct keyed-hash domains. Legacy unscoped hashes remain readable during pepper rotation so in-flight challenges survive deployment.
 - Refresh-token replay revokes active sessions. Admin password reset also revokes active sessions.

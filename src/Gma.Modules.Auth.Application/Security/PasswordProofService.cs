@@ -1,12 +1,14 @@
 namespace Gma.Modules.Auth.Application.Security;
 
 using Gma.Modules.Auth.Domain.Services;
+using Gma.Framework.Observability;
 using Microsoft.Extensions.Options;
 
 internal sealed class PasswordProofService(
     IPasswordHashingService passwordHashingService,
     IAuthenticationAttemptLimiter attemptLimiter,
-    IOptions<AuthApplicationOptions> options)
+    IOptions<AuthApplicationOptions> options,
+    ISecuritySignalRecorder? securitySignals = null)
 {
     public async ValueTask<PasswordVerificationOutcome> VerifyAsync(
         string scopeId,
@@ -29,6 +31,8 @@ internal sealed class PasswordProofService(
                 cancellationToken).ConfigureAwait(false);
         if (lease is null)
         {
+            securitySignals?.Record(
+                AuthSecuritySignalDefinitions.PasswordProofRateLimited);
             return PasswordVerificationOutcome.Unknown;
         }
 

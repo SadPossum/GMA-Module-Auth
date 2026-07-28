@@ -1,5 +1,6 @@
 namespace Gma.Modules.Auth.Tests;
 
+using Gma.Framework.Observability;
 using Gma.Modules.Auth.Application;
 using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Domain.Services;
@@ -57,6 +58,30 @@ public sealed class PasswordProofServiceTests
         Assert.Equal("password-hash", hashingService.VerifiedHash);
         Assert.Equal(1, limiter.AcquisitionCount);
         Assert.Equal(1, limiter.SuccessCount);
+    }
+
+    [Fact]
+    public async Task Exhausted_password_bucket_emits_one_payload_free_security_signal()
+    {
+        var hashingService = new RecordingPasswordHashingService();
+        var limiter = new RecordingAttemptLimiter { RejectAcquisition = true };
+        var signals = new RecordingSecuritySignalRecorder();
+        var service = CreateService(hashingService, limiter, signals);
+
+        PasswordVerificationOutcome outcome = await service.VerifyAsync(
+            "tenant-a",
+            AuthenticationAttemptPurposes.PasswordLogin,
+            "sensitive-user@example.com",
+            "password-hash",
+            "candidate-password",
+            Now,
+            CancellationToken.None);
+
+        Assert.Equal(PasswordVerificationOutcome.Unknown, outcome);
+        SecuritySignalDefinition signal = Assert.Single(signals.Definitions);
+        Assert.Equal("auth.password-proof-rate-limited", signal.Code);
+        Assert.Equal(SecuritySignalCategory.Authentication, signal.Category);
+        Assert.Null(hashingService.VerifiedHash);
     }
 
     [Fact]
@@ -193,8 +218,13 @@ public sealed class PasswordProofServiceTests
 
     private static PasswordProofService CreateService(
         IPasswordHashingService hashingService,
-        IAuthenticationAttemptLimiter limiter) =>
-        new(hashingService, limiter, Options.Create(new AuthApplicationOptions()));
+        IAuthenticationAttemptLimiter limiter,
+        ISecuritySignalRecorder? securitySignals = null) =>
+        new(
+            hashingService,
+            limiter,
+            Options.Create(new AuthApplicationOptions()),
+            securitySignals ?? new RecordingSecuritySignalRecorder());
 
     private static async Task<AuthenticationAttemptLease?> AcquireAsync(
         ProcessLocalAuthenticationAttemptLimiter limiter,
@@ -232,6 +262,7 @@ public sealed class PasswordProofServiceTests
 
     private sealed class RecordingAttemptLimiter : IAuthenticationAttemptLimiter
     {
+        public bool RejectAcquisition { get; init; }
         public int AcquisitionCount { get; private set; }
         public int SuccessCount { get; private set; }
 
@@ -244,7 +275,10 @@ public sealed class PasswordProofServiceTests
             CancellationToken cancellationToken)
         {
             this.AcquisitionCount++;
-            return ValueTask.FromResult<AuthenticationAttemptLease?>(new AuthenticationAttemptLease(Guid.NewGuid(), nowUtc));
+            return ValueTask.FromResult<AuthenticationAttemptLease?>(
+                this.RejectAcquisition
+                    ? null
+                    : new AuthenticationAttemptLease(Guid.NewGuid(), nowUtc));
         }
 
         public ValueTask RecordSuccessAsync(
@@ -256,6 +290,21 @@ public sealed class PasswordProofServiceTests
         {
             this.SuccessCount++;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingSecuritySignalRecorder : ISecuritySignalRecorder
+    {
+        public List<SecuritySignalDefinition> Definitions { get; } = [];
+
+        public SecuritySignalReceipt Record(
+            SecuritySignalDefinition definition,
+            Guid? correlationId = null)
+        {
+            this.Definitions.Add(definition);
+            return new(
+                SecuritySignalCorrelation.Create(correlationId),
+                WasEmitted: true);
         }
     }
 }
