@@ -6,6 +6,7 @@ using Gma.Framework.Application.Events.Infrastructure;
 using Gma.Framework.Cqrs;
 using Gma.Framework.Cqrs.Infrastructure;
 using Gma.Framework.Messaging.Infrastructure;
+using Gma.Framework.Naming;
 using Gma.Framework.Persistence.EntityFrameworkCore;
 using Gma.Framework.Results;
 using Gma.Framework.Runtime.Identity;
@@ -97,6 +98,53 @@ public sealed class AuthPostgreSqlIntegrationTests
         AuthenticationAttemptRecord attempt = Assert.Single(
             await dbContext.AuthenticationFailureAttempts.AsNoTracking().ToArrayAsync());
         Assert.Equal("tenant-a", attempt.ScopeId);
+
+        await AssertCaseDistinctScopeIsolationAsync(provider);
+    }
+
+    private static async Task AssertCaseDistinctScopeIsolationAsync(ServiceProvider provider)
+    {
+        Guid upperId = Guid.NewGuid();
+        Guid lowerId = Guid.NewGuid();
+        await using AsyncServiceScope scope = provider.CreateAsyncScope();
+        IAuthScopeContext scopeContext = scope.ServiceProvider.GetRequiredService<IAuthScopeContext>();
+        AuthDbContext dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+
+        Assert.True(scopeContext.TryRestoreScope("Tenant-Case"));
+        dbContext.AuthenticationFailureAttempts.Add(CreateAttempt(
+            upperId,
+            Now.AddMinutes(20),
+            "case-upper",
+            "Tenant-Case"));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        Assert.True(scopeContext.TryRestoreScope("tenant-case"));
+        dbContext.AuthenticationFailureAttempts.Add(CreateAttempt(
+            lowerId,
+            Now.AddMinutes(21),
+            "case-lower",
+            "tenant-case"));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        Assert.True(scopeContext.TryRestoreScope("Tenant-Case"));
+        Assert.Equal(
+            [upperId],
+            await dbContext.AuthenticationFailureAttempts
+                .AsNoTracking()
+                .OrderBy(attempt => attempt.Id)
+                .Select(attempt => attempt.Id)
+                .ToArrayAsync());
+
+        Assert.True(scopeContext.TryRestoreScope("tenant-case"));
+        Assert.Equal(
+            [lowerId],
+            await dbContext.AuthenticationFailureAttempts
+                .AsNoTracking()
+                .OrderBy(attempt => attempt.Id)
+                .Select(attempt => attempt.Id)
+                .ToArrayAsync());
     }
 
     private static async Task RunAttemptLimiterScenarioAsync(string providerName, string connectionString)
@@ -623,11 +671,12 @@ public sealed class AuthPostgreSqlIntegrationTests
     private static AuthenticationAttemptRecord CreateAttempt(
         Guid id,
         DateTimeOffset failedAtUtc,
-        string targetHash) =>
+        string targetHash,
+        string scopeId = "global") =>
         new()
         {
             Id = id,
-            ScopeId = "global",
+            ScopeId = scopeId,
             Purpose = "password-login",
             TargetHash = targetHash,
             FailedAtUtc = failedAtUtc,
@@ -647,12 +696,12 @@ public sealed class AuthPostgreSqlIntegrationTests
 
         public bool TryRestoreScope(string? scopeId)
         {
-            if (string.IsNullOrWhiteSpace(scopeId))
+            if (!ScopeIds.TryNormalize(scopeId, out string? normalizedScopeId))
             {
                 return false;
             }
 
-            this.ScopeId = scopeId.Trim().ToLowerInvariant();
+            this.ScopeId = normalizedScopeId;
             return true;
         }
     }

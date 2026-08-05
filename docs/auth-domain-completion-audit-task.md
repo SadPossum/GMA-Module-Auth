@@ -2,7 +2,7 @@
 
 Status: complete
 Date: 2026-07-19
-Updated: 2026-07-20
+Updated: 2026-08-05
 
 ## Goal
 
@@ -102,6 +102,25 @@ These findings do not change ownership: attempt policy, recovery serialization k
 - The canonical Skeleton public and Admin hosts generated typed `UsernameType` schemas and the intended Auth success status/response contracts.
 - Exact-head BunkFy Docker verification reopened the slice by exposing findings 31 and 32 plus stale consumer assertions for malformed typed enum payloads. The consumer now treats malformed enum JSON as an HTTP binding error, retains command-level validation for non-HTTP callers, and includes response bodies in test-helper failures.
 - Auth runtime revision `c90aec58f9a4298f712076c2c3dff4d2a3fc6ab6` passed standalone CI run `29739567132`; Skeleton revision `e0f22f2c84bc8bf2a82147798c4d42a322819c87` passed Windows and Linux run `29740621268`; BunkFy Backend revision `bd245e4ccf1cf570bb316614122a8f6a4b420568` passed Windows and Linux run `29740642655` plus all 27 Docker tests in run `29740642611`.
+
+### 2026-08-05 Revalidation
+
+- Current Auth head `d229027` remains clean against the mounted Framework working tree after the shared runtime scheduler changes.
+- The synchronized solution builds with zero warnings and zero errors; all 302 non-Docker Auth tests pass.
+- Auth boundaries, PostgreSQL and SQL Server migration drift, repository security policy, source-release policy, and the transitive NuGet vulnerability audit pass.
+- The review found no new Auth-owned defect. Edge and IP throttling, production secret custody, Data Protection key persistence, mandatory verification or MFA policy, and immediate bearer-session introspection remain explicit host or product responsibilities.
+- No Docker lane was repeated because this checkpoint changed no relational model or provider-sensitive behavior; the existing exact provider proofs remain the owning evidence.
+
+### 2026-08-05 Ordinal Scope Storage Follow-up
+
+- Auth now consumes Framework's shared ordinal `ScopeId` convention instead of
+  inheriting SQL Server's common case-insensitive database default.
+- The SQL Server migration changes all Auth and messaging scope columns while
+  explicitly rebuilding the 16 dependent indexes in both upgrade and rollback
+  directions; PostgreSQL requires no schema change.
+- All 302 fast tests and both migration-drift checks pass. Focused PostgreSQL
+  and SQL Server relational scenarios apply the migrations and prove that
+  `Tenant-Case` and `tenant-case` are distinct filtered scopes.
 
 ## Completion Criteria
 
