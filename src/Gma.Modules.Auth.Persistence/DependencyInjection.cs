@@ -21,6 +21,14 @@ using Microsoft.Extensions.Options;
 
 public static class DependencyInjection
 {
+    public static IHostApplicationBuilder AddAuthSubjectStatusReader(this IHostApplicationBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Services.TryAddScoped<IAuthSubjectStatusReader, AuthSubjectStatusReader>();
+        return builder;
+    }
+
     public static IHostApplicationBuilder AddAuthPersistence(this IHostApplicationBuilder builder)
         => builder.AddAuthPersistence(AuthProfile.ScopeAware());
 
