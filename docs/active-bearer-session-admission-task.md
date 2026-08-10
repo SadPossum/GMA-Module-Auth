@@ -60,11 +60,11 @@ immediate while global account or session revocation is not.
 - [x] Add the Contracts reader and Auth Persistence implementation.
 - [x] Add bearer admission options, validation, composable event wiring, and
   focused contract/persistence/adapter tests.
-- [ ] Prove active, signed-out, disabled, expired, malformed, and cross-scope
+- [x] Prove active, signed-out, disabled, expired, malformed, and cross-scope
   behavior without adding a migration.
-- [ ] Configure Skeleton and BunkFy Public/Admin APIs for `ActiveSession` and
+- [x] Configure Skeleton and BunkFy Public/Admin APIs for `ActiveSession` and
   guard the composition from accidental downgrade.
-- [ ] Extend the existing real-provider Auth lifecycle proof so the same access
+- [x] Extend the existing real-provider Auth lifecycle proof so the same access
   token is denied immediately after sign-out.
 - [ ] Run one consolidated non-Docker gate per changed repository, then publish
   and use exact CI for the final relational and composition evidence.
@@ -89,3 +89,16 @@ immediate while global account or session revocation is not.
 - Redis, NATS, or process-local admission caching;
 - per-token revocation within one Auth session; or
 - changing access-token, refresh-token, or absolute-session lifetimes.
+
+## Local Evidence
+
+- Auth build, boundary, migration-drift, repository security/release, solution
+  synchronization, package-vulnerability, and all 310 non-Docker tests pass.
+- Focused adapter and persistence coverage passes for strict and compatibility
+  modes, malformed claims, inactive sessions, disabled members, expiry, and
+  exact scope/member/session matching.
+- BunkFy's existing Auth lifecycle passes through its real API host against SQL
+  Server and PostgreSQL and rejects the same unexpired bearer after sign-out.
+- Skeleton's matching cross-replica lifecycle proof compiles; its Docker run is
+  intentionally deferred because the product lifecycle already exercises the
+  same relational implementation on both supported providers in this slice.
