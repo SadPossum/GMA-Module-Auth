@@ -6,5 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Gma.Modules.Auth.Contracts\Gma.Modules.Auth.Contracts.csproj" />
     <ProjectReference Include="..\Gma.Modules.Auth.Infrastructure\Gma.Modules.Auth.Infrastructure.csproj" />
+    <ProjectReference Include="$(GmaFrameworkRoot)Naming\Gma.Framework.Naming\Gma.Framework.Naming.csproj" />
+    <ProjectReference Include="$(GmaFrameworkRoot)Security\Gma.Framework.Security\Gma.Framework.Security.csproj" />
   </ItemGroup>
 </Project>
