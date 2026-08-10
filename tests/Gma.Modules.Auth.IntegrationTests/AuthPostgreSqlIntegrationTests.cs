@@ -36,6 +36,7 @@ using Microsoft.Extensions.Options;
 using Testcontainers.MsSql;
 using Testcontainers.PostgreSql;
 using Xunit;
+using ContractMemberStatus = Gma.Modules.Auth.Contracts.MemberStatus;
 
 [Trait("Category", "Docker")]
 [Trait("Category", "Integration")]
@@ -106,45 +107,106 @@ public sealed class AuthPostgreSqlIntegrationTests
     {
         Guid upperId = Guid.NewGuid();
         Guid lowerId = Guid.NewGuid();
-        await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        IAuthScopeContext scopeContext = scope.ServiceProvider.GetRequiredService<IAuthScopeContext>();
-        AuthDbContext dbContext = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        Guid upperMemberId = Guid.NewGuid();
+        Guid lowerMemberId = Guid.NewGuid();
+        await using (AsyncServiceScope upperSeedScope = provider.CreateAsyncScope())
+        {
+            IAuthScopeContext scopeContext = upperSeedScope.ServiceProvider
+                .GetRequiredService<IAuthScopeContext>();
+            Assert.True(scopeContext.TryRestoreScope("Tenant-Case"));
+            AuthDbContext dbContext = upperSeedScope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            dbContext.AuthenticationFailureAttempts.Add(CreateAttempt(
+                upperId,
+                Now.AddMinutes(20),
+                "case-upper",
+                "Tenant-Case"));
+            dbContext.Members.Add(Member.Create(
+                new MemberId(upperMemberId),
+                "Tenant-Case",
+                "upper-scope@example.com",
+                MemberUsernameType.Email,
+                "password-hash",
+                new MemberUsernameId(Guid.NewGuid()),
+                Guid.NewGuid(),
+                Now).Value);
+            await dbContext.SaveChangesAsync();
+        }
 
-        Assert.True(scopeContext.TryRestoreScope("Tenant-Case"));
-        dbContext.AuthenticationFailureAttempts.Add(CreateAttempt(
-            upperId,
-            Now.AddMinutes(20),
-            "case-upper",
-            "Tenant-Case"));
-        await dbContext.SaveChangesAsync();
-        dbContext.ChangeTracker.Clear();
+        await using (AsyncServiceScope lowerSeedScope = provider.CreateAsyncScope())
+        {
+            IAuthScopeContext scopeContext = lowerSeedScope.ServiceProvider
+                .GetRequiredService<IAuthScopeContext>();
+            Assert.True(scopeContext.TryRestoreScope("tenant-case"));
+            AuthDbContext dbContext = lowerSeedScope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            dbContext.AuthenticationFailureAttempts.Add(CreateAttempt(
+                lowerId,
+                Now.AddMinutes(21),
+                "case-lower",
+                "tenant-case"));
+            Member lowerMember = Member.Create(
+                new MemberId(lowerMemberId),
+                "tenant-case",
+                "lower-scope@example.com",
+                MemberUsernameType.Email,
+                "password-hash",
+                new MemberUsernameId(Guid.NewGuid()),
+                Guid.NewGuid(),
+                Now).Value;
+            Assert.True(lowerMember.Disable("support action", Guid.NewGuid(), Now).IsSuccess);
+            dbContext.Members.Add(lowerMember);
+            await dbContext.SaveChangesAsync();
+        }
 
-        Assert.True(scopeContext.TryRestoreScope("tenant-case"));
-        dbContext.AuthenticationFailureAttempts.Add(CreateAttempt(
-            lowerId,
-            Now.AddMinutes(21),
-            "case-lower",
-            "tenant-case"));
-        await dbContext.SaveChangesAsync();
-        dbContext.ChangeTracker.Clear();
+        AuthSubjectStatusSnapshot upperStatus;
+        await using (AsyncServiceScope upperReadScope = provider.CreateAsyncScope())
+        {
+            IAuthScopeContext scopeContext = upperReadScope.ServiceProvider
+                .GetRequiredService<IAuthScopeContext>();
+            Assert.True(scopeContext.TryRestoreScope("Tenant-Case"));
+            AuthDbContext dbContext = upperReadScope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            Assert.Equal(
+                [upperId],
+                await dbContext.AuthenticationFailureAttempts
+                    .AsNoTracking()
+                    .OrderBy(attempt => attempt.Id)
+                    .Select(attempt => attempt.Id)
+                    .ToArrayAsync());
+            IAuthSubjectStatusReader statuses = upperReadScope.ServiceProvider
+                .GetRequiredService<IAuthSubjectStatusReader>();
+            upperStatus = Assert.IsType<AuthSubjectStatusSnapshot>(
+                await statuses.FindAsync($"{{{upperMemberId.ToString("D").ToUpperInvariant()}}}"));
+            Assert.Null(await statuses.FindAsync(lowerMemberId.ToString("D")));
+        }
 
-        Assert.True(scopeContext.TryRestoreScope("Tenant-Case"));
+        AuthSubjectStatusSnapshot lowerStatus;
+        await using (AsyncServiceScope lowerReadScope = provider.CreateAsyncScope())
+        {
+            IAuthScopeContext scopeContext = lowerReadScope.ServiceProvider
+                .GetRequiredService<IAuthScopeContext>();
+            Assert.True(scopeContext.TryRestoreScope("tenant-case"));
+            AuthDbContext dbContext = lowerReadScope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            Assert.Equal(
+                [lowerId],
+                await dbContext.AuthenticationFailureAttempts
+                    .AsNoTracking()
+                    .OrderBy(attempt => attempt.Id)
+                    .Select(attempt => attempt.Id)
+                    .ToArrayAsync());
+            IAuthSubjectStatusReader statuses = lowerReadScope.ServiceProvider
+                .GetRequiredService<IAuthSubjectStatusReader>();
+            lowerStatus = Assert.IsType<AuthSubjectStatusSnapshot>(
+                await statuses.FindAsync(lowerMemberId.ToString("D")));
+            Assert.Null(await statuses.FindAsync(upperMemberId.ToString("D")));
+        }
+
         Assert.Equal(
-            [upperId],
-            await dbContext.AuthenticationFailureAttempts
-                .AsNoTracking()
-                .OrderBy(attempt => attempt.Id)
-                .Select(attempt => attempt.Id)
-                .ToArrayAsync());
-
-        Assert.True(scopeContext.TryRestoreScope("tenant-case"));
-        Assert.Equal(
-            [lowerId],
-            await dbContext.AuthenticationFailureAttempts
-                .AsNoTracking()
-                .OrderBy(attempt => attempt.Id)
-                .Select(attempt => attempt.Id)
-                .ToArrayAsync());
+            new AuthSubjectStatusSnapshot(
+                "Tenant-Case",
+                upperMemberId.ToString("D"),
+                ContractMemberStatus.Active),
+            upperStatus);
+        Assert.Equal("tenant-case", lowerStatus.ScopeId);
+        Assert.Equal(ContractMemberStatus.Disabled, lowerStatus.Status);
     }
 
     private static async Task RunAttemptLimiterScenarioAsync(string providerName, string connectionString)
@@ -311,6 +373,7 @@ public sealed class AuthPostgreSqlIntegrationTests
         builder.Services.AddSingleton<IRefreshTokenHashingService, TestHashingService>();
         builder.Services.AddSingleton<IPasswordRecoveryTokenService, ConcurrentRecoveryTokenService>();
         builder.Services.AddSingleton<ISystemClock, FixedClock>();
+        builder.AddAuthSubjectStatusReader();
         builder.AddAuthPersistence(profile);
         return builder.Services.BuildServiceProvider(validateScopes: true);
     }
