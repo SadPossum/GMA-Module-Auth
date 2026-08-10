@@ -200,6 +200,68 @@ public sealed class AuthPostgreSqlIntegrationTests
         await AssertDispatcherOwnsSerializationTransactionAsync(firstProvider);
         await AssertPasswordRecoveryRequestSerializationAsync(firstProvider, secondProvider);
         await AssertAuthenticationChallengeSerializationAsync(firstProvider, secondProvider);
+        await AssertActiveMemberAdmissionReaderAsync(firstProvider);
+    }
+
+    private static async Task AssertActiveMemberAdmissionReaderAsync(ServiceProvider provider)
+    {
+        Guid activeMemberId = Guid.NewGuid();
+        Guid unverifiedMemberId = Guid.NewGuid();
+        Guid disabledMemberId = Guid.NewGuid();
+
+        await using (AsyncServiceScope seedScope = provider.CreateAsyncScope())
+        {
+            AuthDbContext dbContext = seedScope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            Member activeMember = Member.CreateExternal(
+                new MemberId(activeMemberId),
+                "global",
+                "active-admission@example.com",
+                new MemberUsernameId(Guid.NewGuid()),
+                new MemberExternalIdentityId(Guid.NewGuid()),
+                "google",
+                "https://accounts.google.com",
+                $"active-{activeMemberId:N}",
+                Guid.NewGuid(),
+                Now).Value;
+            Member unverifiedMember = Member.Create(
+                new MemberId(unverifiedMemberId),
+                "global",
+                "unverified-admission@example.com",
+                MemberUsernameType.Email,
+                "password-hash",
+                new MemberUsernameId(Guid.NewGuid()),
+                Guid.NewGuid(),
+                Now).Value;
+            Member disabledMember = Member.CreateExternal(
+                new MemberId(disabledMemberId),
+                "global",
+                "disabled-admission@example.com",
+                new MemberUsernameId(Guid.NewGuid()),
+                new MemberExternalIdentityId(Guid.NewGuid()),
+                "google",
+                "https://accounts.google.com",
+                $"disabled-{disabledMemberId:N}",
+                Guid.NewGuid(),
+                Now).Value;
+            Assert.True(disabledMember.Disable("disabled for test", Guid.NewGuid(), Now).IsSuccess);
+
+            dbContext.Members.AddRange(activeMember, unverifiedMember, disabledMember);
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using AsyncServiceScope readScope = provider.CreateAsyncScope();
+        IAuthMemberAdmissionReader reader = readScope.ServiceProvider
+            .GetRequiredService<IAuthMemberAdmissionReader>();
+
+        AuthMemberAdmission active = Assert.IsType<AuthMemberAdmission>(
+            await reader.FindActiveAsync("global", activeMemberId));
+        AuthMemberAdmission unverified = Assert.IsType<AuthMemberAdmission>(
+            await reader.FindActiveAsync("global", unverifiedMemberId));
+
+        Assert.Equal("active-admission@example.com", active.PreferredVerifiedEmail);
+        Assert.Null(unverified.PreferredVerifiedEmail);
+        Assert.Null(await reader.FindActiveAsync("global", disabledMemberId));
+        Assert.Null(await reader.FindActiveAsync("other-scope", activeMemberId));
     }
 
     [DockerFact]
