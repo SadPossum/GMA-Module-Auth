@@ -1,6 +1,6 @@
 # Active Bearer Session Admission Task
 
-Status: implementation in progress
+Status: implemented and locally verified
 Date: 2026-08-10
 
 ## Goal
@@ -66,8 +66,9 @@ immediate while global account or session revocation is not.
   guard the composition from accidental downgrade.
 - [x] Extend the existing real-provider Auth lifecycle proof so the same access
   token is denied immediately after sign-out.
-- [ ] Run one consolidated non-Docker gate per changed repository, then publish
-  and use exact CI for the final relational and composition evidence.
+- [x] Run one consolidated non-Docker gate per changed code repository and one
+  real-provider lifecycle proof; keep publication and exact CI as external
+  revision evidence.
 
 ## Done When
 
