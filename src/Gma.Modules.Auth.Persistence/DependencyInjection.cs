@@ -78,6 +78,7 @@ public static class DependencyInjection
         builder.Services.TryAddScoped<IMemberRepository, MemberRepository>();
         builder.Services.TryAddScoped<IAdminMemberReadRepository, AdminMemberReadRepository>();
         builder.Services.TryAddScoped<IAuthMemberAdmissionReader, AuthMemberAdmissionReader>();
+        builder.Services.TryAddScoped<IAuthSessionAdmissionReader, AuthSessionAdmissionReader>();
         builder.Services.TryAddScoped<IAuthMemberContactReader, AuthMemberContactReader>();
         builder.Services.TryAddScoped<IExternalAuthenticationExchangeStore, ExternalAuthenticationExchangeStore>();
         builder.Services.TryAddScoped<IPasswordRecoveryRecipientReader, PasswordRecoveryRecipientReader>();

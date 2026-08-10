@@ -1,6 +1,6 @@
 # Auth Module
 
-Implementation planning: [Global Identity With Ambient Tenancy](global-identity-with-tenancy-task.md), [Account Recovery](account-recovery-task.md), [Authentication Assurance And Step-Up](authentication-assurance-task.md), [TOTP Authenticator Lifecycle And Recovery](mfa-authenticator-lifecycle-task.md), [Auth Production Hardening](auth-production-hardening-task.md), [Auth Domain Completion Audit](auth-domain-completion-audit-task.md), and [Active Member Admission Contract](active-member-admission-contract-task.md).
+Implementation planning: [Global Identity With Ambient Tenancy](global-identity-with-tenancy-task.md), [Account Recovery](account-recovery-task.md), [Authentication Assurance And Step-Up](authentication-assurance-task.md), [TOTP Authenticator Lifecycle And Recovery](mfa-authenticator-lifecycle-task.md), [Auth Production Hardening](auth-production-hardening-task.md), [Auth Domain Completion Audit](auth-domain-completion-audit-task.md), [Active Member Admission Contract](active-member-admission-contract-task.md), and [Active Bearer Session Admission](active-bearer-session-admission-task.md).
 
 The Auth module owns account credentials, external identity links, email ownership state, sessions, JWTs, and security events. Product profile data, provider-specific UI, email transport, notification history, KYC/KYB, and authorization policy remain outside Auth.
 
@@ -44,7 +44,7 @@ Auth can be composed in two scope modes. `AuthProfile.ScopeAware()` follows the 
 - Refresh-token replay revokes active sessions. Admin password reset also revokes active sessions.
 - Disabled members cannot begin password/external MFA challenges, record provider authentication, request verification delivery, create sessions, or rotate refresh material.
 - Primary authentication enforces a configurable active-session ceiling and retires the oldest unexpired sessions above it. Ordinary refresh uses a sliding refresh-token lifetime capped by an absolute session lifetime anchored to the last explicit authentication; password or factor reauthentication resets that absolute bound. Aggregate reads and self-service discovery exclude expired session history before retention runs.
-- JWT access tokens are stateless and remain valid until their configured expiry; session revocation blocks refresh and session-bound security mutations immediately but does not introspect every bearer request. Keep access tokens short-lived (the default is 15 minutes), and add a host-owned online token/session check only when a product requires immediate bearer revocation and accepts that per-request availability cost.
+- JWT access tokens use `Auth:BearerAdmission:Mode`. `TokenLifetime` preserves stateless validation until access-token expiry. `ActiveSession` adds one Auth-owned indexed read per authenticated request and immediately denies disabled members, revoked sessions, and sessions past their absolute lifetime. The default remains `TokenLifetime` for compatibility; products must explicitly choose `ActiveSession` when immediate bearer revocation is required.
 - Password recovery is enumeration-safe, accepts only active password members with a verified email, stores only a rotating HMAC code hash, and revokes every session after confirmation.
 - Password-recovery requests are serialized per member across replicas, so cooldown and single-active-code guarantees remain strict under concurrency.
 - An active local TOTP authenticator is enforced after every password and external primary sign-in. Auth issues no session or token until the one-time primary challenge succeeds.
@@ -54,6 +54,28 @@ Auth can be composed in two scope modes. `AuthProfile.ScopeAware()` follows the 
 - Scope-aware OIDC challenges carry the normalized scope only inside protected authentication state and restore it before the callback transaction; provider redirects do not depend on tenant headers surviving the round trip.
 - Every `/api/auth` response inherits `Cache-Control: no-store` and `Pragma: no-cache`, including optional provider-contributed routes.
 - Phone usernames are canonical international identifiers (`+` followed by 7-15 digits with a nonzero country-code prefix). Products format user input before sending it to Auth; locale-specific phone parsing stays outside the reusable identity domain.
+
+## Bearer session admission
+
+Applications that require immediate account and session revocation can opt into
+Auth's online bearer admission:
+
+```json
+{
+  "Auth": {
+    "BearerAdmission": {
+      "Mode": "ActiveSession"
+    }
+  }
+}
+```
+
+`ActiveSession` runs after ordinary JWT validation and requires the exact Auth
+member and session to remain active and within the session's absolute lifetime.
+It composes with handlers configured through `JwtBearerOptions.Events`, including
+the GMA Notifications SignalR adapter. `TokenLifetime` is the compatibility
+default and performs no database read; in that mode a revoked bearer remains
+usable only until its access-token expiry.
 
 ## User API
 

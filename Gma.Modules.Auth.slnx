@@ -27,6 +27,7 @@
   <Folder Name="/docs/">
     <File Path="docs/README.md" />
     <File Path="docs/account-recovery-task.md" />
+    <File Path="docs/active-bearer-session-admission-task.md" />
     <File Path="docs/active-member-admission-contract-task.md" />
     <File Path="docs/auth-domain-completion-audit-task.md" />
     <File Path="docs/auth-production-hardening-task.md" />

@@ -3,6 +3,7 @@ namespace Gma.Modules.Auth.Infrastructure.JwtBearer;
 using Gma.Modules.Auth.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -20,6 +21,16 @@ public static class DependencyInjection
         }
 
         builder.Services.AddSingleton<AuthJwtBearerRegistrationMarker>();
+        builder.Services
+            .AddOptions<AuthBearerAdmissionOptions>()
+            .Bind(builder.Configuration.GetSection(AuthBearerAdmissionOptions.SectionName))
+            .ValidateOnStart();
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<AuthBearerAdmissionOptions>,
+                AuthBearerAdmissionOptionsValidator>());
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IPostConfigureOptions<JwtBearerOptions>,
+                AuthBearerAdmissionPostConfigureOptions>());
         builder.Services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer();
