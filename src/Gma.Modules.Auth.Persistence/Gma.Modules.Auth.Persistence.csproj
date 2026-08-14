@@ -3,6 +3,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" VersionOverride="8.22.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Gma.Modules.Auth.Contracts\Gma.Modules.Auth.Contracts.csproj" />
