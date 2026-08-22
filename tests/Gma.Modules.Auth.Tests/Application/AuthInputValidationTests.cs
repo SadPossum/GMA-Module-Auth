@@ -99,6 +99,47 @@ public sealed class AuthInputValidationTests
                 ValidOpaqueToken())));
         AssertTooLong(new DisableTotpCommandValidator().Validate(
             new DisableTotpCommand(MemberId, SessionId, MultiFactorCodeType.Totp, "123456", token)));
+        AssertTooLong(new StepUpWithMultiFactorCommandValidator().Validate(
+            new StepUpWithMultiFactorCommand(
+                MemberId,
+                SessionId,
+                ValidPassword(),
+                MultiFactorCodeType.Totp,
+                code,
+                ValidOpaqueToken())));
+        AssertTooLong(new StepUpWithMultiFactorCommandValidator().Validate(
+            new StepUpWithMultiFactorCommand(
+                MemberId,
+                SessionId,
+                ValidPassword(),
+                MultiFactorCodeType.Totp,
+                "123456",
+                token)));
+        AssertTooLong(new StepUpWithMultiFactorCommandValidator().Validate(
+            new StepUpWithMultiFactorCommand(
+                MemberId,
+                SessionId,
+                Oversized(AuthPasswordPolicy.MaximumLength),
+                MultiFactorCodeType.Totp,
+                "123456",
+                ValidOpaqueToken())));
+    }
+
+    [Fact]
+    public void Multi_factor_step_up_validator_rejects_missing_identity_and_unknown_code_type()
+    {
+        string[] errors = [.. new StepUpWithMultiFactorCommandValidator().Validate(
+            new StepUpWithMultiFactorCommand(
+                Guid.Empty,
+                Guid.Empty,
+                ValidPassword(),
+                MultiFactorCodeType.Unknown,
+                "123456",
+                ValidOpaqueToken()))];
+
+        Assert.Contains(errors, error => error.Contains("Member id", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("Session id", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("code type", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

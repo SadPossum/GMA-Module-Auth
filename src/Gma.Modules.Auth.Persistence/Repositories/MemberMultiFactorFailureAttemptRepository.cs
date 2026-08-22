@@ -22,4 +22,20 @@ internal sealed class MemberMultiFactorFailureAttemptRepository(AuthDbContext db
 
     public async Task AddAsync(MemberMultiFactorFailureAttempt attempt, CancellationToken cancellationToken) =>
         await dbContext.MemberMultiFactorFailureAttempts.AddAsync(attempt, cancellationToken).ConfigureAwait(false);
+
+    public async Task ClearBeforeAsync(
+        MemberId memberId,
+        string purpose,
+        DateTimeOffset beforeUtc,
+        CancellationToken cancellationToken)
+    {
+        MemberMultiFactorFailureAttempt[] attempts = await dbContext.MemberMultiFactorFailureAttempts
+            .Where(attempt =>
+                attempt.MemberId == memberId &&
+                attempt.Purpose == purpose &&
+                attempt.FailedAtUtc < beforeUtc)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+        dbContext.MemberMultiFactorFailureAttempts.RemoveRange(attempts);
+    }
 }

@@ -43,12 +43,24 @@ internal sealed class RegenerateMultiFactorRecoveryCodesCommandHandler(
             return Result.Failure<MultiFactorRecoveryCodeRegenerationCompletion>(AuthDomainErrors.MemberNotFound);
         }
 
-        MemberSession? session = member.Sessions.FirstOrDefault(item =>
-            item.Id == new MemberSessionId(command.SessionId) && item.IsActive);
+        IReadOnlyList<string> candidateRefreshTokenHashes =
+            this.TokenHashingService.GetCandidateHashes(command.RefreshToken);
+        Result<MemberSession> refreshProof = member.VerifySessionRefreshTokenAndHandleReuse(
+            new MemberSessionId(command.SessionId),
+            candidateRefreshTokenHashes,
+            this.IdGenerator.NewId(),
+            this.Clock.UtcNow);
+        if (refreshProof.IsFailure)
+        {
+            return refreshProof.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(MultiFactorRecoveryCodeRegenerationCompletion.ReuseDetected)
+                : Result.Failure<MultiFactorRecoveryCodeRegenerationCompletion>(refreshProof.Error);
+        }
+
         MemberTotpAuthenticator? authenticator = await authenticatorRepository
             .GetByMemberAsync(memberId, cancellationToken)
             .ConfigureAwait(false);
-        if (session is null || authenticator is null || !authenticator.IsActive)
+        if (authenticator is null || !authenticator.IsActive)
         {
             return Result.Failure<MultiFactorRecoveryCodeRegenerationCompletion>(AuthApplicationErrors.TotpAuthenticatorNotActive);
         }
@@ -88,9 +100,24 @@ internal sealed class RegenerateMultiFactorRecoveryCodesCommandHandler(
 
         DateTimeOffset nowUtc = this.Clock.UtcNow;
 
+        refreshProof = member.VerifySessionRefreshTokenAndHandleReuse(
+            new MemberSessionId(command.SessionId),
+            candidateRefreshTokenHashes,
+            this.IdGenerator.NewId(),
+            nowUtc);
+        if (refreshProof.IsFailure)
+        {
+            return refreshProof.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(MultiFactorRecoveryCodeRegenerationCompletion.ReuseDetected)
+                : Result.Failure<MultiFactorRecoveryCodeRegenerationCompletion>(refreshProof.Error);
+        }
+
         Result<SessionAuthenticationEvidence> factor = multiFactorAuthentication.VerifyFactor(
             authenticator,
-            CreatePrimaryEvidence(session.AuthenticationMethod, nowUtc),
+            new SessionAuthenticationEvidence(
+                refreshProof.Value.AuthenticationContextReference,
+                refreshProof.Value.AuthenticationMethodReferences,
+                refreshProof.Value.AuthenticatedAtUtc),
             command.CodeType,
             command.Code,
             nowUtc);
@@ -116,32 +143,48 @@ internal sealed class RegenerateMultiFactorRecoveryCodesCommandHandler(
             return Result.Success(MultiFactorRecoveryCodeRegenerationCompletion.Invalid);
         }
 
-        string refreshToken = this.GenerateRefreshToken();
-        Result<MemberSession> reauthenticated = member.ReauthenticateSession(
-            session.Id,
-            this.TokenHashingService.GetCandidateHashes(command.RefreshToken),
-            this.TokenHashingService.HashRefreshToken(refreshToken),
-            nowUtc.AddDays(options.Value.RefreshTokenLifetimeDays),
-            nowUtc.AddDays(options.Value.SessionAbsoluteLifetimeDays),
-            factor.Value,
+        DateTimeOffset completedAtUtc = this.Clock.UtcNow;
+        refreshProof = member.VerifySessionRefreshTokenAndHandleReuse(
+            new MemberSessionId(command.SessionId),
+            candidateRefreshTokenHashes,
             this.IdGenerator.NewId(),
-            nowUtc);
-        if (reauthenticated.IsFailure)
+            completedAtUtc);
+        if (refreshProof.IsFailure)
         {
-            return reauthenticated.Error == AuthApplicationErrors.RefreshTokenReused
+            return refreshProof.Error == AuthApplicationErrors.RefreshTokenReused
                 ? Result.Success(MultiFactorRecoveryCodeRegenerationCompletion.ReuseDetected)
-                : Result.Failure<MultiFactorRecoveryCodeRegenerationCompletion>(reauthenticated.Error);
+                : Result.Failure<MultiFactorRecoveryCodeRegenerationCompletion>(refreshProof.Error);
+        }
+
+        string refreshToken = this.GenerateRefreshToken();
+        Result<MemberSession> refreshed = member.RefreshSession(
+            refreshProof.Value.Id,
+            candidateRefreshTokenHashes,
+            this.TokenHashingService.HashRefreshToken(refreshToken),
+            completedAtUtc.AddDays(options.Value.RefreshTokenLifetimeDays),
+            this.IdGenerator.NewId(),
+            completedAtUtc);
+        if (refreshed.IsFailure)
+        {
+            return refreshed.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(MultiFactorRecoveryCodeRegenerationCompletion.ReuseDetected)
+                : Result.Failure<MultiFactorRecoveryCodeRegenerationCompletion>(refreshed.Error);
         }
 
         IReadOnlyList<RecoveryCodeMaterial> recoveryCodes = multiFactorAuthentication.GenerateRecoveryCodes();
         Result regenerated = authenticator.RegenerateRecoveryCodes(
             multiFactorAuthentication.CreateRecoveryCodeRegistrations(recoveryCodes),
-            nowUtc);
+            completedAtUtc);
         if (regenerated.IsFailure)
         {
             return Result.Failure<MultiFactorRecoveryCodeRegenerationCompletion>(regenerated.Error);
         }
 
+        await failureAttemptRepository.ClearBeforeAsync(
+            memberId,
+            MemberMultiFactorFailureAttempt.ManagementPurpose,
+            attemptLease.Value.AcquiredAtUtc,
+            cancellationToken).ConfigureAwait(false);
         await attemptLimiter.RecordSuccessAsync(
             member.ScopeId,
             AuthenticationAttemptPurposes.MultiFactorManagement,
@@ -150,15 +193,8 @@ internal sealed class RegenerateMultiFactorRecoveryCodesCommandHandler(
             cancellationToken).ConfigureAwait(false);
         return Result.Success(MultiFactorRecoveryCodeRegenerationCompletion.Completed(
             new MultiFactorRecoveryCodesResponse(
-                this.CreateAccessToken(member, reauthenticated.Value),
+                this.CreateAccessToken(member, refreshed.Value),
                 refreshToken,
                 recoveryCodes.Select(code => code.Plaintext).ToArray())));
     }
-
-    private static SessionAuthenticationEvidence CreatePrimaryEvidence(
-        string authenticationMethod,
-        DateTimeOffset nowUtc) =>
-        string.Equals(authenticationMethod, MemberAuthenticationMethods.Password, StringComparison.Ordinal)
-            ? SessionAuthenticationEvidence.Password(nowUtc)
-            : SessionAuthenticationEvidence.External(nowUtc);
 }

@@ -194,6 +194,62 @@ public sealed class MemberAggregateTests
     }
 
     [Fact]
+    public void Verifying_current_refresh_token_does_not_rotate_or_change_session_evidence()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberSessionId sessionId = new(Guid.NewGuid());
+        SessionAuthenticationEvidence evidence = SessionAuthenticationEvidence.Password(Now.AddMinutes(-5));
+        MemberSession session = member.StartSession(
+            sessionId,
+            "refresh-hash-1",
+            Now.AddDays(1),
+            evidence.AuthenticatedAtUtc,
+            authenticationEvidence: evidence).Value;
+        member.ClearDomainEvents();
+
+        Result<MemberSession> result = member.VerifySessionRefreshTokenAndHandleReuse(
+            sessionId,
+            ["refresh-hash-1"],
+            Guid.NewGuid(),
+            Now);
+
+        Assert.True(result.IsSuccess);
+        Assert.Same(session, result.Value);
+        Assert.Equal("refresh-hash-1", session.RefreshTokenHash);
+        Assert.Null(session.PreviousRefreshTokenHash);
+        Assert.Equal(evidence.AuthenticatedAtUtc, session.AuthenticatedAtUtc);
+        Assert.Empty(member.DomainEvents);
+    }
+
+    [Fact]
+    public void Verifying_previous_refresh_token_revokes_the_member_token_family_and_records_the_event()
+    {
+        Member member = CreateMember("member@example.com").Value;
+        MemberSessionId selectedSessionId = new(Guid.NewGuid());
+        member.StartSession(selectedSessionId, "refresh-hash-1", Now.AddDays(1), Now);
+        member.StartSession(new MemberSessionId(Guid.NewGuid()), "refresh-hash-other", Now.AddDays(1), Now);
+        Assert.True(member.RefreshSession(
+            selectedSessionId,
+            "refresh-hash-1",
+            "refresh-hash-2",
+            Now.AddDays(1),
+            Now).IsSuccess);
+        member.ClearDomainEvents();
+
+        Result<MemberSession> result = member.VerifySessionRefreshTokenAndHandleReuse(
+            selectedSessionId,
+            ["refresh-hash-1"],
+            Guid.NewGuid(),
+            Now.AddMinutes(1));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthDomainErrors.RefreshTokenReused, result.Error);
+        Assert.All(member.Sessions, session => Assert.False(session.IsActive));
+        Assert.Equal(2, Assert.Single(
+            member.DomainEvents.OfType<MemberSessionsRevokedDomainEvent>()).RevokedSessionCount);
+    }
+
+    [Fact]
     public void Refresh_session_caps_sliding_expiry_at_the_absolute_session_deadline()
     {
         Member member = CreateMember("member@example.com").Value;

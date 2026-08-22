@@ -60,7 +60,9 @@ public sealed class AuthEndpointContractTests
         Assert.Contains("/api/auth/sessions", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/sessions/{sessionId:guid}/sign-out", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/step-up/password", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/step-up/mfa", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/browser/step-up/password", routes, StringComparer.Ordinal);
+        Assert.Contains("/api/auth/browser/step-up/mfa", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/browser/password", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/browser/password/remove", routes, StringComparer.Ordinal);
         Assert.Contains("/api/auth/self-registration", routes, StringComparer.Ordinal);
@@ -106,6 +108,28 @@ public sealed class AuthEndpointContractTests
         AssertProduces(GetEndpoint(endpoints, "/api/auth/email-verification/confirm", "POST"), StatusCodes.Status204NoContent);
         AssertProduces(GetEndpoint(endpoints, "/api/auth/browser/sign-out", "POST"), StatusCodes.Status204NoContent);
         AssertProduces(GetEndpoint(endpoints, "/api/auth/external/{provider}/sign-in", "GET"), StatusCodes.Status302Found);
+
+        RouteEndpoint multiFactorStepUp = GetEndpoint(endpoints, "/api/auth/step-up/mfa", "POST");
+        Assert.Equal(
+            typeof(MultiFactorStepUpRequest),
+            Assert.IsType<IAcceptsMetadata>(
+                multiFactorStepUp.Metadata.GetMetadata<IAcceptsMetadata>(),
+                exactMatch: false).RequestType);
+        Assert.NotEmpty(multiFactorStepUp.Metadata.GetOrderedMetadata<IAuthorizeData>());
+        AssertProduces(multiFactorStepUp, StatusCodes.Status200OK, typeof(AuthTokensResponse));
+        AssertProduces(multiFactorStepUp, StatusCodes.Status401Unauthorized);
+        RouteEndpoint browserMultiFactorStepUp = GetEndpoint(
+            endpoints,
+            "/api/auth/browser/step-up/mfa",
+            "POST");
+        Assert.Equal(
+            typeof(BrowserMultiFactorStepUpRequest),
+            Assert.IsType<IAcceptsMetadata>(
+                browserMultiFactorStepUp.Metadata.GetMetadata<IAcceptsMetadata>(),
+                exactMatch: false).RequestType);
+        Assert.NotEmpty(browserMultiFactorStepUp.Metadata.GetOrderedMetadata<IAuthorizeData>());
+        AssertProduces(browserMultiFactorStepUp, StatusCodes.Status200OK, typeof(BrowserAuthResponse));
+        AssertProduces(browserMultiFactorStepUp, StatusCodes.Status401Unauthorized);
 
         app.Urls.Add("http://127.0.0.1:0");
         await app.StartAsync();

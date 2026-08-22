@@ -12,4 +12,10 @@ public interface IMemberMultiFactorFailureAttemptRepository
         CancellationToken cancellationToken);
 
     Task AddAsync(MemberMultiFactorFailureAttempt attempt, CancellationToken cancellationToken);
+
+    Task ClearBeforeAsync(
+        MemberId memberId,
+        string purpose,
+        DateTimeOffset beforeUtc,
+        CancellationToken cancellationToken);
 }
