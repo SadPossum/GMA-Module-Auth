@@ -10,18 +10,18 @@ using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
-using Gma.Modules.Auth.Domain.Enums;
 using Gma.Modules.Auth.Domain.Errors;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Microsoft.Extensions.Options;
 
-internal sealed class DisableTotpCommandHandler(
+internal sealed class StepUpWithMultiFactorCommandHandler(
     IMemberRepository memberRepository,
     IMemberTotpAuthenticatorRepository authenticatorRepository,
-    IMemberAuthenticationChallengeRepository challengeRepository,
     IMemberMultiFactorFailureAttemptRepository failureAttemptRepository,
+    IPasswordHashingService passwordHashingService,
+    PasswordProofService passwordProofService,
     MultiFactorAuthenticationService multiFactorAuthentication,
     IAuthenticationAttemptLimiter attemptLimiter,
     ITokenService tokenService,
@@ -31,10 +31,10 @@ internal sealed class DisableTotpCommandHandler(
     ISystemClock clock,
     IIdGenerator idGenerator)
     : AuthCommandHandlerBase(tokenService, refreshTokenHashingService, clock, idGenerator),
-        ICommandHandler<DisableTotpCommand, MultiFactorDisableCompletion>
+        ICommandHandler<StepUpWithMultiFactorCommand, MultiFactorStepUpCompletion>
 {
-    public async Task<Result<MultiFactorDisableCompletion>> HandleAsync(
-        DisableTotpCommand command,
+    public async Task<Result<MultiFactorStepUpCompletion>> HandleAsync(
+        StepUpWithMultiFactorCommand command,
         CancellationToken cancellationToken)
     {
         MemberId memberId = new(command.MemberId);
@@ -42,21 +42,22 @@ internal sealed class DisableTotpCommandHandler(
         if (member is null ||
             (scopeContext.IsEnabled && !string.Equals(scopeContext.ScopeId, member.ScopeId, StringComparison.Ordinal)))
         {
-            return Result.Failure<MultiFactorDisableCompletion>(AuthDomainErrors.MemberNotFound);
+            return Result.Failure<MultiFactorStepUpCompletion>(AuthDomainErrors.CredentialsNotValid);
         }
 
+        DateTimeOffset refreshCheckedAtUtc = this.Clock.UtcNow;
         IReadOnlyList<string> candidateRefreshTokenHashes =
             this.TokenHashingService.GetCandidateHashes(command.RefreshToken);
         Result<MemberSession> refreshProof = member.VerifySessionRefreshTokenAndHandleReuse(
             new MemberSessionId(command.SessionId),
             candidateRefreshTokenHashes,
             this.IdGenerator.NewId(),
-            this.Clock.UtcNow);
+            refreshCheckedAtUtc);
         if (refreshProof.IsFailure)
         {
             return refreshProof.Error == AuthApplicationErrors.RefreshTokenReused
-                ? Result.Success(MultiFactorDisableCompletion.ReuseDetected)
-                : Result.Failure<MultiFactorDisableCompletion>(refreshProof.Error);
+                ? Result.Success(MultiFactorStepUpCompletion.ReuseDetected)
+                : Result.Failure<MultiFactorStepUpCompletion>(refreshProof.Error);
         }
 
         MemberTotpAuthenticator? authenticator = await authenticatorRepository
@@ -64,24 +65,43 @@ internal sealed class DisableTotpCommandHandler(
             .ConfigureAwait(false);
         if (authenticator is null || !authenticator.IsActive)
         {
-            return Result.Failure<MultiFactorDisableCompletion>(AuthApplicationErrors.TotpAuthenticatorNotActive);
+            return Result.Failure<MultiFactorStepUpCompletion>(AuthApplicationErrors.TotpAuthenticatorNotActive);
+        }
+
+        if (member.PasswordHash is null)
+        {
+            return Result.Failure<MultiFactorStepUpCompletion>(AuthApplicationErrors.PasswordNotConfigured);
+        }
+
+        PasswordVerificationOutcome passwordVerification = await passwordProofService.VerifyAsync(
+            member.ScopeId,
+            AuthenticationAttemptPurposes.PasswordStepUp,
+            command.MemberId.ToString("D", System.Globalization.CultureInfo.InvariantCulture),
+            member.PasswordHash,
+            command.Password,
+            this.Clock.UtcNow,
+            cancellationToken).ConfigureAwait(false);
+        if (passwordVerification == PasswordVerificationOutcome.Unknown)
+        {
+            return Result.Success(MultiFactorStepUpCompletion.Invalid);
         }
 
         DateTimeOffset attemptCheckedAtUtc = this.Clock.UtcNow;
         string limiterTarget = command.MemberId.ToString("D", System.Globalization.CultureInfo.InvariantCulture);
         int recentFailureCount = await failureAttemptRepository.CountSinceAsync(
             memberId,
-            MemberMultiFactorFailureAttempt.ManagementPurpose,
+            MemberMultiFactorFailureAttempt.StepUpPurpose,
             attemptCheckedAtUtc.AddMinutes(-options.Value.MultiFactor.ManagementAttemptWindowMinutes),
             cancellationToken).ConfigureAwait(false);
         if (recentFailureCount >= options.Value.MultiFactor.ManagementMaximumAttempts)
         {
-            return Result.Success(MultiFactorDisableCompletion.Invalid);
+            return Result.Success(MultiFactorStepUpCompletion.Invalid);
         }
 
         if (command.CodeType == MultiFactorCodeType.Totp && !multiFactorAuthentication.TotpProviderAvailable)
         {
-            return Result.Failure<MultiFactorDisableCompletion>(AuthApplicationErrors.MultiFactorProviderUnavailable);
+            return Result.Failure<MultiFactorStepUpCompletion>(
+                AuthApplicationErrors.MultiFactorProviderUnavailable);
         }
 
         AuthenticationAttemptPolicy attemptPolicy = new(
@@ -89,18 +109,17 @@ internal sealed class DisableTotpCommandHandler(
             TimeSpan.FromMinutes(options.Value.MultiFactor.ManagementAttemptWindowMinutes));
         AuthenticationAttemptLease? attemptLease = await attemptLimiter.TryAcquireAsync(
                 member.ScopeId,
-                AuthenticationAttemptPurposes.MultiFactorManagement,
+                AuthenticationAttemptPurposes.MultiFactorStepUp,
                 limiterTarget,
                 attemptCheckedAtUtc,
                 attemptPolicy,
                 cancellationToken).ConfigureAwait(false);
         if (attemptLease is null)
         {
-            return Result.Success(MultiFactorDisableCompletion.Invalid);
+            return Result.Success(MultiFactorStepUpCompletion.Invalid);
         }
 
         DateTimeOffset nowUtc = this.Clock.UtcNow;
-
         refreshProof = member.VerifySessionRefreshTokenAndHandleReuse(
             new MemberSessionId(command.SessionId),
             candidateRefreshTokenHashes,
@@ -109,16 +128,13 @@ internal sealed class DisableTotpCommandHandler(
         if (refreshProof.IsFailure)
         {
             return refreshProof.Error == AuthApplicationErrors.RefreshTokenReused
-                ? Result.Success(MultiFactorDisableCompletion.ReuseDetected)
-                : Result.Failure<MultiFactorDisableCompletion>(refreshProof.Error);
+                ? Result.Success(MultiFactorStepUpCompletion.ReuseDetected)
+                : Result.Failure<MultiFactorStepUpCompletion>(refreshProof.Error);
         }
 
         Result<SessionAuthenticationEvidence> factor = multiFactorAuthentication.VerifyFactor(
             authenticator,
-            new SessionAuthenticationEvidence(
-                refreshProof.Value.AuthenticationContextReference,
-                refreshProof.Value.AuthenticationMethodReferences,
-                refreshProof.Value.AuthenticatedAtUtc),
+            SessionAuthenticationEvidence.Password(nowUtc),
             command.CodeType,
             command.Code,
             nowUtc);
@@ -126,22 +142,22 @@ internal sealed class DisableTotpCommandHandler(
         {
             if (factor.Error == AuthApplicationErrors.MultiFactorProviderUnavailable)
             {
-                return Result.Failure<MultiFactorDisableCompletion>(factor.Error);
+                return Result.Failure<MultiFactorStepUpCompletion>(factor.Error);
             }
 
             Result<MemberMultiFactorFailureAttempt> failedAttempt = MemberMultiFactorFailureAttempt.Create(
                 new MemberMultiFactorFailureAttemptId(this.IdGenerator.NewId()),
                 memberId,
                 member.ScopeId,
-                MemberMultiFactorFailureAttempt.ManagementPurpose,
+                MemberMultiFactorFailureAttempt.StepUpPurpose,
                 nowUtc);
             if (failedAttempt.IsFailure)
             {
-                return Result.Failure<MultiFactorDisableCompletion>(failedAttempt.Error);
+                return Result.Failure<MultiFactorStepUpCompletion>(failedAttempt.Error);
             }
 
             await failureAttemptRepository.AddAsync(failedAttempt.Value, cancellationToken).ConfigureAwait(false);
-            return Result.Success(MultiFactorDisableCompletion.Invalid);
+            return Result.Success(MultiFactorStepUpCompletion.Invalid);
         }
 
         DateTimeOffset completedAtUtc = this.Clock.UtcNow;
@@ -153,66 +169,55 @@ internal sealed class DisableTotpCommandHandler(
         if (refreshProof.IsFailure)
         {
             return refreshProof.Error == AuthApplicationErrors.RefreshTokenReused
-                ? Result.Success(MultiFactorDisableCompletion.ReuseDetected)
-                : Result.Failure<MultiFactorDisableCompletion>(refreshProof.Error);
+                ? Result.Success(MultiFactorStepUpCompletion.ReuseDetected)
+                : Result.Failure<MultiFactorStepUpCompletion>(refreshProof.Error);
         }
 
-        string discardedRefreshToken = this.GenerateRefreshToken();
-        Result<MemberSession> refreshed = member.RefreshSession(
+        SessionAuthenticationEvidence completedEvidence = command.CodeType == MultiFactorCodeType.Totp
+            ? SessionAuthenticationEvidence.CompleteWithTotp(
+                SessionAuthenticationEvidence.Password(completedAtUtc),
+                completedAtUtc)
+            : SessionAuthenticationEvidence.CompleteWithRecoveryCode(
+                SessionAuthenticationEvidence.Password(completedAtUtc),
+                completedAtUtc);
+        string refreshToken = this.GenerateRefreshToken();
+        Result<MemberSession> reauthenticated = member.ReauthenticateSession(
             refreshProof.Value.Id,
             candidateRefreshTokenHashes,
-            this.TokenHashingService.HashRefreshToken(discardedRefreshToken),
+            this.TokenHashingService.HashRefreshToken(refreshToken),
             completedAtUtc.AddDays(options.Value.RefreshTokenLifetimeDays),
+            completedAtUtc.AddDays(options.Value.SessionAbsoluteLifetimeDays),
+            completedEvidence,
             this.IdGenerator.NewId(),
             completedAtUtc);
-        if (refreshed.IsFailure)
+        if (reauthenticated.IsFailure)
         {
-            return refreshed.Error == AuthApplicationErrors.RefreshTokenReused
-                ? Result.Success(MultiFactorDisableCompletion.ReuseDetected)
-                : Result.Failure<MultiFactorDisableCompletion>(refreshed.Error);
+            return reauthenticated.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(MultiFactorStepUpCompletion.ReuseDetected)
+                : Result.Failure<MultiFactorStepUpCompletion>(reauthenticated.Error);
         }
 
-        Result disabled = authenticator.Disable(completedAtUtc);
-        if (disabled.IsFailure)
+        if (passwordVerification == PasswordVerificationOutcome.SuccessRehashNeeded)
         {
-            return Result.Failure<MultiFactorDisableCompletion>(disabled.Error);
-        }
-
-        Result methodChanged = member.RecordAuthenticationMethodChanged(
-            MemberAuthenticationMethods.Totp,
-            MemberAuthenticationMethodChange.Removed,
-            this.IdGenerator.NewId(),
-            completedAtUtc);
-        if (methodChanged.IsFailure)
-        {
-            return Result.Failure<MultiFactorDisableCompletion>(methodChanged.Error);
-        }
-
-        IReadOnlyList<MemberAuthenticationChallenge> challenges = await challengeRepository
-            .GetActiveByMemberAsync(memberId, completedAtUtc, cancellationToken)
-            .ConfigureAwait(false);
-        foreach (MemberAuthenticationChallenge challenge in challenges)
-        {
-            challenge.Revoke(completedAtUtc);
-        }
-
-        Result<int> revoked = member.RevokeSessions(this.IdGenerator.NewId(), completedAtUtc);
-        if (revoked.IsFailure)
-        {
-            return Result.Failure<MultiFactorDisableCompletion>(revoked.Error);
+            Result rehashResult = member.ResetPassword(passwordHashingService.HashPassword(command.Password));
+            if (rehashResult.IsFailure)
+            {
+                return Result.Failure<MultiFactorStepUpCompletion>(rehashResult.Error);
+            }
         }
 
         await failureAttemptRepository.ClearBeforeAsync(
             memberId,
-            MemberMultiFactorFailureAttempt.ManagementPurpose,
+            MemberMultiFactorFailureAttempt.StepUpPurpose,
             attemptLease.Value.AcquiredAtUtc,
             cancellationToken).ConfigureAwait(false);
         await attemptLimiter.RecordSuccessAsync(
             member.ScopeId,
-            AuthenticationAttemptPurposes.MultiFactorManagement,
+            AuthenticationAttemptPurposes.MultiFactorStepUp,
             limiterTarget,
             attemptLease.Value,
             cancellationToken).ConfigureAwait(false);
-        return Result.Success(MultiFactorDisableCompletion.Completed);
+        return Result.Success(MultiFactorStepUpCompletion.Completed(
+            new AuthTokensResponse(this.CreateAccessToken(member, reauthenticated.Value), refreshToken)));
     }
 }

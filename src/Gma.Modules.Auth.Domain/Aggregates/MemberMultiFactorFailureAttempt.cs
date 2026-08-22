@@ -10,6 +10,7 @@ public sealed class MemberMultiFactorFailureAttempt : ScopedAggregateRoot<Member
 {
     public const int PurposeMaxLength = 64;
     public const string ManagementPurpose = "management";
+    public const string StepUpPurpose = "step-up";
 
     private MemberMultiFactorFailureAttempt() { }
 

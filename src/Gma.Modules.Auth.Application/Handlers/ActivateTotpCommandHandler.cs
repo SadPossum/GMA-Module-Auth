@@ -43,16 +43,28 @@ internal sealed class ActivateTotpCommandHandler(
         }
 
         DateTimeOffset authorizationCheckedAtUtc = this.Clock.UtcNow;
+        IReadOnlyList<string> candidateRefreshTokenHashes =
+            this.TokenHashingService.GetCandidateHashes(command.RefreshToken);
+        Result<MemberSession> refreshProof = member.VerifySessionRefreshTokenAndHandleReuse(
+            new MemberSessionId(command.SessionId),
+            candidateRefreshTokenHashes,
+            this.IdGenerator.NewId(),
+            authorizationCheckedAtUtc);
+        if (refreshProof.IsFailure)
+        {
+            return refreshProof.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(RefreshTokenBoundCompletion.ReuseDetected<TotpActivationResponse>())
+                : Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(refreshProof.Error);
+        }
+
         Result<MemberSession> freshSession = MemberSecurityAuthorization.RequireFreshSession(
             member,
             command.SessionId,
             authorizationCheckedAtUtc,
             TimeSpan.FromMinutes(options.Value.MultiFactor.SensitiveSessionFreshnessMinutes));
         if (freshSession.IsFailure ||
-            string.Equals(
-                freshSession.Value.AuthenticationContextReference,
-                AuthenticationContextReferences.Legacy,
-                StringComparison.Ordinal))
+            !MemberSecurityAuthorization.IsSupportedPrimaryAuthenticationContext(
+                freshSession.Value.AuthenticationContextReference))
         {
             return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(
                 AuthApplicationErrors.FreshAuthenticationRequired);
@@ -74,13 +86,23 @@ internal sealed class ActivateTotpCommandHandler(
             nowUtc,
             TimeSpan.FromMinutes(options.Value.MultiFactor.SensitiveSessionFreshnessMinutes));
         if (freshSession.IsFailure ||
-            string.Equals(
-                freshSession.Value.AuthenticationContextReference,
-                AuthenticationContextReferences.Legacy,
-                StringComparison.Ordinal))
+            !MemberSecurityAuthorization.IsSupportedPrimaryAuthenticationContext(
+                freshSession.Value.AuthenticationContextReference))
         {
             return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(
                 AuthApplicationErrors.FreshAuthenticationRequired);
+        }
+
+        refreshProof = member.VerifySessionRefreshTokenAndHandleReuse(
+            new MemberSessionId(command.SessionId),
+            candidateRefreshTokenHashes,
+            this.IdGenerator.NewId(),
+            nowUtc);
+        if (refreshProof.IsFailure)
+        {
+            return refreshProof.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(RefreshTokenBoundCompletion.ReuseDetected<TotpActivationResponse>())
+                : Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(refreshProof.Error);
         }
 
         Result<long> verification = multiFactorAuthentication.VerifyPendingTotp(
@@ -92,20 +114,47 @@ internal sealed class ActivateTotpCommandHandler(
             return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(verification.Error);
         }
 
+        DateTimeOffset completedAtUtc = this.Clock.UtcNow;
+        freshSession = MemberSecurityAuthorization.RequireFreshSession(
+            member,
+            command.SessionId,
+            completedAtUtc,
+            TimeSpan.FromMinutes(options.Value.MultiFactor.SensitiveSessionFreshnessMinutes));
+        if (freshSession.IsFailure ||
+            !MemberSecurityAuthorization.IsSupportedPrimaryAuthenticationContext(
+                freshSession.Value.AuthenticationContextReference))
+        {
+            return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(
+                AuthApplicationErrors.FreshAuthenticationRequired);
+        }
+
+        refreshProof = member.VerifySessionRefreshTokenAndHandleReuse(
+            new MemberSessionId(command.SessionId),
+            candidateRefreshTokenHashes,
+            this.IdGenerator.NewId(),
+            completedAtUtc);
+        if (refreshProof.IsFailure)
+        {
+            return refreshProof.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(RefreshTokenBoundCompletion.ReuseDetected<TotpActivationResponse>())
+                : Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(refreshProof.Error);
+        }
+
         IReadOnlyList<RecoveryCodeMaterial> recoveryCodes = multiFactorAuthentication.GenerateRecoveryCodes();
-        SessionAuthenticationEvidence primaryEvidence = CreatePrimaryEvidence(
-            freshSession.Value.AuthenticationMethod,
-            nowUtc);
+        SessionAuthenticationEvidence primaryEvidence = new(
+            freshSession.Value.AuthenticationContextReference,
+            freshSession.Value.AuthenticationMethodReferences,
+            freshSession.Value.AuthenticatedAtUtc);
         string refreshToken = this.GenerateRefreshToken();
         Result<MemberSession> reauthenticated = member.ReauthenticateSession(
             freshSession.Value.Id,
-            this.TokenHashingService.GetCandidateHashes(command.RefreshToken),
+            candidateRefreshTokenHashes,
             this.TokenHashingService.HashRefreshToken(refreshToken),
-            nowUtc.AddDays(options.Value.RefreshTokenLifetimeDays),
-            nowUtc.AddDays(options.Value.SessionAbsoluteLifetimeDays),
-            SessionAuthenticationEvidence.CompleteWithTotp(primaryEvidence, nowUtc),
+            completedAtUtc.AddDays(options.Value.RefreshTokenLifetimeDays),
+            completedAtUtc.AddDays(options.Value.SessionAbsoluteLifetimeDays),
+            SessionAuthenticationEvidence.CompleteWithTotp(primaryEvidence, completedAtUtc),
             this.IdGenerator.NewId(),
-            nowUtc);
+            completedAtUtc);
         if (reauthenticated.IsFailure)
         {
             return reauthenticated.Error == AuthApplicationErrors.RefreshTokenReused
@@ -116,7 +165,7 @@ internal sealed class ActivateTotpCommandHandler(
         Result activated = authenticator.Activate(
             verification.Value,
             multiFactorAuthentication.CreateRecoveryCodeRegistrations(recoveryCodes),
-            nowUtc);
+            completedAtUtc);
         if (activated.IsFailure)
         {
             return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(activated.Error);
@@ -126,7 +175,7 @@ internal sealed class ActivateTotpCommandHandler(
             MemberAuthenticationMethods.Totp,
             MemberAuthenticationMethodChange.Added,
             this.IdGenerator.NewId(),
-            nowUtc);
+            completedAtUtc);
         if (methodChanged.IsFailure)
         {
             return Result.Failure<RefreshTokenBoundCompletion<TotpActivationResponse>>(methodChanged.Error);
@@ -139,10 +188,4 @@ internal sealed class ActivateTotpCommandHandler(
                 recoveryCodes.Select(code => code.Plaintext).ToArray())));
     }
 
-    private static SessionAuthenticationEvidence CreatePrimaryEvidence(
-        string authenticationMethod,
-        DateTimeOffset nowUtc) =>
-        string.Equals(authenticationMethod, MemberAuthenticationMethods.Password, StringComparison.Ordinal)
-            ? SessionAuthenticationEvidence.Password(nowUtc)
-            : SessionAuthenticationEvidence.External(nowUtc);
 }

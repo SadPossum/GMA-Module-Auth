@@ -51,10 +51,8 @@ internal sealed class BeginTotpEnrollmentCommandHandler(
             authorizationCheckedAtUtc,
             TimeSpan.FromMinutes(options.Value.MultiFactor.SensitiveSessionFreshnessMinutes));
         if (freshSession.IsFailure ||
-            string.Equals(
-                freshSession.Value.AuthenticationContextReference,
-                AuthenticationContextReferences.Legacy,
-                StringComparison.Ordinal))
+            !MemberSecurityAuthorization.IsSupportedPrimaryAuthenticationContext(
+                freshSession.Value.AuthenticationContextReference))
         {
             return Result.Failure<TotpEnrollmentResponse>(AuthApplicationErrors.FreshAuthenticationRequired);
         }
@@ -74,10 +72,8 @@ internal sealed class BeginTotpEnrollmentCommandHandler(
             nowUtc,
             TimeSpan.FromMinutes(options.Value.MultiFactor.SensitiveSessionFreshnessMinutes));
         if (freshSession.IsFailure ||
-            string.Equals(
-                freshSession.Value.AuthenticationContextReference,
-                AuthenticationContextReferences.Legacy,
-                StringComparison.Ordinal))
+            !MemberSecurityAuthorization.IsSupportedPrimaryAuthenticationContext(
+                freshSession.Value.AuthenticationContextReference))
         {
             return Result.Failure<TotpEnrollmentResponse>(AuthApplicationErrors.FreshAuthenticationRequired);
         }

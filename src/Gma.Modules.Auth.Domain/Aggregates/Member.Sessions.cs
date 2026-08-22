@@ -190,6 +190,24 @@ public sealed partial class Member
         return result;
     }
 
+    public Result<MemberSession> VerifySessionRefreshTokenAndHandleReuse(
+        MemberSessionId sessionId,
+        IReadOnlyCollection<string> refreshTokenHashes,
+        Guid refreshTokenReusedEventId,
+        DateTimeOffset nowUtc)
+    {
+        if (refreshTokenReusedEventId == Guid.Empty)
+        {
+            return Result.Failure<MemberSession>(AuthDomainErrors.DomainEventIdRequired);
+        }
+
+        return this.VerifySessionRefreshTokenCore(
+            sessionId,
+            refreshTokenHashes,
+            refreshTokenReusedEventId,
+            nowUtc);
+    }
+
     private Result<MemberSession> RotateSessionRefreshToken(
         MemberSessionId sessionId,
         IReadOnlyCollection<string> refreshTokenHashes,
@@ -197,6 +215,43 @@ public sealed partial class Member
         DateTimeOffset newRefreshTokenExpiresAtUtc,
         DateTimeOffset? newAbsoluteExpiresAtUtc,
         SessionAuthenticationEvidence? authenticationEvidence,
+        Guid? refreshTokenReusedEventId,
+        DateTimeOffset nowUtc)
+    {
+        Result<MemberSession> verified = this.VerifySessionRefreshTokenCore(
+            sessionId,
+            refreshTokenHashes,
+            refreshTokenReusedEventId,
+            nowUtc);
+        if (verified.IsFailure)
+        {
+            return verified;
+        }
+
+        MemberSession session = verified.Value;
+
+        string matchingHash = refreshTokenHashes.First(session.HasRefreshTokenHash);
+        Result result = authenticationEvidence is null
+            ? session.Refresh(
+                matchingHash,
+                newRefreshTokenHash,
+                newRefreshTokenExpiresAtUtc,
+                nowUtc)
+            : session.Reauthenticate(
+                matchingHash,
+                newRefreshTokenHash,
+                newRefreshTokenExpiresAtUtc,
+                newAbsoluteExpiresAtUtc ?? nowUtc,
+                authenticationEvidence,
+                nowUtc);
+        return result.IsSuccess
+            ? Result.Success(session)
+            : Result.Failure<MemberSession>(result.Error);
+    }
+
+    private Result<MemberSession> VerifySessionRefreshTokenCore(
+        MemberSessionId sessionId,
+        IReadOnlyCollection<string> refreshTokenHashes,
         Guid? refreshTokenReusedEventId,
         DateTimeOffset nowUtc)
     {
@@ -214,7 +269,7 @@ public sealed partial class Member
             MemberSession[] activeSessions = [.. this.sessions.Where(item => item.IsActive)];
             foreach (MemberSession activeSession in activeSessions)
             {
-                activeSession.SignOut(nowUtc);
+                _ = activeSession.SignOut(nowUtc);
             }
 
             this.Touch();
@@ -238,23 +293,9 @@ public sealed partial class Member
             return Result.Failure<MemberSession>(AuthDomainErrors.SessionNotFound);
         }
 
-        string matchingHash = refreshTokenHashes.First(session.HasRefreshTokenHash);
-        Result result = authenticationEvidence is null
-            ? session.Refresh(
-                matchingHash,
-                newRefreshTokenHash,
-                newRefreshTokenExpiresAtUtc,
-                nowUtc)
-            : session.Reauthenticate(
-                matchingHash,
-                newRefreshTokenHash,
-                newRefreshTokenExpiresAtUtc,
-                newAbsoluteExpiresAtUtc ?? nowUtc,
-                authenticationEvidence,
-                nowUtc);
-        return result.IsSuccess
-            ? Result.Success(session)
-            : Result.Failure<MemberSession>(result.Error);
+        return session.RefreshTokenExpiresAtUtc <= nowUtc
+            ? Result.Failure<MemberSession>(AuthDomainErrors.RefreshTokenExpired)
+            : Result.Success(session);
     }
 
     public Result SignOut(string refreshTokenHash, DateTimeOffset nowUtc)

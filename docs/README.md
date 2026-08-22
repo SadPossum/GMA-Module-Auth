@@ -43,7 +43,7 @@ Auth can be composed in two scope modes. `AuthProfile.ScopeAware()` follows the 
 - External exchange, email-verification, password-recovery, MFA challenge, and MFA recovery secrets use distinct keyed-hash domains. Legacy unscoped hashes remain readable during pepper rotation so in-flight challenges survive deployment.
 - Refresh-token replay revokes active sessions. Admin password reset also revokes active sessions.
 - Disabled members cannot begin password/external MFA challenges, record provider authentication, request verification delivery, create sessions, or rotate refresh material.
-- Primary authentication enforces a configurable active-session ceiling and retires the oldest unexpired sessions above it. Ordinary refresh uses a sliding refresh-token lifetime capped by an absolute session lifetime anchored to the last explicit authentication; password or factor reauthentication resets that absolute bound. Aggregate reads and self-service discovery exclude expired session history before retention runs.
+- Primary authentication enforces a configurable active-session ceiling and retires the oldest unexpired sessions above it. Ordinary refresh uses a sliding refresh-token lifetime capped by an absolute session lifetime anchored to the last explicit authentication; password reauthentication or atomic password-plus-factor reauthentication resets that absolute bound. Factor proof used only to manage an authenticator preserves the prior evidence and absolute bound. Aggregate reads and self-service discovery exclude expired session history before retention runs.
 - JWT access tokens use `Auth:BearerAdmission:Mode`. `TokenLifetime` preserves stateless validation until access-token expiry. `ActiveSession` adds one Auth-owned indexed read per authenticated request and immediately denies disabled members, revoked sessions, and sessions past their absolute lifetime. The default remains `TokenLifetime` for compatibility; products must explicitly choose `ActiveSession` when immediate bearer revocation is required.
 - Password recovery is enumeration-safe, accepts only active password members with a verified email, stores only a rotating HMAC code hash, and revokes every session after confirmation.
 - Password-recovery requests are serialized per member across replicas, so cooldown and single-active-code guarantees remain strict under concurrency.
@@ -88,6 +88,7 @@ Base path: `/api/auth`.
 | `POST` | `/login` | Authenticate with username/password. |
 | `POST` | `/refresh` | Rotate a refresh token. |
 | `POST` | `/step-up/password` | Reauthenticate the current session with its password and rotate the refresh token. |
+| `POST` | `/step-up/mfa` | Atomically prove the current password plus TOTP or a recovery code, rotate the session, and establish fresh MFA evidence. |
 | `POST` | `/sign-out` | Revoke one session. |
 | `POST` | `/sign-out-all` | Revoke all sessions. |
 | `GET` | `/methods` | List password, email verification, and linked-provider state. |
@@ -111,7 +112,7 @@ Base path: `/api/auth`.
 | `POST` | `/mfa/recovery-codes/regenerate` | Replace recovery codes after factor and refresh proof. |
 | `POST` | `/mfa/totp/disable` | Disable TOTP after factor and refresh proof, then revoke all sessions. |
 
-The browser variants under `/api/auth/browser` keep refresh material in HttpOnly cookies. This includes `/password`, `/password/remove`, and `/external-identities/{id}/unlink`; browser application code must not read or submit refresh tokens. Scope-aware hosts also require `X-Tenant-Id`; protected endpoints require a bearer access token.
+The browser variants under `/api/auth/browser` keep refresh material in HttpOnly cookies. This includes `/step-up/password`, `/step-up/mfa`, `/password`, `/password/remove`, and `/external-identities/{id}/unlink`; browser application code must not read or submit refresh tokens. Scope-aware hosts also require `X-Tenant-Id`; protected endpoints require a bearer access token.
 
 Registration remains backward-compatible: creating a password account does not suddenly require verified email. Products can request verification after registration and enforce `IsVerified` in their own onboarding/access policy. This avoids silently breaking existing applications while making verification state and delivery durable.
 
@@ -204,6 +205,10 @@ Auth persists the authentication context (`acr`), method references (`amr`), and
 An ordinary refresh rotates refresh material but preserves the authentication event. It cannot make a session stronger or fresher. Password step-up verifies the authenticated member, exact active session, current password, scope, rate limit, and refresh token; then it rotates the refresh token, records a distinct reauthentication event, and issues an access token from the persisted evidence. Reuse of the pre-step-up refresh token triggers the existing all-session replay response.
 
 Bearer clients call `POST /api/auth/step-up/password` with the password and refresh token. Browser clients call `POST /api/auth/browser/step-up/password` with the password while the HttpOnly refresh cookie remains on the browser-auth path. Both return replacement access and refresh material through their existing transport conventions.
+
+When a protected operation requires recent `urn:gma:acr:mfa`, clients call `POST /api/auth/step-up/mfa` (or its browser variant) with the current password and either a TOTP or one-time recovery code. Auth verifies the exact member, scope, active session, current refresh generation, password, active authenticator, factor, and two independently partitioned rate limits in one transaction. It then rotates refresh material and records one fresh password-plus-factor authentication event. A factor proof by itself never renews `auth_time`; recovery-code regeneration and TOTP disablement preserve existing session evidence rather than manufacturing a stronger or newer event.
+
+An external-origin member who has added a password can use the same flow and receives the password-based MFA context. An external-only member receives `Auth.PasswordNotConfigured`; provider-specific OIDC reauthentication and validated translation of upstream assurance remain explicit future adapter work. Clients should preserve the intended product action, complete step-up, and retry the action with its original idempotency and confirmation data. They must not automatically replay an ambiguous step-up response because refresh material, TOTP steps, and recovery codes are one-use.
 
 Products decide which operations require accepted contexts and/or recent authentication. The dependency-neutral `Gma.Framework.Security` package owns the requirement and claim vocabulary; the optional `Gma.Framework.Security.AspNetCore` adapter emits RFC 9470 `insufficient_user_authentication` challenges. Auth does not rank methods or claim that a method name alone satisfies a NIST assurance level.
 

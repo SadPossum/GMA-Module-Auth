@@ -28,6 +28,37 @@ public sealed partial class AuthModule
 {
     private void MapMultiFactorEndpoints(RouteGroupBuilder group, bool requireScope)
     {
+        RouteHandlerBuilder multiFactorStepUp = group.MapPost("/step-up/mfa", async (
+            MultiFactorStepUpRequest request,
+            ClaimsPrincipal user,
+            HttpContext httpContext,
+            IAuthScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) ||
+                GetMemberId(user) is not { } memberId ||
+                GetSessionId(user) is not { } sessionId)
+            {
+                return Results.Unauthorized();
+            }
+
+            Result<MultiFactorStepUpCompletion> result = await dispatcher.SendAsync(
+                new StepUpWithMultiFactorCommand(
+                    memberId,
+                    sessionId,
+                    request.Password,
+                    request.CodeType,
+                    request.Code,
+                    request.RefreshToken),
+                cancellationToken).ConfigureAwait(false);
+            return ToMultiFactorStepUpHttpResult(result, httpContext);
+        })
+            .RequireAuthorization();
+        multiFactorStepUp.Produces<AuthTokensResponse>(StatusCodes.Status200OK);
+        multiFactorStepUp.Produces(StatusCodes.Status401Unauthorized);
+        RequireScopeWhenNeeded(multiFactorStepUp, requireScope);
+
         RouteHandlerBuilder multiFactorStatus = group.MapGet("/mfa", async (
             ClaimsPrincipal user,
             IAuthScopeContext scopeContext,

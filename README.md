@@ -1,6 +1,6 @@
 # GMA Auth Module
 
-This repository owns the optional GMA Auth module: password and multi-provider identities, safe account linking, email verification, enumeration-safe password recovery, authentication assurance and password step-up, optional TOTP authentication with one-time recovery codes, session security, JWT integration, admin member management, provider-split persistence, and auth integration events.
+This repository owns the optional GMA Auth module: password and multi-provider identities, safe account linking, email verification, enumeration-safe password recovery, authentication assurance with password and multi-factor step-up, optional TOTP authentication with one-time recovery codes, session security, JWT integration, admin member management, provider-split persistence, and auth integration events.
 
 It is consumed by source-first applications and by the `GMA-Skeleton` composition repository as a Git submodule under `gma/modules/auth`.
 
