@@ -135,21 +135,99 @@ internal sealed class AuthRetentionService(
                     token),
                 cancellationToken)
             .ConfigureAwait(false);
+        int rememberedProofCount = await BoundedBatchProcessor.ExecuteAsync(
+                settings.BatchSize,
+                settings.MaxBatchesPerCategoryPerCycle,
+                (batchSize, token) => DeleteExpiredRememberedProofsBatchAsync(
+                    dbContext,
+                    nowUtc,
+                    batchSize,
+                    token),
+                cancellationToken)
+            .ConfigureAwait(false);
+        int rememberedDeviceCount = await BoundedBatchProcessor.ExecuteAsync(
+                settings.BatchSize,
+                settings.MaxBatchesPerCategoryPerCycle,
+                (batchSize, token) => DeleteExpiredRememberedDevicesBatchAsync(
+                    dbContext,
+                    nowUtc,
+                    batchSize,
+                    token),
+                cancellationToken)
+            .ConfigureAwait(false);
 
         if (exchangeCount > 0 || sessionCount > 0 || recoveryCount > 0 ||
             authenticationChallengeCount > 0 || authenticatorCount > 0 || multiFactorFailureCount > 0 ||
-            authenticationFailureCount > 0)
+            authenticationFailureCount > 0 || rememberedProofCount > 0 || rememberedDeviceCount > 0)
         {
             logger.LogInformation(
-                "Auth retention removed {ExchangeCount} external authentication exchanges, {SessionCount} sessions, {RecoveryCount} password recovery challenges, {AuthenticationChallengeCount} authentication challenges, {AuthenticatorCount} TOTP authenticators, {MultiFactorFailureCount} multi-factor failures, and {AuthenticationFailureCount} credential failures.",
+                "Auth retention removed {ExchangeCount} external authentication exchanges, {SessionCount} sessions, {RecoveryCount} password recovery challenges, {AuthenticationChallengeCount} authentication challenges, {AuthenticatorCount} TOTP authenticators, {MultiFactorFailureCount} multi-factor failures, {AuthenticationFailureCount} credential failures, {RememberedProofCount} expired remembered account proofs, and {RememberedDeviceCount} expired remembered browser devices with their operation receipts.",
                 exchangeCount,
                 sessionCount,
                 recoveryCount,
                 authenticationChallengeCount,
                 authenticatorCount,
                 multiFactorFailureCount,
-                authenticationFailureCount);
+                authenticationFailureCount,
+                rememberedProofCount,
+                rememberedDeviceCount);
         }
+    }
+
+    private static async Task<int> DeleteExpiredRememberedProofsBatchAsync(
+        AuthDbContext dbContext,
+        DateTimeOffset nowUtc,
+        int batchSize,
+        CancellationToken cancellationToken)
+    {
+        Guid[] proofIds = await dbContext.RememberedAccountProofs
+            .IgnoreQueryFilters()
+            .Where(proof => proof.ExpiresAtUtc <= nowUtc ||
+                (proof.RevokedAtUtc != null && proof.RevokedAtUtc <= nowUtc))
+            .OrderBy(proof => proof.ExpiresAtUtc)
+            .Select(proof => proof.Id)
+            .Take(batchSize)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (proofIds.Length == 0)
+        {
+            return 0;
+        }
+
+        return await dbContext.RememberedAccountProofs
+            .IgnoreQueryFilters()
+            .Where(proof => proofIds.Contains(proof.Id))
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<int> DeleteExpiredRememberedDevicesBatchAsync(
+        AuthDbContext dbContext,
+        DateTimeOffset nowUtc,
+        int batchSize,
+        CancellationToken cancellationToken)
+    {
+        Guid[] deviceIds = await dbContext.RememberedBrowserDevices
+            .IgnoreQueryFilters()
+            .Where(device => device.ExpiresAtUtc <= nowUtc ||
+                (device.RevokedAtUtc != null && device.RevokedAtUtc <= nowUtc))
+            .OrderBy(device => device.ExpiresAtUtc)
+            .Select(device => device.Id)
+            .Take(batchSize)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (deviceIds.Length == 0)
+        {
+            return 0;
+        }
+
+        return await dbContext.RememberedBrowserDevices
+            .IgnoreQueryFilters()
+            .Where(device => deviceIds.Contains(device.Id))
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static async Task<int> DeleteExpiredSessionsBatchAsync(

@@ -4,6 +4,7 @@ public static class MemberAuthenticationMethods
 {
     public const string Password = "password";
     public const string Totp = "totp";
+    public const string DevicePin = "device-pin";
     public const string ExternalPrefix = "external:";
     public const int MaxLength = 256;
 
@@ -25,6 +26,7 @@ public static class MemberAuthenticationMethods
         if (candidate.Length > MaxLength ||
             (candidate != Password &&
              candidate != Totp &&
+             candidate != DevicePin &&
              !candidate.StartsWith(ExternalPrefix, StringComparison.Ordinal)))
         {
             return false;

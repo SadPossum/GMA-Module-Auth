@@ -48,6 +48,44 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
     public DateTimeOffset AuthenticatedAtUtc { get; private set; }
     public DateTimeOffset? SignOutDateTimeUtc { get; private set; }
     public bool IsActive { get; private set; }
+    public Guid? RememberedBrowserDeviceId { get; private set; }
+    public Guid? RememberedAccountProofId { get; private set; }
+    public long? RememberedBrowserGeneration { get; private set; }
+    public long? RememberedSecurityEpoch { get; private set; }
+    public DateTimeOffset? RememberedAbsoluteExpiresAtUtc { get; private set; }
+
+    public void BindRememberedBrowser(Guid deviceId, Guid? proofId, long generation, long securityEpoch)
+    {
+        if (deviceId == Guid.Empty || proofId == Guid.Empty || generation <= 0 || securityEpoch <= 0 ||
+            this.RememberedBrowserDeviceId is not null)
+        {
+            throw new InvalidOperationException("A session can only be bound to one remembered browser.");
+        }
+
+        this.RememberedBrowserDeviceId = deviceId;
+        this.RememberedAccountProofId = proofId;
+        this.RememberedBrowserGeneration = generation;
+        this.RememberedSecurityEpoch = securityEpoch;
+        this.RememberedAbsoluteExpiresAtUtc = this.AbsoluteExpiresAtUtc;
+    }
+
+    // The Auth owner checks the live device, receipt, proof, PIN and exact child before calling.
+    // Deliberately do not classify the superseded delivery credential as theft/reuse.
+    internal Result ReissueRememberedCredentials(string newHash, DateTimeOffset expiresAtUtc, DateTimeOffset nowUtc)
+    {
+        if (this.RememberedBrowserDeviceId is null || !this.IsActive ||
+            this.AbsoluteExpiresAtUtc <= nowUtc || expiresAtUtc <= nowUtc ||
+            !TryNormalizeRefreshTokenHash(newHash, out string? normalized))
+        {
+            return Result.Failure(AuthDomainErrors.SessionInactive);
+        }
+
+        this.RefreshTokenHash = normalized;
+        this.RefreshTokenExpiresAtUtc = expiresAtUtc < this.AbsoluteExpiresAtUtc
+            ? expiresAtUtc
+            : this.AbsoluteExpiresAtUtc;
+        return Result.Success();
+    }
 
     internal static Result<MemberSession> Create(
         MemberSessionId id,
@@ -132,6 +170,10 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         DateTimeOffset nowUtc)
     {
         ArgumentNullException.ThrowIfNull(authenticationEvidence);
+        if (this.RememberedAbsoluteExpiresAtUtc is { } ceiling && newAbsoluteExpiresAtUtc > ceiling)
+        {
+            newAbsoluteExpiresAtUtc = ceiling;
+        }
         if (authenticationEvidence.AuthenticatedAtUtc > nowUtc)
         {
             return Result.Failure(AuthDomainErrors.AuthenticationEvidenceNotValid);

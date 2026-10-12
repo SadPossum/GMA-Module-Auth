@@ -7,4 +7,5 @@ public static class AuthenticationMethodReferences
     public const string MultiFactor = "mfa";
     public const string External = "urn:gma:amr:external";
     public const string RecoveryCode = "urn:gma:amr:recovery-code";
+    public const string DevicePin = "urn:gma:amr:device-pin";
 }

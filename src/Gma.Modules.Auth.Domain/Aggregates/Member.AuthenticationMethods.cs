@@ -265,6 +265,7 @@ public sealed partial class Member
             this.ScopeId,
             normalizedMethod,
             change));
+        this.InvalidateRememberedAccounts();
         return Result.Success();
     }
 }

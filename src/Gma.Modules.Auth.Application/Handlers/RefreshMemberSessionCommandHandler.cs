@@ -22,7 +22,8 @@ internal sealed class RefreshMemberSessionCommandHandler(
     IOptions<AuthApplicationOptions> options,
     IAuthScopeContext scopeContext,
     ISystemClock clock,
-    IIdGenerator idGenerator)
+    IIdGenerator idGenerator,
+    IRememberedBrowserService? remembered = null)
     : ICommandHandler<RefreshMemberSessionCommand, RefreshTokenBoundCompletion<AuthTokensResponse>>
 {
     public async Task<Result<RefreshTokenBoundCompletion<AuthTokensResponse>>> HandleAsync(
@@ -47,6 +48,12 @@ internal sealed class RefreshMemberSessionCommandHandler(
         if (member is null)
         {
             return Result.Failure<RefreshTokenBoundCompletion<AuthTokensResponse>>(AuthDomainErrors.MemberNotFound);
+        }
+
+        if (remembered is not null &&
+            !await remembered.AdmitRefreshAsync(member, claims.SessionId, cancellationToken).ConfigureAwait(false))
+        {
+            return Result.Failure<RefreshTokenBoundCompletion<AuthTokensResponse>>(AuthApplicationErrors.TokenInvalid);
         }
 
         string refreshToken = tokenService.GenerateRefreshToken();

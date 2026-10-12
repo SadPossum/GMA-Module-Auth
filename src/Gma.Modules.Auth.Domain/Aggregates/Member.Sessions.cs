@@ -211,6 +211,7 @@ public sealed partial class Member
             item.Id == sessionId && refreshTokenHashes.Any(item.HasPreviousRefreshTokenHash));
         if (reusedSession is not null)
         {
+            this.InvalidateRememberedAccounts();
             MemberSession[] activeSessions = [.. this.sessions.Where(item => item.IsActive)];
             foreach (MemberSession activeSession in activeSessions)
             {
@@ -288,6 +289,7 @@ public sealed partial class Member
             return Result.Failure(AuthDomainErrors.SessionNotFound);
         }
 
+        this.InvalidateRememberedAccounts();
         foreach (MemberSession session in activeSessions)
         {
             session.SignOut(nowUtc);
@@ -296,6 +298,29 @@ public sealed partial class Member
         this.Touch();
 
         return Result.Success();
+    }
+
+    public Result<MemberSession> ReissueRememberedCredentials(
+        MemberSessionId sessionId,
+        string refreshTokenHash,
+        DateTimeOffset expiresAtUtc,
+        DateTimeOffset nowUtc)
+    {
+        Result status = this.EnsureCanAuthenticate();
+        MemberSession? session = this.sessions.SingleOrDefault(value => value.Id == sessionId);
+        if (status.IsFailure || session is null)
+        {
+            return Result.Failure<MemberSession>(status.IsFailure ? status.Error : AuthDomainErrors.SessionNotFound);
+        }
+
+        Result result = session.ReissueRememberedCredentials(refreshTokenHash, expiresAtUtc, nowUtc);
+        if (result.IsFailure)
+        {
+            return Result.Failure<MemberSession>(result.Error);
+        }
+
+        this.Touch();
+        return Result.Success(session);
     }
 
     public Result SignOutSession(MemberSessionId sessionId, DateTimeOffset nowUtc)
@@ -316,10 +341,18 @@ public sealed partial class Member
     }
 
     public Result<int> RevokeSessions(Guid revokedEventId, DateTimeOffset nowUtc)
-        => this.RevokeSessionsCore(
+    {
+        if (revokedEventId == Guid.Empty)
+        {
+            return Result.Failure<int>(AuthDomainErrors.DomainEventIdRequired);
+        }
+
+        this.InvalidateRememberedAccounts();
+        return this.RevokeSessionsCore(
             session => session.IsActive,
             revokedEventId,
             nowUtc);
+    }
 
     public Result<int> RevokeSessionsExcept(
         MemberSessionId retainedSessionId,

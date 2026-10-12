@@ -25,6 +25,7 @@ using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Modules.Auth.IntegrationTests.Support;
 using Gma.Modules.Auth.Persistence;
+using Gma.Modules.Auth.Persistence.Remembered;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -63,6 +64,283 @@ public sealed class AuthPostgreSqlIntegrationTests
 
         await RunAttemptLimiterScenarioAsync("SqlServer", sqlServer.GetConnectionString());
         await RunScopeAwareAttemptLimiterScenarioAsync("SqlServer", sqlServer.GetConnectionString());
+    }
+
+    [DockerFact]
+    public async Task PostgreSql_remembered_browser_replays_same_child_and_serializes_lock_race()
+    {
+        await using PostgreSqlContainer postgreSql = new PostgreSqlBuilder("postgres:16-alpine")
+            .WithDatabase("auth_remembered_tests")
+            .Build();
+        await postgreSql.StartAsync();
+
+        await using ServiceProvider provider = CreateProvider(
+            "PostgreSql",
+            postgreSql.GetConnectionString(),
+            AuthProfile.Global(),
+            rememberedBrowser: true);
+        await MigrateAsync(provider);
+
+        Member member = Member.Create(
+            new MemberId(Guid.NewGuid()),
+            "global",
+            "remembered-integration@example.com",
+            MemberUsernameType.Email,
+            "password-hash",
+            new MemberUsernameId(Guid.NewGuid()),
+            Guid.NewGuid(),
+            Now).Value;
+        MemberSession original = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "original-refresh-hash",
+            Now.AddDays(30),
+            Now,
+            authenticationEvidence: SessionAuthenticationEvidence.Password(Now),
+            absoluteExpiresAtUtc: Now.AddDays(90)).Value;
+
+        await using (AsyncServiceScope seedScope = provider.CreateAsyncScope())
+        {
+            AuthDbContext dbContext = seedScope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            dbContext.Members.Add(member);
+            await dbContext.SaveChangesAsync();
+        }
+
+        Guid rememberOperationId = Guid.NewGuid();
+        Guid selectOperationId = Guid.NewGuid();
+        string deviceCredential;
+        Guid proofId;
+        MemberSessionId selectedSessionId;
+        string selectedRefreshToken;
+        string recoveredRefreshToken;
+        long selectExpectedGeneration;
+
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            IRequestDispatcher dispatcher = scope.ServiceProvider.GetRequiredService<IRequestDispatcher>();
+            RememberedBrowserRequestContext request = scope.ServiceProvider.GetRequiredService<RememberedBrowserRequestContext>();
+            request.IsRememberedOperation = true;
+            request.IsBrowserTransport = true;
+
+            Result<RememberedBrowserCompletion> bootstrap = await dispatcher.SendAsync(
+                new RememberedBrowserCommand(new(
+                    RememberedBrowserOperationKind.Device,
+                    Guid.Empty,
+                    0,
+                    member.Id.Value,
+                    original.Id.Value)),
+                CancellationToken.None);
+            Assert.True(bootstrap.IsSuccess);
+            Assert.Equal(RememberedBrowserOutcome.Applied, bootstrap.Value.Response.Outcome);
+            deviceCredential = Assert.IsType<string>(bootstrap.Value.DeviceCredential);
+            request.DeviceCredential = deviceCredential;
+
+            RememberedBrowserCurrentResponse current = await scope.ServiceProvider
+                .GetRequiredService<IRememberedBrowserService>()
+                .CurrentAsync(CancellationToken.None);
+            Result<RememberedBrowserCompletion> remembered = await dispatcher.SendAsync(
+                new RememberedBrowserCommand(new(
+                    RememberedBrowserOperationKind.Remember,
+                    rememberOperationId,
+                    current.Generation,
+                    member.Id.Value,
+                    original.Id.Value,
+                    Pin: "482619",
+                    Label: "Integration account",
+                    Consent: true)),
+                CancellationToken.None);
+            Assert.True(remembered.IsSuccess);
+            Assert.Equal(RememberedBrowserOutcome.Applied, remembered.Value.Response.Outcome);
+            proofId = Assert.IsType<Guid>(remembered.Value.Response.Current.Active!.ProofId);
+
+            current = await scope.ServiceProvider.GetRequiredService<IRememberedBrowserService>()
+                .CurrentAsync(CancellationToken.None);
+            Result<RememberedBrowserCompletion> lockBeforeSelect = await dispatcher.SendAsync(
+                new RememberedBrowserCommand(new(
+                    RememberedBrowserOperationKind.Lock,
+                    Guid.NewGuid(),
+                    current.Generation)),
+                CancellationToken.None);
+            Assert.True(lockBeforeSelect.IsSuccess);
+            Assert.Equal(RememberedBrowserOutcome.Applied, lockBeforeSelect.Value.Response.Outcome);
+
+            current = await scope.ServiceProvider.GetRequiredService<IRememberedBrowserService>()
+                .CurrentAsync(CancellationToken.None);
+            selectExpectedGeneration = current.Generation;
+            Result<RememberedBrowserCompletion> selected = await dispatcher.SendAsync(
+                new RememberedBrowserCommand(new(
+                    RememberedBrowserOperationKind.Select,
+                    selectOperationId,
+                    selectExpectedGeneration,
+                    ProofId: proofId,
+                    Pin: "482619")),
+                CancellationToken.None);
+            Assert.True(selected.IsSuccess);
+            Assert.Equal(RememberedBrowserOutcome.Applied, selected.Value.Response.Outcome);
+            selectedSessionId = new(selected.Value.Response.Current.Active!.SessionId);
+            selectedRefreshToken = Assert.IsType<string>(selected.Value.RefreshToken);
+
+            RememberedBrowserOperationResponse receipt = await scope.ServiceProvider
+                .GetRequiredService<IRememberedBrowserService>()
+                .OutcomeAsync(selectOperationId, CancellationToken.None);
+            Assert.Equal(RememberedBrowserOutcome.Applied, receipt.Outcome);
+            Assert.Null(receipt.AccessToken);
+
+            current = await scope.ServiceProvider.GetRequiredService<IRememberedBrowserService>()
+                .CurrentAsync(CancellationToken.None);
+            Result<RememberedBrowserCompletion> recovered = await dispatcher.SendAsync(
+                new RememberedBrowserCommand(new(
+                    RememberedBrowserOperationKind.Recover,
+                    selectOperationId,
+                    selectExpectedGeneration,
+                    Pin: "482619")),
+                CancellationToken.None);
+            Assert.True(recovered.IsSuccess);
+            Assert.Equal(RememberedBrowserOutcome.Applied, recovered.Value.Response.Outcome);
+            Assert.Equal(selectedSessionId.Value, recovered.Value.Response.Current.Active!.SessionId);
+            recoveredRefreshToken = Assert.IsType<string>(recovered.Value.RefreshToken);
+        }
+
+        Assert.NotEqual(selectedRefreshToken, recoveredRefreshToken);
+
+        await using (AsyncServiceScope readScope = provider.CreateAsyncScope())
+        {
+            Member persisted = Assert.IsType<Member>(await readScope.ServiceProvider
+                .GetRequiredService<IMemberRepository>()
+                .GetByIdAsync(member.Id, CancellationToken.None));
+            Assert.True(persisted.Sessions.Single(session => session.Id == selectedSessionId).IsActive);
+        }
+
+        await using AsyncServiceScope firstRaceScope = provider.CreateAsyncScope();
+        await using AsyncServiceScope secondRaceScope = provider.CreateAsyncScope();
+        RememberedBrowserRequestContext firstRaceRequest = firstRaceScope.ServiceProvider
+            .GetRequiredService<RememberedBrowserRequestContext>();
+        RememberedBrowserRequestContext secondRaceRequest = secondRaceScope.ServiceProvider
+            .GetRequiredService<RememberedBrowserRequestContext>();
+        firstRaceRequest.DeviceCredential = deviceCredential;
+        firstRaceRequest.IsRememberedOperation = true;
+        firstRaceRequest.IsBrowserTransport = true;
+        secondRaceRequest.DeviceCredential = deviceCredential;
+        secondRaceRequest.IsRememberedOperation = true;
+        secondRaceRequest.IsBrowserTransport = true;
+        long raceGeneration = (await firstRaceScope.ServiceProvider.GetRequiredService<IRememberedBrowserService>()
+            .CurrentAsync(CancellationToken.None)).Generation;
+        IRequestDispatcher firstDispatcher = firstRaceScope.ServiceProvider.GetRequiredService<IRequestDispatcher>();
+        IRequestDispatcher secondDispatcher = secondRaceScope.ServiceProvider.GetRequiredService<IRequestDispatcher>();
+        Result<RememberedBrowserCompletion>[] race = await Task.WhenAll(
+            firstDispatcher.SendAsync(new RememberedBrowserCommand(new(
+                RememberedBrowserOperationKind.Lock, Guid.NewGuid(), raceGeneration)), CancellationToken.None),
+            secondDispatcher.SendAsync(new RememberedBrowserCommand(new(
+                RememberedBrowserOperationKind.Lock, Guid.NewGuid(), raceGeneration)), CancellationToken.None));
+        Assert.Equal(1, race.Count(result => result.IsSuccess && result.Value.Response.Outcome == RememberedBrowserOutcome.Applied));
+        Assert.Equal(1, race.Count(result => result.IsSuccess && result.Value.Response.Outcome == RememberedBrowserOutcome.StateChanged));
+    }
+
+    [DockerFact]
+    public async Task PostgreSql_retention_removes_expired_remembered_records_and_cascaded_receipts()
+    {
+        await using PostgreSqlContainer postgreSql = new PostgreSqlBuilder("postgres:16-alpine")
+            .WithDatabase("auth_remembered_retention_tests")
+            .Build();
+        await postgreSql.StartAsync();
+
+        await using ServiceProvider provider = CreateProvider(
+            "PostgreSql",
+            postgreSql.GetConnectionString(),
+            AuthProfile.Global(),
+            rememberedBrowser: true);
+        await MigrateAsync(provider);
+
+        Guid expiredDeviceId = Guid.NewGuid();
+        Guid activeDeviceId = Guid.NewGuid();
+        Guid expiredProofId = Guid.NewGuid();
+        Guid expiredOperationId = Guid.NewGuid();
+        Guid activeOperationId = Guid.NewGuid();
+        await using (AsyncServiceScope seedScope = provider.CreateAsyncScope())
+        {
+            AuthDbContext dbContext = seedScope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            dbContext.RememberedBrowserDevices.AddRange(
+                new RememberedBrowserDevice
+                {
+                    Id = expiredDeviceId,
+                    ScopeId = "global",
+                    CredentialHash = new string('a', 64),
+                    RestoreEpoch = 1,
+                    State = RememberedBrowserState.Revoked,
+                    PinDigits = 6,
+                    CreatedAtUtc = Now.AddDays(-2),
+                    ExpiresAtUtc = Now.AddHours(-1),
+                },
+                new RememberedBrowserDevice
+                {
+                    Id = activeDeviceId,
+                    ScopeId = "global",
+                    CredentialHash = new string('b', 64),
+                    RestoreEpoch = 1,
+                    State = RememberedBrowserState.Locked,
+                    PinDigits = 6,
+                    CreatedAtUtc = Now.AddHours(-1),
+                    ExpiresAtUtc = Now.AddDays(1),
+                });
+            dbContext.RememberedAccountProofs.Add(new RememberedAccountProof
+            {
+                Id = expiredProofId,
+                ScopeId = "global",
+                DeviceId = activeDeviceId,
+                MemberId = Guid.NewGuid(),
+                OriginalSessionId = Guid.NewGuid(),
+                SecurityEpoch = 1,
+                PinHash = "expired-pin-hash",
+                PepperVersion = "integration",
+                CreatedAtUtc = Now.AddDays(-2),
+                AuthenticatedAtUtc = Now.AddDays(-2),
+                ExpiresAtUtc = Now.AddHours(-1),
+            });
+            dbContext.RememberedBrowserOperations.AddRange(
+                new RememberedBrowserOperationReceipt
+                {
+                    DeviceId = expiredDeviceId,
+                    OperationId = expiredOperationId,
+                    ScopeId = "global",
+                    Kind = RememberedBrowserOperationKind.Lock,
+                    ExpectedGeneration = 1,
+                    ResultGeneration = 2,
+                    Outcome = RememberedBrowserOutcome.Applied,
+                    CreatedAtUtc = Now.AddHours(-1),
+                },
+                new RememberedBrowserOperationReceipt
+                {
+                    DeviceId = activeDeviceId,
+                    OperationId = activeOperationId,
+                    ScopeId = "global",
+                    Kind = RememberedBrowserOperationKind.Lock,
+                    ExpectedGeneration = 1,
+                    ResultGeneration = 2,
+                    Outcome = RememberedBrowserOutcome.Applied,
+                    CreatedAtUtc = Now.AddHours(-1),
+                });
+            await dbContext.SaveChangesAsync();
+        }
+
+        AuthRetentionService retention = new(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            new FixedClock(),
+            Options.Create(new AuthRetentionOptions
+            {
+                Enabled = true,
+                BatchSize = 1,
+                MaxBatchesPerCategoryPerCycle = 10,
+                IntervalMinutes = 60,
+            }),
+            NullLogger<AuthRetentionService>.Instance);
+        await retention.CleanupAsync(CancellationToken.None);
+
+        await using AsyncServiceScope readScope = provider.CreateAsyncScope();
+        AuthDbContext read = readScope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        Assert.DoesNotContain(expiredDeviceId, await read.RememberedBrowserDevices.Select(value => value.Id).ToArrayAsync());
+        Assert.Contains(activeDeviceId, await read.RememberedBrowserDevices.Select(value => value.Id).ToArrayAsync());
+        Assert.DoesNotContain(expiredProofId, await read.RememberedAccountProofs.Select(value => value.Id).ToArrayAsync());
+        Assert.DoesNotContain(expiredOperationId, await read.RememberedBrowserOperations.Select(value => value.OperationId).ToArrayAsync());
+        Assert.Contains(activeOperationId, await read.RememberedBrowserOperations.Select(value => value.OperationId).ToArrayAsync());
     }
 
     private static async Task RunScopeAwareAttemptLimiterScenarioAsync(
@@ -350,16 +628,28 @@ public sealed class AuthPostgreSqlIntegrationTests
     private static ServiceProvider CreateProvider(
         string providerName,
         string connectionString,
-        AuthProfile? profile = null)
+        AuthProfile? profile = null,
+        bool rememberedBrowser = false)
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder();
-        builder.Configuration.AddInMemoryCollection(
+        List<KeyValuePair<string, string?>> settings =
         [
             new("Auth:FailedLoginLimit", "2"),
             new("Auth:FailedLoginWindowMinutes", "15"),
             new("Persistence:Provider", providerName),
             new($"ConnectionStrings:{providerName}", connectionString),
-        ]);
+        ];
+        if (rememberedBrowser)
+        {
+            settings.Add(new("Auth:RememberedBrowser:Enabled", "true"));
+            settings.Add(new("Auth:RememberedBrowser:RestoreEpoch", "1"));
+            settings.Add(new("Auth:RememberedBrowser:PepperVersion", "integration"));
+            settings.Add(new(
+                "Auth:RememberedBrowser:Pepper",
+                Convert.ToBase64String(new byte[32])));
+        }
+
+        builder.Configuration.AddInMemoryCollection(settings);
         profile ??= AuthProfile.Global("global");
         if (profile.RequiresScopeContext)
         {
@@ -371,6 +661,8 @@ public sealed class AuthPostgreSqlIntegrationTests
         builder.AddMessagingInfrastructure();
         builder.Services.AddAuthApplication(builder.Configuration, profile);
         builder.Services.AddSingleton<IRefreshTokenHashingService, TestHashingService>();
+        builder.Services.AddSingleton<IPasswordHashingService, TestPasswordHashingService>();
+        builder.Services.AddSingleton<ITokenService, TestTokenService>();
         builder.Services.AddSingleton<IPasswordRecoveryTokenService, ConcurrentRecoveryTokenService>();
         builder.Services.AddSingleton<ISystemClock, FixedClock>();
         builder.AddAuthPersistence(profile);
@@ -707,6 +999,27 @@ public sealed class AuthPostgreSqlIntegrationTests
 
         public IReadOnlyList<string> GetCandidateHashes(string refreshToken) =>
             [this.HashRefreshToken(refreshToken)];
+    }
+
+    private sealed class TestPasswordHashingService : IPasswordHashingService
+    {
+        public string HashPassword(string password) => $"test-password-hash:{password}";
+
+        public PasswordVerificationOutcome VerifyPassword(string passwordHash, string password) =>
+            string.Equals(passwordHash, this.HashPassword(password), StringComparison.Ordinal)
+                ? PasswordVerificationOutcome.Success
+                : PasswordVerificationOutcome.Unknown;
+    }
+
+    private sealed class TestTokenService : ITokenService
+    {
+        public string GenerateAccessToken(AccessTokenClaims claims) => $"test-access-token:{claims.SessionId.Value:N}";
+
+        public string GenerateRefreshToken() => Guid.NewGuid().ToString("N");
+
+        public MemberId? GetMemberId(string accessToken, bool validateLifetime) => null;
+
+        public AccessTokenClaims? GetAccessTokenClaims(string accessToken, bool validateLifetime) => null;
     }
 
     private sealed class ConcurrentRecoveryTokenService : IPasswordRecoveryTokenService

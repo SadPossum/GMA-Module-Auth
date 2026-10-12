@@ -7,4 +7,5 @@ public static class AuthenticationContextReferences
     public const string MultiFactor = "urn:gma:acr:mfa";
     public const string TwoStep = "urn:gma:acr:two-step";
     public const string Legacy = "urn:gma:acr:legacy";
+    public const string DevicePin = "urn:gma:acr:device-pin";
 }

@@ -12,6 +12,7 @@ using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Persistence.Repositories;
+using Gma.Modules.Auth.Persistence.Remembered;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,6 +33,17 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(profile);
 
         builder.Services.AddAuthScopeContext(profile);
+        builder.Services.AddOptions<RememberedBrowserOptions>()
+            .Bind(builder.Configuration.GetSection(RememberedBrowserOptions.SectionName))
+            .Validate(value => value.IsValid(), "Remembered-browser configuration is invalid.")
+            .ValidateOnStart();
+        builder.Services.TryAddScoped<RememberedBrowserRequestContext>();
+        builder.Services.TryAddSingleton<RememberedPinKdfCapacity>();
+        builder.Services.TryAddScoped<RememberedPinHasher>();
+        builder.Services.TryAddScoped<IRememberedBrowserAccountProfileReader, EmptyRememberedBrowserAccountProfileReader>();
+        builder.Services.TryAddScoped<RememberedBrowserService>();
+        builder.Services.TryAddScoped<IRememberedBrowserService>(services => services.GetRequiredService<RememberedBrowserService>());
+        builder.Services.TryAddScoped<IAuthRememberedSessionAdmissionReader, AuthRememberedSessionAdmissionReader>();
         builder.Services.AddPersistenceOptions(builder.Configuration);
         AuthRetentionOptions retentionOptions = builder.Configuration
             .GetSection(AuthRetentionOptions.SectionName)

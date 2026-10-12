@@ -30,6 +30,7 @@ public sealed partial class Member : ScopedAggregateRoot<MemberId>
     public string? PasswordHash { get; private set; }
     public bool HasPassword => this.PasswordHash is not null;
     public Guid ConcurrencyStamp { get; private set; }
+    public long SecurityEpoch { get; private set; } = 1;
     public MemberStatus Status { get; private set; } = MemberStatus.Active;
     public DateTimeOffset RegisteredAtUtc { get; private set; }
     public DateTimeOffset? DisabledAtUtc { get; private set; }
@@ -221,6 +222,7 @@ public sealed partial class Member : ScopedAggregateRoot<MemberId>
         }
 
         this.Status = MemberStatus.Disabled;
+        this.InvalidateRememberedAccounts();
         this.DisabledAtUtc = nowUtc;
         this.DisabledReason = trimmedReason;
         this.Touch();
@@ -292,6 +294,12 @@ public sealed partial class Member : ScopedAggregateRoot<MemberId>
             : Result.Failure(AuthDomainErrors.MemberStatusUnknown);
 
     private void Touch() => this.ConcurrencyStamp = Guid.CreateVersion7();
+
+    public void InvalidateRememberedAccounts()
+    {
+        this.SecurityEpoch = checked(this.SecurityEpoch + 1);
+        this.Touch();
+    }
 
     private static Result<Member> CreateCore(
         MemberId id,

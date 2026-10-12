@@ -44,6 +44,8 @@ public sealed partial class AuthModule(AuthProfile profile) : IModule
     {
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupFilter, AuthNoStoreStartupFilter>());
+        builder.Services.AddDataProtection();
+        builder.Services.TryAddScoped<RememberedBrowserHttpSecurity>();
         AddProfileServices(builder, this.profile);
         builder.Services.AddAuthApplication(builder.Configuration, this.profile);
         builder.Services.AddAuthInfrastructure(builder.Configuration);
@@ -63,6 +65,7 @@ public sealed partial class AuthModule(AuthProfile profile) : IModule
         this.MapMultiFactorEndpoints(group, requireScope);
 
         this.MapBrowserEndpoints(group, requireScope);
+        MapRememberedBrowserEndpoints(group, requireScope);
 
         foreach (IAuthEndpointContributor contributor in endpoints.ServiceProvider.GetServices<IAuthEndpointContributor>())
         {

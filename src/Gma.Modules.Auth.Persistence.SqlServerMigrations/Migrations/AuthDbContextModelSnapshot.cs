@@ -179,6 +179,11 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("nvarchar(128)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<long>("SecurityEpoch")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
+
                     b.Property<int>("Status")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
@@ -234,6 +239,12 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid?>("RememberedBrowserDeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("RememberedBrowserGeneration")
+                        .HasColumnType("bigint");
 
                     b.Property<DateTimeOffset?>("RevokedAtUtc")
                         .HasColumnType("datetimeoffset");
@@ -525,6 +536,21 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<DateTimeOffset?>("RememberedAbsoluteExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("RememberedAccountProofId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("RememberedBrowserDeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("RememberedBrowserGeneration")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("RememberedSecurityEpoch")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("ScopeId")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -765,6 +791,177 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     b.ToTable("external_authentication_exchanges", "auth");
                 });
 
+            modelBuilder.Entity("Gma.Modules.Auth.Persistence.Remembered.RememberedAccountProof", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("AuthenticatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OriginalSessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PepperVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("PinHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long>("SecurityEpoch")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("DeviceId", "MemberId")
+                        .IsUnique();
+
+                    b.HasIndex("ScopeId", "MemberId");
+
+                    b.ToTable("remembered_account_proofs", "auth");
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Persistence.Remembered.RememberedBrowserDevice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ActiveMemberId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ActiveProofId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ActiveSessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CredentialHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Generation")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("IdleExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("PinDigits")
+                        .HasColumnType("int");
+
+                    b.Property<long>("RestoreEpoch")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CredentialHash")
+                        .IsUnique();
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.ToTable("remembered_browser_devices", "auth");
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Persistence.Remembered.RememberedBrowserOperationReceipt", b =>
+                {
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("ExpectedGeneration")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("MemberId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("ProofId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ResultGeneration")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("DeviceId", "OperationId");
+
+                    b.HasIndex("ScopeId", "MemberId");
+
+                    b.ToTable("remembered_browser_operations", "auth");
+                });
+
             modelBuilder.Entity("Gma.Modules.Auth.Domain.Aggregates.MemberAuthenticationChallenge", b =>
                 {
                     b.HasOne("Gma.Modules.Auth.Domain.Aggregates.Member", null)
@@ -833,6 +1030,24 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     b.HasOne("Gma.Modules.Auth.Domain.Aggregates.Member", null)
                         .WithMany("Usernames")
                         .HasForeignKey("MemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Persistence.Remembered.RememberedAccountProof", b =>
+                {
+                    b.HasOne("Gma.Modules.Auth.Persistence.Remembered.RememberedBrowserDevice", null)
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Gma.Modules.Auth.Persistence.Remembered.RememberedBrowserOperationReceipt", b =>
+                {
+                    b.HasOne("Gma.Modules.Auth.Persistence.Remembered.RememberedBrowserDevice", null)
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

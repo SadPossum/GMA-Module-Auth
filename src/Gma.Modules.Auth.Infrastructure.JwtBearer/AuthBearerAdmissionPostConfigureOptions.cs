@@ -79,6 +79,19 @@ internal sealed class AuthBearerAdmissionPostConfigureOptions(
             if (!isActive)
             {
                 context.Fail(AdmissionFailure);
+                return;
+            }
+
+            IAuthRememberedSessionAdmissionReader? remembered = context.HttpContext.RequestServices
+                .GetService<IAuthRememberedSessionAdmissionReader>();
+            if (remembered is not null)
+            {
+                string? credential = context.HttpContext.Request.Cookies[RememberedBrowserHttp.DeviceCookieName];
+                if (!await remembered.IsAdmittedAsync(normalizedScopeId, memberId, sessionId, credential,
+                    context.HttpContext.RequestAborted).ConfigureAwait(false))
+                {
+                    context.Fail(AdmissionFailure);
+                }
             }
         };
     }

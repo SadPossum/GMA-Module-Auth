@@ -6,6 +6,7 @@ using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
 using Gma.Modules.Auth.Application.Commands;
 using Gma.Modules.Auth.Application.Security;
+using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
@@ -23,7 +24,8 @@ internal sealed class CompleteMultiFactorChallengeCommandHandler(
     IRefreshTokenHashingService refreshTokenHashingService,
     IOptions<AuthApplicationOptions> options,
     ISystemClock clock,
-    IIdGenerator idGenerator)
+    IIdGenerator idGenerator,
+    IRememberedBrowserService? remembered = null)
     : AuthCommandHandlerBase(tokenService, refreshTokenHashingService, clock, idGenerator),
         ICommandHandler<CompleteMultiFactorChallengeCommand, MultiFactorChallengeCompletion>
 {
@@ -38,6 +40,12 @@ internal sealed class CompleteMultiFactorChallengeCommandHandler(
             .ConfigureAwait(false);
         DateTimeOffset challengeCheckedAtUtc = this.Clock.UtcNow;
         if (challenge is null || !challenge.IsActiveAt(challengeCheckedAtUtc))
+        {
+            return Result.Failure<MultiFactorChallengeCompletion>(AuthApplicationErrors.MultiFactorChallengeInvalid);
+        }
+
+        if (remembered is not null &&
+            !await remembered.AdmitChallengeAsync(challenge, cancellationToken).ConfigureAwait(false))
         {
             return Result.Failure<MultiFactorChallengeCompletion>(AuthApplicationErrors.MultiFactorChallengeInvalid);
         }

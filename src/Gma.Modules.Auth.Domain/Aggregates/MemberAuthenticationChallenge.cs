@@ -63,6 +63,20 @@ public sealed class MemberAuthenticationChallenge : ScopedAggregateRoot<MemberAu
     public DateTimeOffset? ConsumedAtUtc { get; private set; }
     public DateTimeOffset? RevokedAtUtc { get; private set; }
     public Guid ConcurrencyStamp { get; private set; }
+    public Guid? RememberedBrowserDeviceId { get; private set; }
+    public long? RememberedBrowserGeneration { get; private set; }
+
+    public void BindRememberedBrowser(Guid deviceId, long generation)
+    {
+        if (deviceId == Guid.Empty || generation <= 0 || this.RememberedBrowserDeviceId is not null)
+        {
+            throw new InvalidOperationException("A challenge can only be bound to one remembered browser.");
+        }
+
+        this.RememberedBrowserDeviceId = deviceId;
+        this.RememberedBrowserGeneration = generation;
+        this.Touch();
+    }
     public SessionAuthenticationEvidence PrimaryEvidence => new(
         this.PrimaryAuthenticationContextReference,
         this.primaryAuthenticationMethodReferences,

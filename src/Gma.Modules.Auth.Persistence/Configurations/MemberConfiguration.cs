@@ -12,6 +12,7 @@ internal sealed class MemberConfiguration : IEntityTypeConfiguration<Member>
     {
         builder.ToTable("members");
         builder.HasKey(member => member.Id);
+        builder.Property(member => member.SecurityEpoch).HasDefaultValue(1L).IsRequired();
 
         builder.Property(member => member.Id)
             .HasConversion(id => id.Value, value => new MemberId(value));
