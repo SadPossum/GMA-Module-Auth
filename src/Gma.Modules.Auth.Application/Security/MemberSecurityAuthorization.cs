@@ -45,4 +45,8 @@ internal static class MemberSecurityAuthorization
             ? Result.Success()
             : Result.Failure(AuthApplicationErrors.CredentialsNotValid);
     }
+
+    public static bool IsSupportedPrimaryAuthenticationContext(string contextReference) =>
+        string.Equals(contextReference, AuthenticationContextReferences.Password, StringComparison.Ordinal) ||
+        string.Equals(contextReference, AuthenticationContextReferences.External, StringComparison.Ordinal);
 }

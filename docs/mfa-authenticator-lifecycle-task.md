@@ -126,13 +126,14 @@ Bearer routes use refresh proof in the request. Browser routes use the existing 
 | Method | Route | Result |
 | --- | --- | --- |
 | `GET` | `/api/auth/mfa` | Active/pending state, recovery-code count, and lifecycle timestamps. |
+| `POST` | `/api/auth/step-up/mfa` | Prove password plus TOTP/recovery, rotate the current session, and establish fresh MFA evidence. |
 | `POST` | `/api/auth/mfa/totp/enrollment` | Begin or replace an expired pending enrollment. |
 | `POST` | `/api/auth/mfa/totp/activate` | Activate, rotate the session, and return tokens plus recovery codes once. |
 | `POST` | `/api/auth/mfa/challenges/complete` | Complete a password or external primary challenge with TOTP or recovery code. |
 | `POST` | `/api/auth/mfa/recovery-codes/regenerate` | Replace all recovery codes after fresh factor proof. |
 | `POST` | `/api/auth/mfa/totp/disable` | Disable after fresh factor proof and revoke sessions. |
 
-Equivalent browser routes live under `/api/auth/browser/mfa`. Public responses use one generic invalid-factor/challenge error so callers cannot distinguish expired challenges, exhausted attempts, unknown members, stale codes, consumed codes, or TOTP replay.
+Equivalent authenticator-management browser routes live under `/api/auth/browser/mfa`; session step-up uses `/api/auth/browser/step-up/mfa`. Public responses use one generic invalid-proof response for password/factor mismatch and one generic invalid-factor/challenge response for the other ceremonies, so callers cannot distinguish exhausted attempts, stale codes, consumed codes, or TOTP replay.
 
 All secret-bearing responses set `Cache-Control: no-store` and `Pragma: no-cache`. OpenAPI marks secret, code, challenge-token, and recovery-code fields as write-only or sensitive where supported.
 

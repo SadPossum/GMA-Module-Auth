@@ -94,3 +94,17 @@ Those capabilities build on this foundation in later Auth slices.
 - No access token can gain stronger or fresher evidence merely through refresh.
 - The full Auth, Framework, Skeleton, and consumer verification lanes pass.
 - Follow-up MFA/passkey work can supply validated evidence without changing the core assurance model.
+
+## Multi-Factor Session Step-Up Follow-Up
+
+The later TOTP lifecycle slice adds an explicit recovery path for product policies that require recent `urn:gma:acr:mfa`:
+
+- bearer and browser clients can reauthenticate the exact current session through `/api/auth/step-up/mfa`;
+- the command requires the current refresh generation, current password, and a TOTP or one-time recovery code in one transaction;
+- password and factor attempts use distinct rate-limit partitions, and invalid factor attempts use a distinct durable step-up history partition;
+- refresh-token replay is detected before a one-time factor is consumed and retains all-session revocation;
+- successful completion rotates refresh material, resets the absolute session bound, and records password-plus-factor evidence at the completion time;
+- factor-only authenticator management preserves prior `acr`, `amr`, `auth_time`, and absolute session expiry;
+- external-only accounts fail explicitly until a provider adapter implements and validates provider-specific reauthentication.
+
+Product modules still choose accepted contexts and freshness windows. Auth supplies trustworthy evidence and a usable password-backed recovery ceremony; it does not activate a product-wide privileged-operation policy.

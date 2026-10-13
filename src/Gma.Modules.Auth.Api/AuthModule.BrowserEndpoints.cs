@@ -149,6 +149,42 @@ public sealed partial class AuthModule
         passwordStepUp.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
         RequireScopeWhenNeeded(passwordStepUp, requireScope);
 
+        RouteHandlerBuilder multiFactorStepUp = browser.MapPost("/step-up/mfa", async (
+            BrowserMultiFactorStepUpRequest request,
+            ClaimsPrincipal user,
+            HttpContext httpContext,
+            IAuthScopeContext scopeContext,
+            IRequestDispatcher dispatcher,
+            IOptions<AuthApplicationOptions> options,
+            CancellationToken cancellationToken) =>
+        {
+            if (!this.TokenTenantMatches(user, scopeContext) ||
+                GetMemberId(user) is not { } memberId ||
+                GetSessionId(user) is not { } sessionId ||
+                !TryGetBrowserCookie(httpContext, BrowserRefreshCookieName, out string? refreshToken))
+            {
+                return Results.Unauthorized();
+            }
+
+            Result<MultiFactorStepUpCompletion> result = await dispatcher.SendAsync(
+                new StepUpWithMultiFactorCommand(
+                    memberId,
+                    sessionId,
+                    request.Password,
+                    request.CodeType,
+                    request.Code,
+                    refreshToken),
+                cancellationToken).ConfigureAwait(false);
+            return ToBrowserMultiFactorStepUpResult(
+                result,
+                httpContext,
+                options.Value.RefreshTokenLifetimeDays);
+        })
+            .RequireAuthorization();
+        multiFactorStepUp.Produces<BrowserAuthResponse>(StatusCodes.Status200OK);
+        multiFactorStepUp.Produces(StatusCodes.Status401Unauthorized);
+        RequireScopeWhenNeeded(multiFactorStepUp, requireScope);
+
         RouteHandlerBuilder setPassword = browser.MapPut("/password", async (
             BrowserSetPasswordRequest request,
             ClaimsPrincipal user,
