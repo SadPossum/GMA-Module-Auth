@@ -1,9 +1,10 @@
 namespace Gma.Modules.Auth.Persistence.Remembered;
 
+using Gma.Framework.Domain;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Application.Ports;
 
-internal sealed class RememberedBrowserDevice
+internal sealed class RememberedBrowserDevice : IScopedEntity
 {
     public Guid Id { get; set; }
     public string ScopeId { get; set; } = string.Empty;
@@ -24,7 +25,7 @@ internal sealed class RememberedBrowserDevice
     public void Touch() => this.ConcurrencyStamp = Guid.CreateVersion7();
 }
 
-internal sealed class RememberedAccountProof
+internal sealed class RememberedAccountProof : IScopedEntity
 {
     public Guid Id { get; set; }
     public string ScopeId { get; set; } = string.Empty;
@@ -41,7 +42,7 @@ internal sealed class RememberedAccountProof
     public DateTimeOffset? RevokedAtUtc { get; set; }
 }
 
-internal sealed class RememberedBrowserOperationReceipt
+internal sealed class RememberedBrowserOperationReceipt : IScopedEntity
 {
     public Guid DeviceId { get; set; }
     public Guid OperationId { get; set; }
