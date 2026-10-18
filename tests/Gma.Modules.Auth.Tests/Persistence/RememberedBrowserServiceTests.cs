@@ -204,7 +204,8 @@ public sealed class RememberedBrowserServiceTests
             this.capacity = new(this.Settings);
             this.Service = new(this.Db, this.request, scope, this.Settings, Options.Create(new AuthApplicationOptions()),
                 new MemberRepository(this.Db, this.Clock), new(this.Settings, new FastTestPasswordHasher(), this.capacity),
-                new ProcessLocalAuthenticationAttemptLimiter(), new TestTokens(), new TestRefreshHashes(), this.Clock);
+                new ProcessLocalAuthenticationAttemptLimiter(), new TestTokens(), new TestRefreshHashes(), this.Clock,
+                new EmptyRememberedBrowserAccountProfileReader());
         }
 
         public static async Task<Harness> CreateAsync()
