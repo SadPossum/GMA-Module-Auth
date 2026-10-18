@@ -151,7 +151,8 @@ public sealed class MultiFactorAuthenticationFlowTests
             "hash:old-refresh",
             Now.AddDays(1),
             Now,
-            authenticationEvidence: SessionAuthenticationEvidence.Password(Now)).Value;
+            MemberAuthenticationMethods.External("google"),
+            SessionAuthenticationEvidence.Password(Now)).Value;
         MemberTotpAuthenticator authenticator = CreatePendingAuthenticator(member);
         dbContext.AddRange(member, authenticator);
         await dbContext.SaveChangesAsync();
@@ -182,7 +183,99 @@ public sealed class MultiFactorAuthenticationFlowTests
         Assert.Equal("new-refresh", result.Value.Response.RefreshToken);
         Assert.Equal("hash:new-refresh", session.RefreshTokenHash);
         Assert.Equal(AuthenticationContextReferences.MultiFactor, session.AuthenticationContextReference);
+        Assert.Equal(
+            [AuthenticationMethodReferences.Password, AuthenticationMethodReferences.OneTimePassword, AuthenticationMethodReferences.MultiFactor],
+            session.AuthenticationMethodReferences);
         Assert.Contains(member.DomainEvents, item => item is MemberAuthenticationMethodChangedDomainEvent);
+    }
+
+    [Fact]
+    public async Task Activation_handles_refresh_replay_before_rejecting_stale_primary_evidence()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreateMember();
+        MemberSession session = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "hash:old-refresh",
+            Now.AddDays(1),
+            Now.AddHours(-2),
+            authenticationEvidence: SessionAuthenticationEvidence.Password(Now.AddHours(-2))).Value;
+        MemberSession otherSession = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "hash:other-refresh",
+            Now.AddDays(1),
+            Now.AddHours(-2)).Value;
+        Assert.True(member.RefreshSession(
+            session.Id,
+            "hash:old-refresh",
+            "hash:current-refresh",
+            Now.AddDays(1),
+            Now.AddHours(-1)).IsSuccess);
+        MemberTotpAuthenticator authenticator = CreatePendingAuthenticator(member);
+        dbContext.AddRange(member, authenticator);
+        await dbContext.SaveChangesAsync();
+        member.ClearDomainEvents();
+        ActivateTotpCommandHandler handler = new(
+            new MemberRepository(dbContext),
+            new MemberTotpAuthenticatorRepository(dbContext),
+            CreateMultiFactorService(dbContext),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
+            Options.Create(new AuthApplicationOptions()),
+            new TestScopeContext(),
+            new FakeClock(),
+            new RandomIdGenerator());
+
+        Result<RefreshTokenBoundCompletion<TotpActivationResponse>> result = await handler.HandleAsync(
+            new ActivateTotpCommand(
+                member.Id.Value,
+                session.Id.Value,
+                FakeTotpProvider.ValidCode,
+                "old-refresh"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.RefreshTokenReuseDetected);
+        Assert.False(session.IsActive);
+        Assert.False(otherSession.IsActive);
+        Assert.False(authenticator.IsActive);
+        Assert.IsType<MemberSessionsRevokedDomainEvent>(
+            Assert.Single(member.DomainEvents.OfType<MemberSessionsRevokedDomainEvent>()));
+    }
+
+    [Fact]
+    public async Task Enrollment_rejects_an_unrecognized_primary_context()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreateMember();
+        MemberSession session = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "hash:old-refresh",
+            Now.AddDays(1),
+            Now,
+            authenticationEvidence: new SessionAuthenticationEvidence(
+                "urn:example:acr:custom",
+                ["urn:example:amr:custom"],
+                Now)).Value;
+        dbContext.Members.Add(member);
+        await dbContext.SaveChangesAsync();
+        BeginTotpEnrollmentCommandHandler handler = new(
+            new MemberRepository(dbContext),
+            new MemberTotpAuthenticatorRepository(dbContext),
+            new FakeTotpProvider(),
+            new FakeSecretProtector(),
+            Options.Create(new AuthApplicationOptions()),
+            new TestScopeContext(),
+            new FakeClock(),
+            new RandomIdGenerator());
+
+        Result<TotpEnrollmentResponse> result = await handler.HandleAsync(
+            new BeginTotpEnrollmentCommand(member.Id.Value, session.Id.Value),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AuthApplicationErrors.FreshAuthenticationRequired, result.Error);
+        Assert.Empty(dbContext.MemberTotpAuthenticators.Local);
     }
 
     [Fact]
@@ -281,6 +374,115 @@ public sealed class MultiFactorAuthenticationFlowTests
             MemberMultiFactorFailureAttempt.ManagementPurpose,
             Now.AddMinutes(-15),
             CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Recovery_code_regeneration_rotates_refresh_without_renewing_authentication_evidence()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreateMember();
+        DateTimeOffset authenticatedAtUtc = Now.AddHours(-6);
+        SessionAuthenticationEvidence evidence = SessionAuthenticationEvidence.CompleteWithTotp(
+            SessionAuthenticationEvidence.Password(authenticatedAtUtc),
+            authenticatedAtUtc);
+        MemberSession session = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "hash:old-refresh",
+            Now.AddDays(1),
+            authenticatedAtUtc,
+            authenticationEvidence: evidence,
+            absoluteExpiresAtUtc: Now.AddDays(2)).Value;
+        DateTimeOffset originalAbsoluteExpiry = session.AbsoluteExpiresAtUtc;
+        MemberTotpAuthenticator authenticator = CreateActiveAuthenticator(member);
+        MemberMultiFactorFailureAttempt priorFailure = MemberMultiFactorFailureAttempt.Create(
+            new MemberMultiFactorFailureAttemptId(Guid.NewGuid()),
+            member.Id,
+            member.ScopeId,
+            MemberMultiFactorFailureAttempt.ManagementPurpose,
+            Now.AddMinutes(-1)).Value;
+        dbContext.AddRange(member, authenticator, priorFailure);
+        await dbContext.SaveChangesAsync();
+        member.ClearDomainEvents();
+        RegenerateMultiFactorRecoveryCodesCommandHandler handler = new(
+            new MemberRepository(dbContext),
+            new MemberTotpAuthenticatorRepository(dbContext),
+            new MemberMultiFactorFailureAttemptRepository(dbContext),
+            CreateMultiFactorService(dbContext),
+            new AllowAllAttemptLimiter(),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
+            Options.Create(new AuthApplicationOptions()),
+            new TestScopeContext(),
+            new FakeClock(),
+            new RandomIdGenerator());
+
+        Result<MultiFactorRecoveryCodeRegenerationCompletion> result = await handler.HandleAsync(
+            new RegenerateMultiFactorRecoveryCodesCommand(
+                member.Id.Value,
+                session.Id.Value,
+                MultiFactorCodeType.Totp,
+                FakeTotpProvider.ValidCode,
+                "old-refresh"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.Succeeded);
+        Assert.Equal("hash:new-refresh", session.RefreshTokenHash);
+        Assert.Equal(evidence.ContextReference, session.AuthenticationContextReference);
+        Assert.Equal(evidence.MethodReferences, session.AuthenticationMethodReferences);
+        Assert.Equal(authenticatedAtUtc, session.AuthenticatedAtUtc);
+        Assert.Equal(originalAbsoluteExpiry, session.AbsoluteExpiresAtUtc);
+        Assert.Empty(member.DomainEvents.OfType<MemberSessionReauthenticatedDomainEvent>());
+        Assert.Equal(0, await new MemberMultiFactorFailureAttemptRepository(dbContext).CountSinceAsync(
+            member.Id,
+            MemberMultiFactorFailureAttempt.ManagementPurpose,
+            Now.AddMinutes(-15),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Disabling_totp_does_not_record_synthetic_reauthentication()
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreateMember();
+        MemberSession session = member.StartSession(
+            new MemberSessionId(Guid.NewGuid()),
+            "hash:old-refresh",
+            Now.AddDays(1),
+            Now.AddHours(-2),
+            authenticationEvidence: SessionAuthenticationEvidence.Password(Now.AddHours(-2))).Value;
+        MemberTotpAuthenticator authenticator = CreateActiveAuthenticator(member);
+        dbContext.AddRange(member, authenticator);
+        await dbContext.SaveChangesAsync();
+        member.ClearDomainEvents();
+        DisableTotpCommandHandler handler = new(
+            new MemberRepository(dbContext),
+            new MemberTotpAuthenticatorRepository(dbContext),
+            new MemberAuthenticationChallengeRepository(dbContext),
+            new MemberMultiFactorFailureAttemptRepository(dbContext),
+            CreateMultiFactorService(dbContext),
+            new AllowAllAttemptLimiter(),
+            new FakeTokenService(),
+            new FakeRefreshTokenHashingService(),
+            Options.Create(new AuthApplicationOptions()),
+            new TestScopeContext(),
+            new FakeClock(),
+            new RandomIdGenerator());
+
+        Result<MultiFactorDisableCompletion> result = await handler.HandleAsync(
+            new DisableTotpCommand(
+                member.Id.Value,
+                session.Id.Value,
+                MultiFactorCodeType.Totp,
+                FakeTotpProvider.ValidCode,
+                "old-refresh"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value.Succeeded);
+        Assert.False(session.IsActive);
+        Assert.Empty(member.DomainEvents.OfType<MemberSessionReauthenticatedDomainEvent>());
     }
 
     [Fact]

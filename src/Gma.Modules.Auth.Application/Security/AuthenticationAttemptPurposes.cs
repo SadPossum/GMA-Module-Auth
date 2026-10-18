@@ -9,4 +9,5 @@ public static class AuthenticationAttemptPurposes
     public const string PasswordRemoval = "password-removal";
     public const string ExternalIdentityUnlink = "external-identity-unlink";
     public const string MultiFactorManagement = "multi-factor-management";
+    public const string MultiFactorStepUp = "multi-factor-step-up";
 }

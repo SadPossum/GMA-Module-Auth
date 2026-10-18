@@ -45,12 +45,24 @@ internal sealed class DisableTotpCommandHandler(
             return Result.Failure<MultiFactorDisableCompletion>(AuthDomainErrors.MemberNotFound);
         }
 
-        MemberSession? session = member.Sessions.FirstOrDefault(item =>
-            item.Id == new MemberSessionId(command.SessionId) && item.IsActive);
+        IReadOnlyList<string> candidateRefreshTokenHashes =
+            this.TokenHashingService.GetCandidateHashes(command.RefreshToken);
+        Result<MemberSession> refreshProof = member.VerifySessionRefreshTokenAndHandleReuse(
+            new MemberSessionId(command.SessionId),
+            candidateRefreshTokenHashes,
+            this.IdGenerator.NewId(),
+            this.Clock.UtcNow);
+        if (refreshProof.IsFailure)
+        {
+            return refreshProof.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(MultiFactorDisableCompletion.ReuseDetected)
+                : Result.Failure<MultiFactorDisableCompletion>(refreshProof.Error);
+        }
+
         MemberTotpAuthenticator? authenticator = await authenticatorRepository
             .GetByMemberAsync(memberId, cancellationToken)
             .ConfigureAwait(false);
-        if (session is null || authenticator is null || !authenticator.IsActive)
+        if (authenticator is null || !authenticator.IsActive)
         {
             return Result.Failure<MultiFactorDisableCompletion>(AuthApplicationErrors.TotpAuthenticatorNotActive);
         }
@@ -89,9 +101,24 @@ internal sealed class DisableTotpCommandHandler(
 
         DateTimeOffset nowUtc = this.Clock.UtcNow;
 
+        refreshProof = member.VerifySessionRefreshTokenAndHandleReuse(
+            new MemberSessionId(command.SessionId),
+            candidateRefreshTokenHashes,
+            this.IdGenerator.NewId(),
+            nowUtc);
+        if (refreshProof.IsFailure)
+        {
+            return refreshProof.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(MultiFactorDisableCompletion.ReuseDetected)
+                : Result.Failure<MultiFactorDisableCompletion>(refreshProof.Error);
+        }
+
         Result<SessionAuthenticationEvidence> factor = multiFactorAuthentication.VerifyFactor(
             authenticator,
-            CreatePrimaryEvidence(session.AuthenticationMethod, nowUtc),
+            new SessionAuthenticationEvidence(
+                refreshProof.Value.AuthenticationContextReference,
+                refreshProof.Value.AuthenticationMethodReferences,
+                refreshProof.Value.AuthenticatedAtUtc),
             command.CodeType,
             command.Code,
             nowUtc);
@@ -117,24 +144,35 @@ internal sealed class DisableTotpCommandHandler(
             return Result.Success(MultiFactorDisableCompletion.Invalid);
         }
 
-        string discardedRefreshToken = this.GenerateRefreshToken();
-        Result<MemberSession> reauthenticated = member.ReauthenticateSession(
-            session.Id,
-            this.TokenHashingService.GetCandidateHashes(command.RefreshToken),
-            this.TokenHashingService.HashRefreshToken(discardedRefreshToken),
-            nowUtc.AddDays(options.Value.RefreshTokenLifetimeDays),
-            nowUtc.AddDays(options.Value.SessionAbsoluteLifetimeDays),
-            factor.Value,
+        DateTimeOffset completedAtUtc = this.Clock.UtcNow;
+        refreshProof = member.VerifySessionRefreshTokenAndHandleReuse(
+            new MemberSessionId(command.SessionId),
+            candidateRefreshTokenHashes,
             this.IdGenerator.NewId(),
-            nowUtc);
-        if (reauthenticated.IsFailure)
+            completedAtUtc);
+        if (refreshProof.IsFailure)
         {
-            return reauthenticated.Error == AuthApplicationErrors.RefreshTokenReused
+            return refreshProof.Error == AuthApplicationErrors.RefreshTokenReused
                 ? Result.Success(MultiFactorDisableCompletion.ReuseDetected)
-                : Result.Failure<MultiFactorDisableCompletion>(reauthenticated.Error);
+                : Result.Failure<MultiFactorDisableCompletion>(refreshProof.Error);
         }
 
-        Result disabled = authenticator.Disable(nowUtc);
+        string discardedRefreshToken = this.GenerateRefreshToken();
+        Result<MemberSession> refreshed = member.RefreshSession(
+            refreshProof.Value.Id,
+            candidateRefreshTokenHashes,
+            this.TokenHashingService.HashRefreshToken(discardedRefreshToken),
+            completedAtUtc.AddDays(options.Value.RefreshTokenLifetimeDays),
+            this.IdGenerator.NewId(),
+            completedAtUtc);
+        if (refreshed.IsFailure)
+        {
+            return refreshed.Error == AuthApplicationErrors.RefreshTokenReused
+                ? Result.Success(MultiFactorDisableCompletion.ReuseDetected)
+                : Result.Failure<MultiFactorDisableCompletion>(refreshed.Error);
+        }
+
+        Result disabled = authenticator.Disable(completedAtUtc);
         if (disabled.IsFailure)
         {
             return Result.Failure<MultiFactorDisableCompletion>(disabled.Error);
@@ -144,26 +182,31 @@ internal sealed class DisableTotpCommandHandler(
             MemberAuthenticationMethods.Totp,
             MemberAuthenticationMethodChange.Removed,
             this.IdGenerator.NewId(),
-            nowUtc);
+            completedAtUtc);
         if (methodChanged.IsFailure)
         {
             return Result.Failure<MultiFactorDisableCompletion>(methodChanged.Error);
         }
 
         IReadOnlyList<MemberAuthenticationChallenge> challenges = await challengeRepository
-            .GetActiveByMemberAsync(memberId, nowUtc, cancellationToken)
+            .GetActiveByMemberAsync(memberId, completedAtUtc, cancellationToken)
             .ConfigureAwait(false);
         foreach (MemberAuthenticationChallenge challenge in challenges)
         {
-            challenge.Revoke(nowUtc);
+            challenge.Revoke(completedAtUtc);
         }
 
-        Result<int> revoked = member.RevokeSessions(this.IdGenerator.NewId(), nowUtc);
+        Result<int> revoked = member.RevokeSessions(this.IdGenerator.NewId(), completedAtUtc);
         if (revoked.IsFailure)
         {
             return Result.Failure<MultiFactorDisableCompletion>(revoked.Error);
         }
 
+        await failureAttemptRepository.ClearBeforeAsync(
+            memberId,
+            MemberMultiFactorFailureAttempt.ManagementPurpose,
+            attemptLease.Value.AcquiredAtUtc,
+            cancellationToken).ConfigureAwait(false);
         await attemptLimiter.RecordSuccessAsync(
             member.ScopeId,
             AuthenticationAttemptPurposes.MultiFactorManagement,
@@ -172,11 +215,4 @@ internal sealed class DisableTotpCommandHandler(
             cancellationToken).ConfigureAwait(false);
         return Result.Success(MultiFactorDisableCompletion.Completed);
     }
-
-    private static SessionAuthenticationEvidence CreatePrimaryEvidence(
-        string authenticationMethod,
-        DateTimeOffset nowUtc) =>
-        string.Equals(authenticationMethod, MemberAuthenticationMethods.Password, StringComparison.Ordinal)
-            ? SessionAuthenticationEvidence.Password(nowUtc)
-            : SessionAuthenticationEvidence.External(nowUtc);
 }

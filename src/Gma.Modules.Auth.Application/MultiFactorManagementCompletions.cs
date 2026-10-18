@@ -41,3 +41,26 @@ public sealed record MultiFactorDisableCompletion
     public bool Succeeded { get; }
     public bool RefreshTokenReuseDetected { get; }
 }
+
+public sealed record MultiFactorStepUpCompletion
+{
+    private MultiFactorStepUpCompletion(
+        bool succeeded,
+        bool refreshTokenReuseDetected,
+        AuthTokensResponse? response)
+    {
+        this.Succeeded = succeeded;
+        this.RefreshTokenReuseDetected = refreshTokenReuseDetected;
+        this.Response = response;
+    }
+
+    public static MultiFactorStepUpCompletion Invalid { get; } = new(false, false, null);
+    public static MultiFactorStepUpCompletion ReuseDetected { get; } = new(false, true, null);
+
+    public bool Succeeded { get; }
+    public bool RefreshTokenReuseDetected { get; }
+    public AuthTokensResponse? Response { get; }
+
+    public static MultiFactorStepUpCompletion Completed(AuthTokensResponse response) =>
+        new(true, false, response ?? throw new ArgumentNullException(nameof(response)));
+}
