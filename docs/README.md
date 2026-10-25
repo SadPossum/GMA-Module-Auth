@@ -64,6 +64,10 @@ its password/token dependencies are registered only when
 readers remain registered and reject retained browser-bound sessions while the
 feature is disabled. Enabling the feature still requires the full Auth
 infrastructure and valid remembered-browser configuration.
+Disabled hosts retain a lightweight service that reports the feature unavailable
+and denies refresh and MFA completion for retained browser-bound credentials.
+Ordinary session and MFA flows remain available. Change the enabled setting only
+with a host restart so service and endpoint composition agree.
 
 Applications that require immediate account and session revocation can opt into
 Auth's online bearer admission:

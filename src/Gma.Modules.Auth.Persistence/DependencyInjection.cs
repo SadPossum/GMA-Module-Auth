@@ -46,6 +46,10 @@ public static class DependencyInjection
             builder.Services.TryAddScoped<RememberedBrowserService>();
             builder.Services.TryAddScoped<IRememberedBrowserService>(services => services.GetRequiredService<RememberedBrowserService>());
         }
+        else
+        {
+            builder.Services.TryAddScoped<IRememberedBrowserService, DisabledRememberedBrowserService>();
+        }
 
         // Admission must still reject retained browser-bound sessions when the
         // interactive browser feature is disabled in a persistence-only host.
