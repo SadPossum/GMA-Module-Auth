@@ -18,6 +18,7 @@ using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Domain.Services;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Modules.Auth.Persistence;
+using Gma.Modules.Auth.Persistence.Remembered;
 using Gma.Modules.Auth.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -105,6 +106,53 @@ public sealed class MultiFactorAuthenticationFlowTests
             session.AuthenticationMethodReferences);
         Assert.NotNull(challenge.ConsumedAtUtc);
         Assert.Equal(42, authenticator.LastAcceptedTimeStep);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Disabled_browser_runtime_preserves_ordinary_MFA_but_rejects_a_bound_challenge(bool browserBound)
+    {
+        await using AuthDbContext dbContext = CreateDbContext();
+        Member member = CreateMember();
+        MemberTotpAuthenticator authenticator = CreateActiveAuthenticator(member);
+        MemberAuthenticationChallenge challenge = MemberAuthenticationChallenge.Create(
+            new(Guid.NewGuid()), member.Id, member.ScopeId, "hash:challenge-token",
+            MemberAuthenticationMethods.Password, SessionAuthenticationEvidence.Password(Now),
+            null, null, 5, Now.AddMinutes(5), Now).Value;
+        if (browserBound)
+        {
+            challenge.BindRememberedBrowser(Guid.NewGuid(), 1);
+        }
+        dbContext.AddRange(member, authenticator, challenge);
+        await dbContext.SaveChangesAsync();
+        CompleteMultiFactorChallengeCommandHandler handler = new(
+            new MemberAuthenticationChallengeRepository(dbContext),
+            new MemberTotpAuthenticatorRepository(dbContext),
+            new MemberRepository(dbContext),
+            CreateMultiFactorService(dbContext),
+            new FakeTokenService(), new FakeRefreshTokenHashingService(),
+            Options.Create(new AuthApplicationOptions()), new FakeClock(), new RandomIdGenerator(),
+            new DisabledRememberedBrowserService(Options.Create(new RememberedBrowserOptions())));
+
+        Result<MultiFactorChallengeCompletion> result = await handler.HandleAsync(
+            new("challenge-token", MultiFactorCodeType.Totp, FakeTotpProvider.ValidCode), CancellationToken.None);
+
+        if (browserBound)
+        {
+            Assert.True(result.IsFailure);
+            Assert.Equal(AuthApplicationErrors.MultiFactorChallengeInvalid, result.Error);
+            Assert.Empty(member.Sessions);
+            Assert.Null(challenge.ConsumedAtUtc);
+        }
+        else
+        {
+            Assert.True(result.IsSuccess);
+            Assert.True(result.Value.Succeeded);
+            Assert.NotNull(result.Value.Tokens);
+            Assert.Single(member.Sessions);
+            Assert.NotNull(challenge.ConsumedAtUtc);
+        }
     }
 
     [Fact]
