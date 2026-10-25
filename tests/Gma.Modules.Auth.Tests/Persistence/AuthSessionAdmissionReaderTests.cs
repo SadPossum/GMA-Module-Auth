@@ -2,6 +2,7 @@ namespace Gma.Modules.Auth.Tests;
 
 using Gma.Framework.Runtime.Time;
 using Gma.Framework.Scoping;
+using Gma.Modules.Auth.Application;
 using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.ValueObjects;
@@ -9,6 +10,7 @@ using Gma.Modules.Auth.Persistence;
 using Gma.Modules.Auth.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 using Xunit;
 using DomainMemberUsernameType = Gma.Modules.Auth.Domain.Enums.MemberUsernameType;
 
@@ -80,6 +82,27 @@ public sealed class AuthSessionAdmissionReaderTests
         Assert.False(await reader.IsActiveAsync("tenant-b", activeMemberId, activeSessionId));
         Assert.False(await reader.IsActiveAsync("tenant-a", Guid.Empty, activeSessionId));
         Assert.False(await reader.IsActiveAsync("tenant-a", activeMemberId, Guid.Empty));
+    }
+
+    [Fact]
+    public async Task Disabling_browser_runtime_rejects_retained_bound_sessions_but_preserves_ordinary_sessions()
+    {
+        await using AuthDbContext db = CreateDbContext(Guid.NewGuid().ToString(), new InMemoryDatabaseRoot(), "tenant-a");
+        Member member = CreateMember(Guid.NewGuid(), "browser-admission@example.test");
+        var ordinary = member.StartSession(new(Guid.NewGuid()), "ordinary-hash", Now.AddHours(1), Now).Value;
+        var bound = member.StartSession(new(Guid.NewGuid()), "bound-hash", Now.AddHours(1), Now).Value;
+        bound.BindRememberedBrowser(Guid.NewGuid(), Guid.NewGuid(), 1, member.SecurityEpoch);
+        db.Members.Add(member);
+        await db.SaveChangesAsync();
+        var options = Options.Create(new RememberedBrowserOptions { Enabled = false });
+        var sessionReader = new AuthSessionAdmissionReader(db, new FixedClock(Now), options);
+        var browserReader = new AuthRememberedSessionAdmissionReader(db, options, new FixedClock(Now));
+
+        Assert.True(await sessionReader.IsActiveAsync("tenant-a", member.Id.Value, ordinary.Id.Value));
+        Assert.False(await sessionReader.IsActiveAsync("tenant-a", member.Id.Value, bound.Id.Value));
+        Assert.True(await browserReader.IsAdmittedAsync("tenant-a", member.Id.Value, ordinary.Id.Value, null));
+        Assert.False(await browserReader.IsAdmittedAsync("tenant-a", member.Id.Value, bound.Id.Value, null));
+        Assert.False(await browserReader.IsAdmittedAsync("tenant-a", member.Id.Value, bound.Id.Value, new string('a', 64)));
     }
 
     private static Member CreateMember(

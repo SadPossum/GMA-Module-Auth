@@ -37,12 +37,18 @@ public static class DependencyInjection
             .Bind(builder.Configuration.GetSection(RememberedBrowserOptions.SectionName))
             .Validate(value => value.IsValid(), "Remembered-browser configuration is invalid.")
             .ValidateOnStart();
-        builder.Services.TryAddScoped<RememberedBrowserRequestContext>();
-        builder.Services.TryAddSingleton<RememberedPinKdfCapacity>();
-        builder.Services.TryAddScoped<RememberedPinHasher>();
-        builder.Services.TryAddScoped<IRememberedBrowserAccountProfileReader, EmptyRememberedBrowserAccountProfileReader>();
-        builder.Services.TryAddScoped<RememberedBrowserService>();
-        builder.Services.TryAddScoped<IRememberedBrowserService>(services => services.GetRequiredService<RememberedBrowserService>());
+        if (builder.Configuration.GetValue<bool>(RememberedBrowserOptions.SectionName + ":Enabled"))
+        {
+            builder.Services.TryAddScoped<RememberedBrowserRequestContext>();
+            builder.Services.TryAddSingleton<RememberedPinKdfCapacity>();
+            builder.Services.TryAddScoped<RememberedPinHasher>();
+            builder.Services.TryAddScoped<IRememberedBrowserAccountProfileReader, EmptyRememberedBrowserAccountProfileReader>();
+            builder.Services.TryAddScoped<RememberedBrowserService>();
+            builder.Services.TryAddScoped<IRememberedBrowserService>(services => services.GetRequiredService<RememberedBrowserService>());
+        }
+
+        // Admission must still reject retained browser-bound sessions when the
+        // interactive browser feature is disabled in a persistence-only host.
         builder.Services.TryAddScoped<IAuthRememberedSessionAdmissionReader, AuthRememberedSessionAdmissionReader>();
         builder.Services.AddPersistenceOptions(builder.Configuration);
         AuthRetentionOptions retentionOptions = builder.Configuration
