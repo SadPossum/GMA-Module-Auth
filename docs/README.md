@@ -57,6 +57,14 @@ Auth can be composed in two scope modes. `AuthProfile.ScopeAware()` follows the 
 
 ## Bearer session admission
 
+Persistence-only worker and migration hosts can register `AddAuthPersistence`
+without enabling the interactive remembered-browser runtime. That runtime and
+its password/token dependencies are registered only when
+`Auth:RememberedBrowser:Enabled` is true at composition time. Session-admission
+readers remain registered and reject retained browser-bound sessions while the
+feature is disabled. Enabling the feature still requires the full Auth
+infrastructure and valid remembered-browser configuration.
+
 Applications that require immediate account and session revocation can opt into
 Auth's online bearer admission:
 
