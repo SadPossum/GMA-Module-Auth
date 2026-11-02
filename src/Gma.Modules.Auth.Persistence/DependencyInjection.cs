@@ -13,6 +13,7 @@ using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Repositories;
 using Gma.Modules.Auth.Persistence.Repositories;
 using Gma.Modules.Auth.Persistence.Remembered;
+using Gma.Modules.Auth.Persistence.Admission;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -101,6 +102,7 @@ public static class DependencyInjection
         builder.Services.TryAddScoped<IAdminMemberReadRepository, AdminMemberReadRepository>();
         builder.Services.TryAddScoped<IAuthMemberAdmissionReader, AuthMemberAdmissionReader>();
         builder.Services.TryAddScoped<IAuthSessionAdmissionReader, AuthSessionAdmissionReader>();
+        builder.Services.TryAddScoped<IAuthTransactionAdmission, AuthTransactionAdmission>();
         builder.Services.TryAddScoped<IAuthMemberContactReader, AuthMemberContactReader>();
         builder.Services.TryAddScoped<IExternalAuthenticationExchangeStore, ExternalAuthenticationExchangeStore>();
         builder.Services.TryAddScoped<IPasswordRecoveryRecipientReader, PasswordRecoveryRecipientReader>();
