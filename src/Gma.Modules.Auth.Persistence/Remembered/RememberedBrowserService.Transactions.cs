@@ -5,6 +5,7 @@ using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
 using Gma.Modules.Auth.Domain.ValueObjects;
+using Gma.Modules.Auth.Persistence.Admission;
 using Microsoft.EntityFrameworkCore;
 
 internal sealed partial class RememberedBrowserService
@@ -25,9 +26,7 @@ internal sealed partial class RememberedBrowserService
             Guid id = this.device.Id;
             if (db.Database.IsNpgsql())
             {
-                await db.Database.ExecuteSqlInterpolatedAsync(
-                    $"SELECT 1 FROM auth.remembered_browser_devices WHERE \"Id\" = {id} FOR UPDATE",
-                    cancellationToken).ConfigureAwait(false);
+                await AuthAdmissionLockKey.AcquireDeviceRowsAsync(db, [id], cancellationToken).ConfigureAwait(false);
             }
             else if (db.Database.IsSqlServer())
             {

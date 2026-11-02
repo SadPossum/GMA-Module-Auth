@@ -6,6 +6,7 @@ using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Entities;
 using Gma.Modules.Auth.Domain.ValueObjects;
+using Gma.Modules.Auth.Persistence.Admission;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -195,11 +196,20 @@ internal sealed class AuthRetentionService(
             return 0;
         }
 
-        return await dbContext.RememberedAccountProofs
-            .IgnoreQueryFilters()
-            .Where(proof => proofIds.Contains(proof.Id))
-            .ExecuteDeleteAsync(cancellationToken)
-            .ConfigureAwait(false);
+        return await AuthAdmissionRetention.DeleteAsync(dbContext,
+            token => dbContext.RememberedAccountProofs.IgnoreQueryFilters().Where(proof => proofIds.Contains(proof.Id))
+                .Select(proof => proof.DeviceId).Distinct().ToArrayAsync(token), async token =>
+        {
+            var rows = await dbContext.RememberedAccountProofs.IgnoreQueryFilters().AsNoTracking()
+                .Where(proof => proofIds.Contains(proof.Id))
+                .Select(proof => new { proof.ScopeId, proof.MemberId, proof.OriginalSessionId })
+                .ToArrayAsync(token).ConfigureAwait(false);
+            return rows.SelectMany(row => new[] { AuthAdmissionLockKey.Subject(row.ScopeId, row.MemberId),
+                AuthAdmissionLockKey.Session(row.ScopeId, row.MemberId, row.OriginalSessionId) }).ToArray();
+        }, token => dbContext.RememberedAccountProofs.IgnoreQueryFilters()
+            .Where(proof => proofIds.Contains(proof.Id) && (proof.ExpiresAtUtc <= nowUtc ||
+                (proof.RevokedAtUtc != null && proof.RevokedAtUtc <= nowUtc)))
+            .ExecuteDeleteAsync(token), cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<int> DeleteExpiredRememberedDevicesBatchAsync(
@@ -223,11 +233,22 @@ internal sealed class AuthRetentionService(
             return 0;
         }
 
-        return await dbContext.RememberedBrowserDevices
-            .IgnoreQueryFilters()
-            .Where(device => deviceIds.Contains(device.Id))
-            .ExecuteDeleteAsync(cancellationToken)
-            .ConfigureAwait(false);
+        return await AuthAdmissionRetention.DeleteAsync(dbContext,
+            token => dbContext.RememberedBrowserDevices.IgnoreQueryFilters().Where(device => deviceIds.Contains(device.Id))
+                .Select(device => device.Id).ToArrayAsync(token), async token =>
+        {
+            var rows = await dbContext.RememberedBrowserDevices.IgnoreQueryFilters().AsNoTracking()
+                .Where(device => deviceIds.Contains(device.Id))
+                .Select(device => new { device.ScopeId, device.ActiveMemberId, device.ActiveSessionId })
+                .ToArrayAsync(token).ConfigureAwait(false);
+            return rows.Where(row => row.ActiveMemberId != null).SelectMany(row => (AuthAdmissionLockKey[])(row.ActiveSessionId is Guid session
+                ? [AuthAdmissionLockKey.Subject(row.ScopeId, row.ActiveMemberId!.Value),
+                    AuthAdmissionLockKey.Session(row.ScopeId, row.ActiveMemberId.Value, session)]
+                : [AuthAdmissionLockKey.Subject(row.ScopeId, row.ActiveMemberId!.Value)])).ToArray();
+        }, token => dbContext.RememberedBrowserDevices.IgnoreQueryFilters()
+            .Where(device => deviceIds.Contains(device.Id) && (device.ExpiresAtUtc <= nowUtc ||
+                (device.RevokedAtUtc != null && device.RevokedAtUtc <= nowUtc)))
+            .ExecuteDeleteAsync(token), cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<int> DeleteExpiredSessionsBatchAsync(
@@ -267,11 +288,19 @@ internal sealed class AuthRetentionService(
             return 0;
         }
 
-        return await dbContext.MemberSessions
-            .IgnoreQueryFilters()
-            .Where(session => sessionIds.Contains(session.Id))
-            .ExecuteDeleteAsync(cancellationToken)
-            .ConfigureAwait(false);
+        return await AuthAdmissionRetention.DeleteAsync(dbContext,
+            _ => Task.FromResult(Array.Empty<Guid>()), async token =>
+        {
+            var rows = await dbContext.MemberSessions.IgnoreQueryFilters().AsNoTracking()
+                .Where(session => sessionIds.Contains(session.Id))
+                .Select(session => new { session.ScopeId, MemberId = session.MemberId.Value, SessionId = session.Id.Value })
+                .ToArrayAsync(token).ConfigureAwait(false);
+            return rows.SelectMany(row => new[] { AuthAdmissionLockKey.Subject(row.ScopeId, row.MemberId),
+                AuthAdmissionLockKey.Session(row.ScopeId, row.MemberId, row.SessionId) }).ToArray();
+        }, token => dbContext.MemberSessions.IgnoreQueryFilters()
+            .Where(session => sessionIds.Contains(session.Id) && (session.RefreshTokenExpiresAtUtc <= cutoffUtc ||
+                (!session.IsActive && session.SignOutDateTimeUtc != null && session.SignOutDateTimeUtc <= cutoffUtc)))
+            .ExecuteDeleteAsync(token), cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<int> DeletePasswordRecoveryChallengesBatchAsync(
