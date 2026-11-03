@@ -8,6 +8,7 @@ using Gma.Modules.Auth.Api;
 using Gma.Modules.Auth.Application.Ports;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Persistence;
+using Gma.Modules.Auth.Persistence.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -135,6 +136,28 @@ public sealed class AuthProfileTests
         Assert.All(
             AuthModuleMetadata.Descriptor.GetPermissions(),
             permission => Assert.Equal(PermissionScopeRequirement.GlobalOrScoped, permission.ScopeRequirement));
+    }
+
+    [Fact]
+    public void Complete_auth_composition_does_not_grant_subject_status_reading_without_opt_in()
+    {
+        HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+        builder.Configuration.AddInMemoryCollection(CreateValidAuthConfiguration());
+        builder.AddScopingInfrastructure();
+        builder.AddAuthModule(AuthProfile.Global("identity"));
+
+        Assert.DoesNotContain(
+            builder.Services,
+            descriptor => descriptor.ServiceType == typeof(IAuthSubjectStatusReader));
+
+        builder.AddAuthSubjectStatusReader();
+        builder.AddAuthSubjectStatusReader();
+
+        ServiceDescriptor registration = Assert.Single(
+            builder.Services,
+            descriptor => descriptor.ServiceType == typeof(IAuthSubjectStatusReader));
+        Assert.Equal(typeof(AuthSubjectStatusReader), registration.ImplementationType);
+        Assert.Equal(ServiceLifetime.Scoped, registration.Lifetime);
     }
 
     private static ModuleProfileDescriptor CreateScopeContextProfile() => new(
