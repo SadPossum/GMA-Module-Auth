@@ -39,13 +39,13 @@ jobs:
         run: ./eng/check-repository-release.ps1
 
       - name: Run repository security baseline
-        uses: SadPossum/GMA-Skeleton/.github/actions/security-baseline@32ec053c78a87f5b5941068eb449e7ae10f51f59
+        uses: SadPossum/GMA-Skeleton/.github/actions/security-baseline@02210e3379976fd342251ffd6d967bbb541b7384
         with:
           exception-file: .gma/security-exceptions.json
 
       - name: Publish code-scanning evidence
         if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.37.1
+        uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
         with:
           sarif_file: artifacts/security/trivy-results.sarif
           category: trivy-owned-source
