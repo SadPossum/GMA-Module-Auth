@@ -54,6 +54,7 @@ public sealed class AuthPostgreSqlIntegrationTests
 
         await RunAttemptLimiterScenarioAsync("PostgreSql", postgreSql.GetConnectionString());
         await RunScopeAwareAttemptLimiterScenarioAsync("PostgreSql", postgreSql.GetConnectionString());
+        await AssertMultiFactorEvidenceAsync("PostgreSql", postgreSql.GetConnectionString());
     }
 
     [DockerFact]
@@ -64,6 +65,7 @@ public sealed class AuthPostgreSqlIntegrationTests
 
         await RunAttemptLimiterScenarioAsync("SqlServer", sqlServer.GetConnectionString());
         await RunScopeAwareAttemptLimiterScenarioAsync("SqlServer", sqlServer.GetConnectionString());
+        await AssertMultiFactorEvidenceAsync("SqlServer", sqlServer.GetConnectionString());
     }
 
     [DockerFact]
@@ -425,6 +427,107 @@ public sealed class AuthPostgreSqlIntegrationTests
                 .ToArrayAsync());
     }
 
+    private static async Task AssertMultiFactorEvidenceAsync(string providerName, string connectionString)
+    {
+        // Real dispatcher/transactions/schema; password, token and recovery-code
+        // cryptography remain explicit synthetic fixtures, as in the other cases.
+        await using ServiceProvider provider = CreateProvider(providerName, connectionString, multiFactorTokens: true);
+        const string password = "CurrentPassword123!";
+        const string refresh = "provider-initial-refresh";
+        const string recovery = "provider-initial-recovery";
+        DateTimeOffset originalAuthentication = Now.AddHours(-6);
+        Member member = Member.Create(new(Guid.NewGuid()), "global", "mfa-provider@example.test",
+            MemberUsernameType.Email, new TestPasswordHashingService().HashPassword(password),
+            new(Guid.NewGuid()), Guid.NewGuid(), Now.AddDays(-1)).Value;
+        MemberSession session = member.StartSession(new(Guid.NewGuid()),
+            new TestHashingService().HashRefreshToken(refresh), Now.AddDays(1), originalAuthentication,
+            authenticationEvidence: SessionAuthenticationEvidence.Password(originalAuthentication),
+            absoluteExpiresAtUtc: Now.AddDays(2)).Value;
+        DateTimeOffset originalAbsoluteExpiry = session.AbsoluteExpiresAtUtc;
+        MemberTotpAuthenticator authenticator = MemberTotpAuthenticator.BeginEnrollment(
+            new(Guid.NewGuid()), member.Id, member.ScopeId, "synthetic-protected-secret",
+            Now.AddMinutes(10), Now).Value;
+        Assert.True(authenticator.Activate(41,
+            [new(new(Guid.NewGuid()), "test-recovery-hash:" + recovery)], Now).IsSuccess);
+        await using (AsyncServiceScope seed = provider.CreateAsyncScope())
+        {
+            AuthDbContext db = seed.ServiceProvider.GetRequiredService<AuthDbContext>();
+            db.AddRange(member, authenticator);
+            await db.SaveChangesAsync();
+        }
+
+        MultiFactorRecoveryCodesResponse regeneration;
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            Result<MultiFactorRecoveryCodeRegenerationCompletion> result = await scope.ServiceProvider
+                .GetRequiredService<IRequestDispatcher>().SendAsync(
+                    new RegenerateMultiFactorRecoveryCodesCommand(member.Id.Value, session.Id.Value,
+                        MultiFactorCodeType.RecoveryCode, recovery, refresh));
+            Assert.True(result.IsSuccess);
+            Assert.True(result.Value.Succeeded);
+            regeneration = result.Value.Response!;
+        }
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            AuthDbContext db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            MemberSession retained = await db.MemberSessions.SingleAsync(item => item.Id == session.Id);
+            Assert.Equal(originalAuthentication, retained.AuthenticatedAtUtc);
+            Assert.Equal(originalAbsoluteExpiry, retained.AbsoluteExpiresAtUtc);
+            Assert.Equal(AuthenticationContextReferences.Password, retained.AuthenticationContextReference);
+        }
+
+        string code = regeneration.RecoveryCodes[0];
+        StepUpWithMultiFactorCommand command = new(member.Id.Value, session.Id.Value, password,
+            MultiFactorCodeType.RecoveryCode, code, regeneration.RefreshToken);
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            Result<MultiFactorStepUpCompletion> denied = await scope.ServiceProvider
+                .GetRequiredService<IRequestDispatcher>().SendAsync(command with { Password = "wrong-password" });
+            Assert.True(denied.IsSuccess);
+            Assert.False(denied.Value.Succeeded);
+        }
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            AuthDbContext db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            Assert.Equal(originalAuthentication,
+                (await db.MemberSessions.SingleAsync(item => item.Id == session.Id)).AuthenticatedAtUtc);
+            Assert.Null((await db.MemberTotpRecoveryCodes.SingleAsync(item =>
+                item.Hash == "test-recovery-hash:" + code)).ConsumedAtUtc);
+        }
+
+        string latestRefresh;
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            Result<MultiFactorStepUpCompletion> result = await scope.ServiceProvider
+                .GetRequiredService<IRequestDispatcher>().SendAsync(command);
+            Assert.True(result.IsSuccess);
+            Assert.True(result.Value.Succeeded);
+            latestRefresh = result.Value.Response!.RefreshToken;
+        }
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            AuthDbContext db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            MemberSession current = await db.MemberSessions.SingleAsync(item => item.Id == session.Id);
+            Assert.Equal(AuthenticationContextReferences.MultiFactor, current.AuthenticationContextReference);
+            Assert.Equal(Now, current.AuthenticatedAtUtc);
+            Assert.Equal(new TestHashingService().HashRefreshToken(latestRefresh), current.RefreshTokenHash);
+            Assert.NotNull((await db.MemberTotpRecoveryCodes.SingleAsync(item =>
+                item.Hash == "test-recovery-hash:" + code)).ConsumedAtUtc);
+        }
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            Result<MultiFactorStepUpCompletion> replay = await scope.ServiceProvider
+                .GetRequiredService<IRequestDispatcher>().SendAsync(command);
+            Assert.True(replay.IsSuccess);
+            Assert.True(replay.Value.RefreshTokenReuseDetected);
+        }
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            AuthDbContext db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            Assert.False((await db.MemberSessions.SingleAsync(item => item.Id == session.Id)).IsActive);
+        }
+    }
+
     private static async Task RunAttemptLimiterScenarioAsync(string providerName, string connectionString)
     {
         await using ServiceProvider firstProvider = CreateProvider(providerName, connectionString);
@@ -629,7 +732,8 @@ public sealed class AuthPostgreSqlIntegrationTests
         string providerName,
         string connectionString,
         AuthProfile? profile = null,
-        bool rememberedBrowser = false)
+        bool rememberedBrowser = false,
+        bool multiFactorTokens = false)
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder();
         List<KeyValuePair<string, string?>> settings =
@@ -664,6 +768,10 @@ public sealed class AuthPostgreSqlIntegrationTests
         builder.Services.AddSingleton<IPasswordHashingService, TestPasswordHashingService>();
         builder.Services.AddSingleton<ITokenService, TestTokenService>();
         builder.Services.AddSingleton<IPasswordRecoveryTokenService, ConcurrentRecoveryTokenService>();
+        if (multiFactorTokens)
+        {
+            builder.Services.AddSingleton<IMultiFactorTokenService, TestMultiFactorTokenService>();
+        }
         builder.Services.AddSingleton<ISystemClock, FixedClock>();
         builder.AddAuthPersistence(profile);
         return builder.Services.BuildServiceProvider(validateScopes: true);
@@ -1020,6 +1128,21 @@ public sealed class AuthPostgreSqlIntegrationTests
         public MemberId? GetMemberId(string accessToken, bool validateLifetime) => null;
 
         public AccessTokenClaims? GetAccessTokenClaims(string accessToken, bool validateLifetime) => null;
+    }
+
+    private sealed class TestMultiFactorTokenService : IMultiFactorTokenService
+    {
+        public MultiFactorTokenMaterial GenerateChallengeToken() =>
+            throw new InvalidOperationException("This provider fixture does not issue authentication challenges.");
+
+        public IReadOnlyList<string> GetCandidateChallengeTokenHashes(string token) =>
+            throw new InvalidOperationException("This provider fixture does not consume authentication challenges.");
+
+        public IReadOnlyList<RecoveryCodeMaterial> GenerateRecoveryCodes(int count) =>
+            Enumerable.Range(0, count).Select(_ => Guid.NewGuid().ToString("N"))
+                .Select(code => new RecoveryCodeMaterial(code, "test-recovery-hash:" + code)).ToArray();
+
+        public IReadOnlyList<string> GetCandidateRecoveryCodeHashes(string code) => ["test-recovery-hash:" + code];
     }
 
     private sealed class ConcurrentRecoveryTokenService : IPasswordRecoveryTokenService

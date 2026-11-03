@@ -75,6 +75,7 @@ jobs:
 
   relational:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout module
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -108,3 +109,16 @@ jobs:
         env:
           GMA_REQUIRE_DOCKER_TESTS: "true"
         run: dotnet test tests/Gma.Modules.Auth.IntegrationTests/Gma.Modules.Auth.IntegrationTests.csproj --logger "console;verbosity=minimal"
+
+      - name: Run owned PostgreSQL transaction-admission races
+        working-directory: gma-module-auth
+        run: python3 eng/test-transaction-admission-postgresql.py
+
+      - name: Retain minimized admission results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: auth-transaction-admission
+          path: gma-module-auth/artifacts/auth-admission/
+          if-no-files-found: ignore
+          retention-days: 7

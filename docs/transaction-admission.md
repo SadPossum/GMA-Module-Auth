@@ -1,5 +1,14 @@
 # Transaction admission for an authenticated subject and session
 
+Run `python3 eng/test-transaction-admission-postgresql.py` on a Linux Docker host
+to execute the guarded database cases. The harness builds the default Debug test
+project, creates a fresh loopback PostgreSQL database in a bounded temporary
+container, verifies its ownership marker, refuses empty or skipped results, and
+removes only that owned container. The relational CI job runs it after the existing
+provider tests and retains minimized results from `artifacts/auth-admission/`.
+This qualifies database transaction behavior; assembled product login and browser
+acceptance still require their own rehearsal.
+
 `IAuthTransactionAdmission` supplies Auth identity/session facts held against cooperating
 persisted invalidations. It supplies no financial permission, account/history certification,
 staff entitlement or authority to act for another subject. The consumer must

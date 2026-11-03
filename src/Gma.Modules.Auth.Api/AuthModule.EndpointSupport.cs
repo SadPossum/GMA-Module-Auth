@@ -117,6 +117,51 @@ public sealed partial class AuthModule
             refreshTokenLifetimeDays);
     }
 
+    private static IResult ToMultiFactorStepUpHttpResult(
+        Result<MultiFactorStepUpCompletion> result,
+        HttpContext httpContext)
+    {
+        SetNoStoreHeaders(httpContext);
+        if (result.IsFailure)
+        {
+            return result.ToHttpResult(PublicErrorStatusCodes);
+        }
+
+        if (result.Value.RefreshTokenReuseDetected)
+        {
+            return ToRefreshTokenReuseHttpResult();
+        }
+
+        return result.Value.Succeeded
+            ? Results.Ok(result.Value.Response)
+            : Results.Unauthorized();
+    }
+
+    private static IResult ToBrowserMultiFactorStepUpResult(
+        Result<MultiFactorStepUpCompletion> result,
+        HttpContext httpContext,
+        int refreshTokenLifetimeDays)
+    {
+        SetNoStoreHeaders(httpContext);
+        if (result.IsFailure)
+        {
+            return result.ToHttpResult(PublicErrorStatusCodes);
+        }
+
+        if (result.Value.RefreshTokenReuseDetected)
+        {
+            DeleteBrowserCookies(httpContext);
+            return ToRefreshTokenReuseHttpResult();
+        }
+
+        return result.Value.Succeeded
+            ? ToBrowserAuthResult(
+                Result.Success(result.Value.Response!),
+                httpContext,
+                refreshTokenLifetimeDays)
+            : Results.Unauthorized();
+    }
+
     private static IResult ToBrowserPrimaryAuthenticationResult(
         Result<PrimaryAuthenticationResult> result,
         HttpContext httpContext,
