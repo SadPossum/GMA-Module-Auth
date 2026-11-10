@@ -9,6 +9,7 @@ using Gma.Framework.Results;
 public sealed class MemberSession : ScopedEntity<MemberSessionId>
 {
     public const int RefreshTokenHashMaxLength = 512;
+    public const int UserAgentMaxLength = 512;
 
     private string[] authenticationMethodReferences = [];
 
@@ -31,6 +32,7 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         this.RefreshTokenExpiresAtUtc = refreshTokenExpiresAtUtc;
         this.AbsoluteExpiresAtUtc = absoluteExpiresAtUtc;
         this.LoginDateTimeUtc = loginDateTimeUtc;
+        this.LastActivityAtUtc = loginDateTimeUtc;
         this.AuthenticationMethod = authenticationMethod;
         this.SetAuthenticationEvidence(authenticationEvidence);
         this.IsActive = true;
@@ -42,6 +44,8 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
     public DateTimeOffset RefreshTokenExpiresAtUtc { get; private set; }
     public DateTimeOffset AbsoluteExpiresAtUtc { get; private set; }
     public DateTimeOffset LoginDateTimeUtc { get; private set; }
+    public string? UserAgent { get; private set; }
+    public DateTimeOffset? LastActivityAtUtc { get; private set; }
     public string AuthenticationMethod { get; private set; } = MemberAuthenticationMethods.Password;
     public string AuthenticationContextReference { get; private set; } = AuthenticationContextReferences.Legacy;
     public IReadOnlyList<string> AuthenticationMethodReferences => this.authenticationMethodReferences;
@@ -53,6 +57,26 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
     public long? RememberedBrowserGeneration { get; private set; }
     public long? RememberedSecurityEpoch { get; private set; }
     public DateTimeOffset? RememberedAbsoluteExpiresAtUtc { get; private set; }
+
+    // Client-reported display metadata is never authentication or admission evidence.
+    internal void RecordClientContext(string? userAgent, DateTimeOffset nowUtc)
+    {
+        if (!string.IsNullOrWhiteSpace(userAgent))
+        {
+            string normalized = new([.. userAgent.Trim()
+                .Where(character => !char.IsControl(character))
+                .Take(UserAgentMaxLength)]);
+            if (normalized.Length > 0)
+            {
+                this.UserAgent = normalized;
+            }
+        }
+
+        if (this.LastActivityAtUtc is null || this.LastActivityAtUtc < nowUtc)
+        {
+            this.LastActivityAtUtc = nowUtc;
+        }
+    }
 
     public void BindRememberedBrowser(Guid deviceId, Guid? proofId, long generation, long securityEpoch)
     {
@@ -84,6 +108,7 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         this.RefreshTokenExpiresAtUtc = expiresAtUtc < this.AbsoluteExpiresAtUtc
             ? expiresAtUtc
             : this.AbsoluteExpiresAtUtc;
+        this.RecordClientContext(null, nowUtc);
         return Result.Success();
     }
 
@@ -236,6 +261,7 @@ public sealed class MemberSession : ScopedEntity<MemberSessionId>
         this.RefreshTokenExpiresAtUtc = newRefreshTokenExpiresAtUtc <= absoluteExpiresAtUtc
             ? newRefreshTokenExpiresAtUtc
             : absoluteExpiresAtUtc;
+        this.RecordClientContext(null, nowUtc);
 
         return Result.Success();
     }

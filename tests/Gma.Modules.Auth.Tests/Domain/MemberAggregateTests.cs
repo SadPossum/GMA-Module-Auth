@@ -18,6 +18,67 @@ public sealed class MemberAggregateTests
     private static readonly TimeSpan MaximumSessionLifetime = TimeSpan.FromDays(90);
 
     [Fact]
+    public void Session_records_bounded_client_details_and_initial_activity()
+    {
+        Member member = CreateMember("metadata@example.com").Value;
+        MemberSession session = member.StartSession(new MemberSessionId(Guid.NewGuid()), "refresh-1", Now.AddDays(1), Now).Value;
+
+        Assert.Equal(Now, session.LastActivityAtUtc);
+        Assert.Null(session.UserAgent);
+        Assert.True(member.RecordAuthentication(session.Id, Guid.NewGuid(), Now,
+            userAgent: "  Chrome\r\n" + new string('x', 600)).IsSuccess);
+        Assert.Equal(MemberSession.UserAgentMaxLength, session.UserAgent!.Length);
+        Assert.StartsWith("Chrome", session.UserAgent, StringComparison.Ordinal);
+        Assert.DoesNotContain('\r', session.UserAgent);
+        Assert.DoesNotContain('\n', session.UserAgent);
+    }
+
+    [Fact]
+    public void Successful_refresh_updates_client_details_and_activity()
+    {
+        Member member = CreateMember("metadata@example.com").Value;
+        MemberSession session = member.StartSession(new MemberSessionId(Guid.NewGuid()), "refresh-1", Now.AddDays(1), Now).Value;
+        DateTimeOffset later = Now.AddMinutes(10);
+
+        Result<MemberSession> result = member.RefreshSession(session.Id, ["refresh-1"], "refresh-2", later.AddDays(1),
+            Guid.NewGuid(), later, userAgent: "Firefox/145.0");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Firefox/145.0", session.UserAgent);
+        Assert.Equal(later, session.LastActivityAtUtc);
+        Assert.Equal(Now, session.AuthenticatedAtUtc);
+    }
+
+    [Fact]
+    public void Failed_refresh_does_not_change_client_details_or_activity()
+    {
+        Member member = CreateMember("metadata@example.com").Value;
+        MemberSession session = member.StartSession(new MemberSessionId(Guid.NewGuid()), "refresh-1", Now.AddDays(1), Now).Value;
+        Assert.True(member.RecordAuthentication(session.Id, Guid.NewGuid(), Now, userAgent: "Firefox/145.0").IsSuccess);
+
+        Result<MemberSession> result = member.RefreshSession(session.Id, ["wrong-token"], "refresh-2", Now.AddDays(2),
+            Guid.NewGuid(), Now.AddMinutes(10), userAgent: "Other client");
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Firefox/145.0", session.UserAgent);
+        Assert.Equal(Now, session.LastActivityAtUtc);
+    }
+
+    [Fact]
+    public void Refresh_without_client_details_keeps_the_recorded_browser()
+    {
+        Member member = CreateMember("metadata@example.com").Value;
+        MemberSession session = member.StartSession(new MemberSessionId(Guid.NewGuid()), "refresh-1", Now.AddDays(1), Now).Value;
+        Assert.True(member.RecordAuthentication(session.Id, Guid.NewGuid(), Now, userAgent: "Chrome/143.0").IsSuccess);
+
+        Assert.True(member.RefreshSession(session.Id, ["refresh-1"], "refresh-2", Now.AddDays(2),
+            Guid.NewGuid(), Now.AddMinutes(10)).IsSuccess);
+
+        Assert.Equal("Chrome/143.0", session.UserAgent);
+        Assert.Equal(Now.AddMinutes(10), session.LastActivityAtUtc);
+    }
+
+    [Fact]
     public void Create_rejects_invalid_username()
     {
         var result = CreateMember("not-an-email");

@@ -18,7 +18,7 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("auth")
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -518,6 +518,9 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<DateTimeOffset?>("LastActivityAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset>("LoginDateTimeUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -559,6 +562,10 @@ namespace Gma.Modules.Auth.Persistence.SqlServerMigrations.Migrations
 
                     b.Property<DateTimeOffset?>("SignOutDateTimeUtc")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<string>("authenticationMethodReferences")
                         .IsRequired()

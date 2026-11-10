@@ -86,7 +86,7 @@ public sealed partial class AuthModule
             }
 
             Result<RefreshTokenBoundCompletion<AuthTokensResponse>> result = await dispatcher.SendAsync(
-                new RefreshMemberSessionCommand(accessToken, refreshToken),
+                new RefreshMemberSessionCommand(accessToken, refreshToken) { UserAgent = GetUserAgent(httpContext) },
                 cancellationToken).ConfigureAwait(false);
 
             if (result.IsFailure)

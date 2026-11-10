@@ -26,6 +26,9 @@ internal sealed class MemberSessionConfiguration : IEntityTypeConfiguration<Memb
         builder.Property(session => session.PreviousRefreshTokenHash)
             .HasMaxLength(MemberSession.RefreshTokenHashMaxLength);
 
+        builder.Property(session => session.UserAgent)
+            .HasMaxLength(MemberSession.UserAgentMaxLength);
+
         builder.Property(session => session.AuthenticationMethod)
             .HasMaxLength(MemberAuthenticationMethods.MaxLength)
             .HasDefaultValue(MemberAuthenticationMethods.Password)

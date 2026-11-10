@@ -228,6 +228,7 @@ public sealed partial class Member
             return Result.Failure(AuthDomainErrors.SessionNotFound);
         }
 
+        session.RecordClientContext(userAgent, nowUtc);
         this.RaiseDomainEvent(new MemberAuthenticatedDomainEvent(
             authenticatedEventId,
             nowUtc,

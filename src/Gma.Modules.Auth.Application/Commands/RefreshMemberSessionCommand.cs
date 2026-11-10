@@ -4,4 +4,7 @@ using Gma.Modules.Auth.Contracts;
 using Gma.Framework.Cqrs;
 
 public sealed record RefreshMemberSessionCommand(string AccessToken, string RefreshToken)
-    : ITransactionalCommand<RefreshTokenBoundCompletion<AuthTokensResponse>>;
+    : ITransactionalCommand<RefreshTokenBoundCompletion<AuthTokensResponse>>
+{
+    public string? UserAgent { get; init; }
+}

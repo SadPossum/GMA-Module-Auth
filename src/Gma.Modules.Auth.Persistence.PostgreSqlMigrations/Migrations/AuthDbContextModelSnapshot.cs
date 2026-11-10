@@ -18,7 +18,7 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("auth")
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -510,6 +510,9 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTimeOffset?>("LastActivityAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset>("LoginDateTimeUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -550,6 +553,10 @@ namespace Gma.Modules.Auth.Persistence.PostgreSqlMigrations.Migrations
 
                     b.Property<DateTimeOffset?>("SignOutDateTimeUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
 
                     b.Property<string>("authenticationMethodReferences")
                         .IsRequired()

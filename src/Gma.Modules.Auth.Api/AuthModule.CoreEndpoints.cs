@@ -77,7 +77,7 @@ public sealed partial class AuthModule
             CancellationToken cancellationToken) =>
             ToRefreshTokenBoundHttpResult(
                 await dispatcher.SendAsync(
-                    new RefreshMemberSessionCommand(request.AccessToken, request.RefreshToken),
+                    new RefreshMemberSessionCommand(request.AccessToken, request.RefreshToken) { UserAgent = GetUserAgent(httpContext) },
                 cancellationToken).ConfigureAwait(false),
                 httpContext));
         refresh.Produces<AuthTokensResponse>(StatusCodes.Status200OK);
