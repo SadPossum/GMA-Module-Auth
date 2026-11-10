@@ -1,6 +1,7 @@
 namespace Gma.Modules.Auth.Application.Handlers;
 
 using Gma.Modules.Auth.Application.Commands;
+using Gma.Modules.Auth.Application.Security;
 using Gma.Modules.Auth.Contracts;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.Errors;
@@ -66,7 +67,8 @@ internal sealed class RefreshMemberSessionCommandHandler(
             newRefreshTokenHash,
             clock.UtcNow.AddDays(options.Value.RefreshTokenLifetimeDays),
             idGenerator.NewId(),
-            clock.UtcNow);
+            clock.UtcNow,
+            AuthenticationClientContext.NormalizeUserAgent(command.UserAgent));
 
         if (refreshResult.IsFailure)
         {

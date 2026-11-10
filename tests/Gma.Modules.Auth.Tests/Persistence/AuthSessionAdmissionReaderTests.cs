@@ -3,7 +3,9 @@ namespace Gma.Modules.Auth.Tests;
 using Gma.Framework.Runtime.Time;
 using Gma.Framework.Scoping;
 using Gma.Modules.Auth.Application;
+using Gma.Modules.Auth.Application.Handlers;
 using Gma.Modules.Auth.Application.Ports;
+using Gma.Modules.Auth.Application.Queries;
 using Gma.Modules.Auth.Domain.Aggregates;
 using Gma.Modules.Auth.Domain.ValueObjects;
 using Gma.Modules.Auth.Persistence;
@@ -19,6 +21,33 @@ public sealed class AuthSessionAdmissionReaderTests
 {
     private static readonly DateTimeOffset Now =
         new(2026, 8, 10, 12, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task Session_details_round_trip_and_legacy_unknown_values_remain_unknown()
+    {
+        await using AuthDbContext db = CreateDbContext(Guid.NewGuid().ToString(), new InMemoryDatabaseRoot(), "tenant-a");
+        Member member = CreateMember(Guid.NewGuid(), "session-details@example.test", Now.AddHours(-1));
+        var current = member.StartSession(new MemberSessionId(Guid.NewGuid()), "current-refresh", Now.AddDays(1), Now).Value;
+        var legacy = member.StartSession(new MemberSessionId(Guid.NewGuid()), "legacy-refresh", Now.AddDays(1), Now.AddMinutes(-10)).Value;
+        Assert.True(member.RecordAuthentication(current.Id, Guid.NewGuid(), Now, userAgent: "Firefox/145.0").IsSuccess);
+        db.Members.Add(member);
+        // Older rows have no stored activity; neither the API nor a migration invents it.
+        db.Entry(legacy).Property(session => session.LastActivityAtUtc).CurrentValue = null;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        FixedClock clock = new(Now.AddMinutes(1));
+        ListAuthenticationSessionsQueryHandler handler = new(new MemberRepository(db, clock), clock);
+        var result = await handler.HandleAsync(new ListAuthenticationSessionsQuery(member.Id.Value, current.Id.Value), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var active = Assert.Single(result.Value.Sessions, session => session.IsCurrent);
+        Assert.Equal("Firefox/145.0", active.UserAgent);
+        Assert.Equal(Now, active.LastActivityAtUtc);
+        var old = Assert.Single(result.Value.Sessions, session => !session.IsCurrent);
+        Assert.Null(old.UserAgent);
+        Assert.Null(old.LastActivityAtUtc);
+    }
 
     [Fact]
     public async Task Reader_requires_the_exact_active_member_and_unexpired_active_session()

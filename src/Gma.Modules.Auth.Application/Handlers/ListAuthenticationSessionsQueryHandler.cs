@@ -34,14 +34,18 @@ internal sealed class ListAuthenticationSessionsQueryHandler(
                 session.RefreshTokenExpiresAtUtc > nowUtc &&
                 session.AbsoluteExpiresAtUtc > nowUtc)
             .OrderByDescending(session => session.Id.Value == query.CurrentSessionId)
-            .ThenByDescending(session => session.LoginDateTimeUtc)
+            .ThenByDescending(session => session.LastActivityAtUtc ?? session.LoginDateTimeUtc)
             .Select(session => new AuthenticationSessionResponse(
                 session.Id.Value,
                 session.AuthenticationMethod,
                 session.LoginDateTimeUtc,
                 session.RefreshTokenExpiresAtUtc,
                 session.AbsoluteExpiresAtUtc,
-                session.Id.Value == query.CurrentSessionId))
+                session.Id.Value == query.CurrentSessionId)
+            {
+                UserAgent = session.UserAgent,
+                LastActivityAtUtc = session.LastActivityAtUtc,
+            })
             .ToArray();
 
         return Result.Success(new AuthenticationSessionsResponse(sessions));

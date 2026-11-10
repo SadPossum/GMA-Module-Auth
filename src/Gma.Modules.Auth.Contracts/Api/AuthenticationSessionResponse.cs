@@ -6,4 +6,8 @@ public sealed record AuthenticationSessionResponse(
     DateTimeOffset LoginDateTimeUtc,
     DateTimeOffset RefreshTokenExpiresAtUtc,
     DateTimeOffset AbsoluteExpiresAtUtc,
-    bool IsCurrent);
+    bool IsCurrent)
+{
+    public string? UserAgent { get; init; }
+    public DateTimeOffset? LastActivityAtUtc { get; init; }
+}

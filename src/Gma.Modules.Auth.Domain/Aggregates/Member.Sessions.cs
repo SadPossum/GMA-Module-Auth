@@ -104,14 +104,24 @@ public sealed partial class Member
         string newRefreshTokenHash,
         DateTimeOffset newRefreshTokenExpiresAtUtc,
         Guid refreshTokenReusedEventId,
-        DateTimeOffset nowUtc)
+        DateTimeOffset nowUtc) => this.RefreshSession(sessionId, refreshTokenHashes, newRefreshTokenHash,
+            newRefreshTokenExpiresAtUtc, refreshTokenReusedEventId, nowUtc, userAgent: null);
+
+    public Result<MemberSession> RefreshSession(
+        MemberSessionId sessionId,
+        IReadOnlyCollection<string> refreshTokenHashes,
+        string newRefreshTokenHash,
+        DateTimeOffset newRefreshTokenExpiresAtUtc,
+        Guid refreshTokenReusedEventId,
+        DateTimeOffset nowUtc,
+        string? userAgent)
     {
         if (refreshTokenReusedEventId == Guid.Empty)
         {
             return Result.Failure<MemberSession>(AuthDomainErrors.DomainEventIdRequired);
         }
 
-        return this.RefreshSessionCore(
+        Result<MemberSession> result = this.RefreshSessionCore(
             sessionId,
             refreshTokenHashes,
             newRefreshTokenHash,
@@ -120,6 +130,12 @@ public sealed partial class Member
             authenticationEvidence: null,
             refreshTokenReusedEventId,
             nowUtc);
+        if (result.IsSuccess)
+        {
+            result.Value.RecordClientContext(userAgent, nowUtc);
+        }
+
+        return result;
     }
 
     private Result<MemberSession> RefreshSessionCore(
